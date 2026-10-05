@@ -11,7 +11,13 @@ apps/
   desktop/   Electron app (TypeScript, React, electron-vite, electron-builder)
     src/main/       main process: window, license, and (to come) the media engine
     src/preload/    the narrow bridge the renderer may call (window.vcdit)
-    src/renderer/   React UI: the spec's screens, built from the UI mockup
+    src/renderer/   React UI, built from docs/ui/HANDOFF.md
+      model/          types (spec §6), the HALCYON demo day, status.ts (all derived status)
+      state/          one reducer: AppState and every action
+      shell/          header, flow bar, files panel, license dialog
+      screens/        Today, Project setup and the six steps' screens
+      ui/kit.tsx      shared pieces (status dot + word, pills, bars, license-gated StartButton)
+      theme.css       the handoff's tokens, light and dark
   web/       vc-dit.com (Next.js 14): pricing, checkout, account, downloads,
              and the licensing API the app calls
 supabase/migrations/   dit_* tables in the shared VCWriter project
@@ -90,8 +96,9 @@ because the media is there and must not pass through vc-dit.com.
 
 ## What comes next
 
-1. The UI mockup becomes the renderer screens (`src/renderer/screens.ts`
-   lists them).
+1. Done: the UI handoff is built as the renderer, on demo data. Status is
+   derived in one place (`model/status.ts`), so the header, flow bar, file
+   tree and Today never disagree, and nothing shows green while a copy failed.
 2. The media engine in the main process: volume detection (macOS
    DiskArbitration events and Windows volume notifications), the
    multi-destination copy-and-verify engine in worker threads, and the local

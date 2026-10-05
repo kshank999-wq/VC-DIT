@@ -1,0 +1,79 @@
+/* The app shell (handoff "App Shell"): header, flow bar, content, files panel. */
+.app {
+  height: 100vh; min-width: 1280px; display: grid;
+  grid-template-rows: 52px auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--files-col, 290px);
+  background: var(--bg);
+}
+.app.files-closed { --files-col: 0px; }
+
+.app-header {
+  grid-column: 1 / 3; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.wordmark { display: flex; align-items: baseline; gap: 8px; width: 120px; flex: none; white-space: nowrap; }
+.wordmark > span:first-child { font: 700 15px/1 'IBM Plex Sans'; letter-spacing: 0.02em; }
+.wordmark .version { font-size: 10px; color: var(--label); letter-spacing: 0.08em; }
+.production { flex: none; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); white-space: nowrap; font-size: 12px; }
+.production .prod-name { font-weight: 600; font-size: 12.5px; }
+.production .divider { width: 1px; height: 16px; background: var(--border-strong); }
+.header-center { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pill-button { border: none; background: none; padding: 0; cursor: pointer; }
+.pill-button .pill { height: 30px; border-radius: 15px; padding: 0 14px; font-size: 12.5px; }
+.theme-select { width: 112px; height: 30px; flex: none; font-size: 12px; }
+.clock { font-weight: 500; font-size: 13px; min-width: 96px; text-align: right; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--selected); font: 700 10.5px 'IBM Plex Sans'; cursor: pointer; flex: none; }
+
+.flow-bar { grid-column: 1 / 3; display: flex; padding: 10px 14px; gap: 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+.flow-cell { flex: 1; display: flex; align-items: center; min-width: 0; }
+.flow-arrow { color: var(--faint); padding: 0 8px; font-size: 13px; }
+.flow-step {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card); cursor: pointer; text-align: left;
+  transition: background 120ms ease-out;
+}
+.flow-step:hover { background: var(--hover); }
+.flow-step.active { background: color-mix(in oklch, var(--tone) 15%, var(--card)); border-color: var(--tone); }
+.flow-number { width: 26px; height: 26px; border-radius: 6px; flex: none; display: grid; place-items: center; background: var(--tone); color: var(--on-tone); font: 700 12.5px 'IBM Plex Sans'; }
+.flow-text { display: grid; min-width: 0; flex: 1; }
+.flow-name { font: 700 13.5px/1.2 'IBM Plex Sans'; }
+.flow-step.active .flow-name { color: var(--tone); }
+.flow-metric { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-dot { width: 9px; height: 9px; }
+
+.content { grid-column: 1; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+.content > .screen { flex: 1; }
+.sub-tabs { display: flex; gap: 6px; padding: 12px 28px 0; }
+.sub-tabs button { height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--card); cursor: pointer; font: 600 12.5px 'IBM Plex Sans'; display: inline-flex; align-items: center; gap: 8px; }
+.sub-tabs button:hover { background: var(--hover); }
+.sub-tabs button.active { background: var(--tone); border-color: var(--tone); color: var(--on-tone); }
+.badge-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--s-needs); color: #fff; font: 700 10.5px/18px 'IBM Plex Mono'; text-align: center; }
+
+.files { grid-column: 2; grid-row: 3; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); overflow: hidden; }
+.app.files-closed .files { display: none; }
+.files-head { padding: 14px; display: grid; gap: 12px; border-bottom: 1px solid var(--border); }
+.files-head .input { height: 32px; }
+.tree { flex: 1; overflow: auto; padding: 8px 0; }
+.tree-row { height: 30px; display: flex; align-items: center; gap: 6px; padding-right: 14px; cursor: pointer; white-space: nowrap; }
+.tree-row:hover { background: var(--hover); }
+.tree-row.selected { background: var(--selected); box-shadow: inset 2px 0 0 var(--st-organize); }
+.caret { width: 10px; font-size: 9px; color: var(--faint); flex: none; }
+.folder { width: 15px; height: 11px; border-radius: 2px; flex: none; display: inline-block; }
+.tree-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.tree-name.strong { font-weight: 700; }
+.linked { font-size: 11px; color: var(--muted); }
+.tree-count { font-size: 11px; color: var(--faint); }
+.files-foot { padding: 12px 14px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--muted); }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.legend .folder { width: 10px; height: 8px; }
+
+/* License dialog */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: grid; place-items: center; z-index: 20; }
+.dialog { width: 520px; max-width: calc(100vw - 32px); background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; display: grid; gap: 12px; }
+.dialog h2 { margin: 0; font: 600 18px 'IBM Plex Sans'; }
+.dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
+.dialog dt { color: var(--label); }
+.dialog dd { margin: 0; }
+.code-input { font: 500 15px 'IBM Plex Mono'; letter-spacing: 0.06em; text-transform: uppercase; height: 40px; }
+.error { color: var(--s-problem); }

@@ -9,6 +9,7 @@ Website: [www.vc-dit.com](https://www.vc-dit.com)
 - [Development Specification v1](docs/SPEC_v1.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Deployment and selling](docs/DEPLOYMENT.md)
+- [UI handoff](docs/ui/HANDOFF.md) (mockups in `docs/ui/mockups/`; open in a browser)
 
 ## How it is sold
 
@@ -43,4 +44,6 @@ npm run dev -w @vcdit/web       # the site
 
 ## Status
 
-The commerce and licensing layer is ported from VC Game Studio and tested. The desktop app is a shell listing the spec's screens; they are built from the UI mockup when it is handed off.
+- Commerce and licensing: ported from VC Game Studio, tested; Supabase tables applied.
+- Desktop UI: every screen of the UI handoff (`docs/ui/`) built in React on the HALCYON demo day, light and dark. Run it in a browser with `npm run dev:renderer -w @vcdit/desktop`.
+- Next: the media engine (volume detection, verified copy, the local production database) behind the same screens.

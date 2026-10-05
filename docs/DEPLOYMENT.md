@@ -9,7 +9,7 @@ computers. Media never touches the website.
 | --- | --- | --- |
 | Website | `apps/web` (Next.js on Vercel) | Home, pricing, sign-in, account (code, computers, billing), downloads, and the API the app calls |
 | Desktop app | `apps/desktop` (Electron) | Activates with the authorization code and checks its license (`src/main/licensing.ts`) |
-| Accounts and records | Supabase project **VCWriter** (`kpviyoqhmzignjyvixws`), shared with VC Writer and VC Game Studio | One VC account for every product. The tables are VC DIT's own, named `dit_*` (`supabase/migrations/dit_0001_commerce.sql`, **not yet applied**) |
+| Accounts and records | Supabase project **VCWriter** (`kpviyoqhmzignjyvixws`), shared with VC Writer and VC Game Studio | One VC account for every product. The tables are VC DIT's own, named `dit_*` (`supabase/migrations/dit_0001_commerce.sql`, **applied 5 Oct 2026**) |
 | Payments | The Stripe account VC Writer and VC Game Studio use | One product, VC DIT: **$9.99 / month** or **$99 / year** |
 | Email | Resend | The authorization code email |
 
@@ -53,20 +53,28 @@ shown to its owner.
 
 ## Before the first sale: VC Writer's webhook
 
-Stripe sends every event in an account to every webhook endpoint. **VC
-Writer's** webhook (`kshank999-wq/VCWriter`,
-`apps/web/src/app/api/stripe/webhook/route.ts`) fulfills *every* paid
-`checkout.session.completed` as a VC Writer purchase, so as it stands **each
-VC DIT checkout would also issue a VC Writer license and email it**. The same
-is true for VC Game Studio; its fix is in
-`kshank999-wq/vc_game_studio/docs/commerce/vcwriter-stripe-scope.patch` and
-has not been applied to VC Writer yet.
+Stripe sends every event in an account to every webhook endpoint subscribed to
+it. VC Writer's webhook (`kshank999-wq/VCWriter`,
+`apps/web/src/app/api/stripe/webhook/route.ts`) turns *every* settled
+`checkout.session.completed` into a VC Writer purchase: it creates an order
+and a VC Writer license and emails it. It does not look at which product the
+checkout was for. So, as it stands, **each VC DIT checkout would also give the
+customer a VC Writer license and a VC Writer email** (and the same is true
+for VC Game Studio's checkouts).
 
-The fix: VC Writer's webhook should skip checkout sessions whose
-`metadata.product` is another product's (`vc-game-studio`, `vc-dit`), or
-better, fulfill only sessions it tagged itself. Deploy that to vc-writer.com
-before the first VC DIT sale. (VC Game Studio's webhook already ignores VC
-DIT's events, and VC DIT's ignores everyone else's.)
+Its subscription and refund handling is already safe: subscription events
+are routed by `metadata.kind`/`room_id`, which VC DIT's never carry, and
+refunds are matched to VC Writer's own orders.
+
+The fix is a few lines at the top of VC Writer's webhook: acknowledge and
+skip any event whose object carries `metadata.product` (VC DIT sets
+`vc-dit`, VC Game Studio `vc-game-studio`; VC Writer sets no `product` on
+its own checkouts). VC Game Studio's
+`docs/commerce/vcwriter-stripe-scope.patch` was written for this but
+predates VC Writer's move to subscriptions: its second half (licence only
+for one-off payments) would now stop VC Writer issuing its own licences, so
+only the skip should be applied. Deploy it to vc-writer.com before the first
+VC DIT sale.
 
 ## Setting it up: six commands
 
@@ -104,8 +112,10 @@ repository root, after `npm install`.
 
 ## Supabase (the shared VCWriter project)
 
-- **Database:** apply `supabase/migrations/dit_0001_commerce.sql`. It only
-  adds `dit_*` tables, two enums and the `dit-releases` bucket; nothing of
+- **Database:** done. `dit_0001_commerce` is applied. The security advisor
+  reports only `dit_stripe_webhook_events` having no policies, which is
+  intended (service role only, like the other products' webhook tables). It
+  only adds `dit_*` tables, two enums and the `dit-releases` bucket; nothing of
   VC Writer's or VC Game Studio's is altered. It relies on what VC Writer
   already has there: `profiles`, the `platform`, `license_status` and
   `release_channel` enums, `touch_updated_at()`, `email_events` and the
