@@ -39,14 +39,7 @@ export function Verify() {
   const problems = count('problem');
   const running = count('running');
   const waiting = count('waiting');
-  const summary = [
-    `${count('safe')} of ${state.jobs.length} cards safe to format`,
-    problems ? `${problems} problem${problems === 1 ? '' : 's'}` : null,
-    running ? `${running} copying or checking` : null,
-    waiting ? `${waiting} waiting` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const rest = [running ? `${running} copying or checking` : null, waiting ? `${waiting} waiting` : null].filter(Boolean);
 
   return (
     <div className="screen">
@@ -62,8 +55,10 @@ export function Verify() {
         }
       />
 
-      <p className="verify-summary" style={{ color: problems ? statusVar('problem') : undefined }} aria-live="polite">
-        {summary}
+      <p className="verify-summary" aria-live="polite">
+        {count('safe')} of {state.jobs.length} cards safe to format
+        {problems ? <span className="bad"> · {problems} problem{problems === 1 ? '' : 's'} — don't format {problems === 1 ? 'it' : 'them'}</span> : null}
+        {rest.length ? ` · ${rest.join(' · ')}` : null}
       </p>
 
       {jobs.map(({ job }) => {

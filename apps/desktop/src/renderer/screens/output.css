@@ -52,14 +52,14 @@
 /* Placeholders until decoded frames arrive: a cool grey LOG image under a warm graded one. */
 .look-original {
   background: repeating-linear-gradient(135deg,
-    color-mix(in oklch, var(--st-verify) 8%, black 82%) 0 10px,
-    color-mix(in oklch, var(--st-verify) 8%, black 86%) 10px 20px);
+    color-mix(in srgb, white 17%, black) 0 10px,
+    color-mix(in srgb, white 14%, black) 10px 20px);
 }
 .look-graded {
   right: auto; border-right: 2px solid var(--ink);
   background: repeating-linear-gradient(135deg,
-    color-mix(in oklch, var(--s-needs) 45%, black) 0 10px,
-    color-mix(in oklch, var(--s-needs) 38%, black) 10px 20px);
+    color-mix(in oklch, var(--s-needs) 55%, black) 0 10px,
+    color-mix(in oklch, var(--s-needs) 47%, black) 10px 20px);
 }
 .stage-tag {
   position: absolute; top: 12px; padding: 3px 7px; border-radius: 4px;

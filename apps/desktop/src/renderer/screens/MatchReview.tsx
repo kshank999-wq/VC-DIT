@@ -28,7 +28,7 @@ export function MatchReview() {
         step="organize"
         eyebrow="03 · Organize · Match review"
         title={open > 0 ? `${open} item${open === 1 ? '' : 's'} need${open === 1 ? 's' : ''} a decision` : 'All matched'}
-        description="Low-confidence matches between the script log and media. VC DIT never auto-accepts a match below 90% confidence — you decide."
+        description="Low-confidence matches between the script log and media. VC DIT never auto-accepts below 90% — you decide."
       />
 
       {match ? (

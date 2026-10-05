@@ -90,11 +90,11 @@ export function VfxHandoff() {
         <div className="card vfx-table">
           <table className="grid">
             <colgroup>
-              <col style={{ width: 110 }} />
-              <col style={{ width: 110 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 96 }} />
               <col />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 150 }} />
+              <col style={{ width: 96 }} />
+              <col style={{ width: 168 }} />
             </colgroup>
             <thead>
               <tr>

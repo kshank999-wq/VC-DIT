@@ -35,7 +35,7 @@
 .setup-status select option { color: var(--text); background: var(--card); text-transform: none; }
 .setup-add { display: flex; gap: 8px; padding: 12px 18px; }
 .setup-add .input { width: auto; flex: 1; min-width: 0; }
-.setup-add .setup-add-id { width: 150px; flex: none; }
+.setup-add .setup-add-id { width: 120px; flex: none; }
 .setup-add-why { margin: -4px 18px 12px; }
 .setup-tokens { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .setup-token { padding: 4px 9px; border-radius: 5px; background: var(--selected); font-size: 12px; }
@@ -103,6 +103,7 @@
 
 /* ---------- Verify */
 .verify-summary { margin: -6px 0 0; font-weight: 600; font-size: 13.5px; }
+.verify-summary .bad { color: var(--s-problem); }
 .verify-card { overflow: hidden; }
 .verify-card.problem { border-color: var(--s-problem); }
 .verify-head { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--divider); }

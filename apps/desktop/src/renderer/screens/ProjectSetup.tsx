@@ -169,10 +169,10 @@ export function ProjectSetup() {
             ))}
           </ul>
           <form className="setup-add" onSubmit={addScene}>
-            <input className="input mono setup-add-id" placeholder="Scene no. — e.g. 23" aria-label="New scene number" value={sceneId} onChange={(event) => setSceneId(event.target.value)} />
+            <input className="input mono setup-add-id" placeholder="Scene no." aria-label="New scene number" value={sceneId} onChange={(event) => setSceneId(event.target.value)} />
             <input
               className="input grow"
-              placeholder="Description (optional) — e.g. EXT. HANGAR – NIGHT"
+              placeholder="Description (optional)"
               aria-label="New scene description"
               value={sceneDescription}
               onChange={(event) => setSceneDescription(event.target.value)}

@@ -110,7 +110,7 @@ describe('Verify', () => {
     const cards = screen.getAllByRole('region');
     expect(cards[0]!.getAttribute('aria-label')).toBe('Card A013');
     expect(within(cards[0]!).getByText("Problem — don't format")).toBeTruthy();
-    expect(screen.getByText(/2 of 5 cards safe to format · 1 problem/)).toBeTruthy();
+    expect(screen.getByText(/cards safe to format/).textContent).toMatch(/^2 of 5 cards safe to format · 1 problem/);
     expect(screen.queryByRole('button', { name: /format|delete|erase/i })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Retry copy A013 → SHTL_06' }));
