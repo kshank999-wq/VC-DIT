@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron needs these two under the hardened runtime. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Not sandboxed: a DIT tool reads every mounted card and writes every
+         destination volume. macOS still asks once for removable and network
+         volumes (privacy prompts), which the app explains on first run. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- License checks with vc-dit.com, and Frame.io / cloud destinations. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+  </dict>
+</plist>

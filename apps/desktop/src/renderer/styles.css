@@ -1,0 +1,46 @@
+/* A placeholder look until the UI mockup sets the brand. Dark by default: carts live in dim tents. */
+:root {
+  --ground: #0b0a07;
+  --panel: #12100b;
+  --border: #332b17;
+  --accent: #c9a45c;
+  --text: #f1e7cf;
+  --muted: #9c8f6d;
+  --ok: #6fae5e;
+  --warn: #e5a54b;
+  --error: #e5534b;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: var(--ground); color: var(--text); font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', sans-serif; }
+button { font: inherit; cursor: pointer; border-radius: 4px; border: 1px solid var(--accent); background: var(--accent); color: var(--ground); padding: 7px 14px; }
+button.secondary { background: transparent; color: var(--text); border-color: var(--border); }
+button.link { background: none; border: none; color: var(--accent); padding: 0; }
+button:disabled { opacity: 0.5; cursor: default; }
+.shell { display: grid; grid-template-columns: 230px 1fr; height: 100%; }
+.side { display: flex; flex-direction: column; gap: 2px; padding: 16px 10px; background: var(--panel); border-right: 1px solid var(--border); }
+.brand { font-size: 18px; letter-spacing: 0.08em; padding: 0 8px 14px; }
+.brand b { color: var(--accent); }
+.nav { text-align: left; background: none; border: 1px solid transparent; color: var(--text); padding: 7px 10px; }
+.nav:hover { border-color: var(--border); }
+.nav.active { background: #1f1b10; border-color: var(--border); color: var(--accent); }
+.side-foot { margin-top: auto; padding: 8px; display: grid; gap: 4px; }
+.content { overflow: auto; padding: 28px 36px; display: grid; gap: 24px; align-content: start; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.mono { font-family: var(--mono); }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; }
+.badge.ok { color: var(--ok); }
+.badge.warn { color: var(--warn); }
+.activate, .license, .placeholder { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 20px 24px; max-width: 760px; }
+.activate h2, .license h2, .placeholder h1 { margin: 0 0 6px; font-weight: 600; }
+.code { width: 100%; margin: 8px 0 12px; padding: 10px 12px; font: 16px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; background: var(--ground); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
+.code:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.error { color: var(--error); }
+.note { border-left: 3px solid var(--accent); padding-left: 10px; color: var(--muted); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 12px 0 16px; }
+dt { color: var(--muted); }
+dd { margin: 0; }

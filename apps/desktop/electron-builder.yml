@@ -1,0 +1,54 @@
+# Packaging for Windows 10/11 and macOS, as VC Writer and VC Game Studio
+# package. Signing credentials come from CI secrets and are never in the
+# repository; see docs/DEPLOYMENT.md.
+appId: com.vcdit.desktop
+productName: VC DIT
+copyright: Copyright © VC DIT
+
+directories:
+  output: release
+  buildResources: build
+
+# 1024 px PNGs drawn by scripts/icons.mjs; electron-builder derives .ico and .icns.
+icon: build/icon.png
+
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+
+# Installers go to the private dit-releases bucket (apps/web/scripts/publish-release.mjs)
+# and are handed out as short-lived signed URLs; electron-builder publishes nothing.
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signingHashAlgorithms: [sha256]
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  artifactName: VC-DIT-Setup-${version}.${ext}
+
+mac:
+  icon: build/icon-mac.png
+  category: public.app-category.video
+  target:
+    - target: dmg
+      arch: [universal]
+  minimumSystemVersion: '11.0'
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  artifactName: VC-DIT-${version}.${ext}
+
+# Notarization is switched on from the command line (-c.mac.notarize=true) only
+# when Apple credentials are present, so an unsigned test build still works.

@@ -1,0 +1,4 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "echo '' && echo '  VC DIT: this Vercel project is building from the REPOSITORY ROOT.' && echo '  The website is apps/web. Set Settings -> General -> Root Directory = apps/web' && echo '  (with \"Include files outside the root directory\" on), then redeploy.' && echo '  See docs/DEPLOYMENT.md.' && echo '' && exit 1"
+}

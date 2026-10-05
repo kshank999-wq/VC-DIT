@@ -1,0 +1,192 @@
+name: Desktop release
+
+# Packages VC DIT for Windows and macOS on a version tag (v0.1.0, …),
+# as VC Writer's and VC Game Studio's desktop-release.yml do. Each platform is its own matrix
+# leg, so shipping one never replaces the other. Publishing to customers is a
+# separate job behind the `release` environment (add required reviewers to it
+# in GitHub → Settings → Environments), as VC Writer keeps publishing a
+# deliberate step. Secrets and variables: docs/DEPLOYMENT.md.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  package:
+    name: Package for ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            script: package:win
+          - os: macos-latest
+            platform: macos
+            script: package:mac
+    env:
+      # Built into the app: where it checks its license, and the key that checks the answer.
+      MAIN_VITE_SITE_URL: ${{ vars.MAIN_VITE_SITE_URL || 'https://vc-dit.com' }}
+      MAIN_VITE_LICENSE_PUBLIC_KEY: ${{ vars.MAIN_VITE_LICENSE_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # A build without these is a developer build with licensing switched off
+      # (everything unlocked). It must never reach a customer.
+      - name: Require the licensing configuration
+        shell: bash
+        run: |
+          if [ -z "$MAIN_VITE_LICENSE_PUBLIC_KEY" ]; then
+            echo "::error::Set the repository variable MAIN_VITE_LICENSE_PUBLIC_KEY (Settings → Secrets and variables → Actions → Variables). See docs/DEPLOYMENT.md."
+            exit 1
+          fi
+
+      - name: Decide whether to notarize
+        id: notarize
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+            echo "flag=-c.mac.notarize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            echo "::warning::Apple credentials absent: an unsigned, un-notarized build. Do not publish it."
+          fi
+
+      # VC Writer's keychain step, unchanged in substance: electron-builder 25
+      # cannot be trusted to build its own keychain on current macOS, so the
+      # Developer ID identity is imported into one made here and CSC_LINK stays
+      # unset for the Package step.
+      - name: Load the macOS signing certificate
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          MAC_CERTIFICATE: ${{ secrets.CSC_LINK }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          if [ -z "$MAC_CERTIFICATE" ]; then
+            echo "No CSC_LINK secret; building unsigned."
+            exit 0
+          fi
+          bundle="$(mktemp -u).p12"
+          printf '%s' "$MAC_CERTIFICATE" | tr -d '\r\n ' | openssl base64 -d -A > "$bundle" || true
+          if [ ! -s "$bundle" ]; then
+            echo "::error::CSC_LINK does not decode as base64."
+            exit 1
+          fi
+          echo "Certificate bundle SHA-256: $(shasum -a 256 "$bundle" | cut -d' ' -f1)"
+          if ! openssl pkcs12 -in "$bundle" -info -noout -passin env:MAC_CERTIFICATE_PASSWORD >/dev/null 2>&1; then
+            echo "::error::OpenSSL cannot open CSC_LINK with CSC_KEY_PASSWORD."
+            exit 1
+          fi
+          keychain="$RUNNER_TEMP/vcdit-signing.keychain-db"
+          keychain_password=$(openssl rand -base64 24)
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          if ! security import "$bundle" -f pkcs12 -k "$keychain" -P "$MAC_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productbuild >/dev/null; then
+            echo "::error::macOS cannot import the bundle: re-export the .p12 with '-certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1' (VC Writer's docs/code-signing.md)."
+            exit 1
+          fi
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          if ! security find-identity -v -p codesigning "$keychain" | grep -q "Developer ID Application"; then
+            echo "::error::No Developer ID Application identity in the certificate."
+            exit 1
+          fi
+          echo "CSC_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          rm -f "$bundle"
+
+      - name: Package
+        shell: bash
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          windows_flags=""
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            if [ -n "$AZURE_CLIENT_ID" ] && [ -n "$AZURE_TENANT_ID" ] && [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_PROFILE" ]; then
+              windows_flags="-c.win.azureSignOptions.endpoint=${AZURE_SIGNING_ENDPOINT:-https://wus2.codesigning.azure.net} -c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT -c.win.azureSignOptions.certificateProfileName=$AZURE_SIGNING_PROFILE"
+              echo "Signing with Azure Artifact Signing profile $AZURE_SIGNING_PROFILE."
+            elif [ -n "$WINDOWS_CERTIFICATE" ]; then
+              export CSC_LINK="$WINDOWS_CERTIFICATE"
+              export CSC_KEY_PASSWORD="$WINDOWS_CERTIFICATE_PASSWORD"
+              echo "Signing with the WINDOWS_CERTIFICATE bundle."
+            else
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+              echo "::warning::No Windows signing certificate (Azure Artifact Signing pending): building unsigned. SmartScreen will warn on first run; do not publish it."
+            fi
+          elif [ -z "$CSC_KEYCHAIN" ]; then
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            echo "::warning::No macOS signing identity: building unsigned."
+          fi
+          npm run ${{ matrix.script }} -w @vcdit/desktop -- ${{ steps.notarize.outputs.flag }} $windows_flags
+
+      - name: Checksum the installers
+        shell: bash
+        run: |
+          cd apps/desktop/release
+          : > SHA256SUMS.txt
+          for file in *.exe *.dmg; do
+            [ -e "$file" ] || continue
+            if command -v sha256sum >/dev/null; then sha256sum "$file" >> SHA256SUMS.txt; else shasum -a 256 "$file" >> SHA256SUMS.txt; fi
+          done
+          cat SHA256SUMS.txt
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcdit-${{ matrix.platform }}
+          path: |
+            apps/desktop/release/*.exe
+            apps/desktop/release/*.dmg
+            apps/desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+
+  # Customers receive a build only when this job runs: approve it in the
+  # `release` environment once the installers have been tried.
+  publish:
+    name: Publish to customers
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: release
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Upload and activate each installer
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for file in artifacts/vcdit-macos/*.dmg; do npm run publish:release -w @vcdit/web -- "$GITHUB_WORKSPACE/$file" macos "$version"; done
+          for file in artifacts/vcdit-windows/*.exe; do npm run publish:release -w @vcdit/web -- "$GITHUB_WORKSPACE/$file" windows "$version"; done
