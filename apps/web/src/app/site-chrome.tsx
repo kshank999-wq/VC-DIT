@@ -37,7 +37,7 @@ export function SiteFooter() {
       <div className="wrap">
         <span>© {new Date().getFullYear()} VC DIT · a VC product</span>
         <span>
-          <a href="https://vc-writer.com">VC Writer</a> · <Link href="/pricing">Pricing</Link> · <Link href="/account">Account</Link>
+          <Link href="/download">Download</Link> · <Link href="/pricing">Pricing</Link> · <Link href="/account">Account</Link>
         </span>
       </div>
     </footer>

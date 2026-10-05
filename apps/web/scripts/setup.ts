@@ -24,7 +24,6 @@ const FILE = resolve(import.meta.dirname, '../.env.production.local');
 const SITE = 'https://vc-dit.com';
 const DOMAIN = 'vc-dit.com';
 const TEAM = 'team_u7MT4rqOzxUsxMI5gdYsbVN0';
-const SUPABASE_REF = 'kpviyoqhmzignjyvixws';
 
 const read = (): Record<string, string> => (existsSync(FILE) ? parseEnv(readFileSync(FILE, 'utf8')) : {});
 const write = (entries: Record<string, string>) => {
@@ -39,9 +38,11 @@ const say = (lines: string[]) => lines.forEach((line) => console.log(`· ${line}
 
 const [step, ...args] = process.argv.slice(2);
 const env = read();
+// The vc-dit Supabase project's ref (Supabase → Project Settings → General → Project ID).
+const SUPABASE_REF = env['SUPABASE_PROJECT_REF'] ?? process.env['SUPABASE_PROJECT_REF'] ?? '';
 
 const DEFAULTS = {
-  NEXT_PUBLIC_SUPABASE_URL: `https://${SUPABASE_REF}.supabase.co`,
+  ...(SUPABASE_REF ? { NEXT_PUBLIC_SUPABASE_URL: `https://${SUPABASE_REF}.supabase.co` } : {}),
   NEXT_PUBLIC_SITE_URL: SITE,
   RESEND_FROM_ADDRESS: `VC DIT <noreply@${DOMAIN}>`,
   ELECTRON_SKIP_BINARY_DOWNLOAD: '1',
@@ -75,7 +76,7 @@ switch (step) {
     break;
   }
   case 'supabase': {
-    const result = await setupSupabaseAuth(fetch, { accessToken: need(env, 'SUPABASE_ACCESS_TOKEN'), projectRef: SUPABASE_REF, callbackUrl: `${SITE}/auth/callback` });
+    const result = await setupSupabaseAuth(fetch, { accessToken: need(env, 'SUPABASE_ACCESS_TOKEN'), projectRef: need(env, 'SUPABASE_PROJECT_REF'), callbackUrl: `${SITE}/auth/callback`, siteUrl: SITE });
     say(result.notes);
     break;
   }

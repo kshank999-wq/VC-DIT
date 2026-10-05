@@ -17,13 +17,13 @@ A subscription, **$9.99 / month or $99 / year**, for Mac and Windows. Checkout e
 
 ## The repository
 
-Same tools as VC Game Studio and VC Writer.
+Same tools as VC Game Studio and VC Writer, on entirely separate services: VC DIT has its own Supabase project, Stripe account, Resend domain and Vercel project.
 
 | Path | What | Stack |
 | --- | --- | --- |
 | `apps/desktop` | The VC DIT app | Electron 33, React 18, TypeScript, electron-vite, electron-builder |
 | `apps/web` | vc-dit.com: pricing, checkout, account, downloads, licensing API | Next.js 14 on Vercel |
-| `supabase/migrations` | `dit_*` tables in the shared VC Supabase project | Postgres |
+| `supabase/migrations` | The schema of VC DIT's own Supabase project | Postgres |
 
 | Concern | Service |
 | --- | --- |
@@ -44,6 +44,6 @@ npm run dev -w @vcdit/web       # the site
 
 ## Status
 
-- Commerce and licensing: ported from VC Game Studio, tested; Supabase tables applied.
+- Commerce and licensing: ported from VC Game Studio and tested. Its database goes in a Supabase project of its own (`supabase/migrations/0001_vc_dit_base.sql`).
 - Desktop UI: every screen of the UI handoff (`docs/ui/`) built in React on the HALCYON demo day, light and dark. Run it in a browser with `npm run dev:renderer -w @vcdit/desktop`.
 - Next: the media engine (volume detection, verified copy, the local production database) behind the same screens.

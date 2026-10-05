@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
 
 /**
- * Authorization codes, VC Writer's serial format with this product's prefix:
+ * Authorization codes:
  * `VCDIT-XXXXX-XXXXX-XXXXX-XXXXX` from an alphabet without I, O, 0 or 1, so one
  * can be read over the phone or typed on a cart with gloves on.
  *
- * Unlike Game Studio's serial, the code IS the credential: it downloads the
- * installer and activates a computer without signing in, because a DIT cart is
- * often not a machine anyone reads email on. So it is random enough to guess
- * at (20 characters of 32 = 100 bits), every route that takes one is rate
+ * The code is the credential: it downloads the installer and activates a
+ * computer without signing in, because a DIT cart is often not a machine
+ * anyone reads email on. So it is random enough that guessing is hopeless
+ * (20 characters of 32 = 100 bits), every route that takes one is rate
  * limited, and it is only ever shown to its owner (email, account page). The
  * column is still called `serial` in the database.
  */

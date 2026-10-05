@@ -16,12 +16,12 @@ export interface AccountSubscription {
 
 export const loadAccount = async (client: SupabaseClient, userId: string): Promise<AccountSubscription[]> => {
   const { data: subs } = await client
-    .from('dit_subscriptions')
+    .from('subscriptions')
     .select('id, stripe_customer_id, plan, billing_interval, status, current_period_end, cancel_at_period_end, created_at')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
   const { data: licenses } = await client
-    .from('dit_licenses')
+    .from('licenses')
     .select('subscription_id, serial, status, max_activations')
     .eq('user_id', userId);
   return (subs ?? []).map((sub) => {

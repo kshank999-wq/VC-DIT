@@ -18,7 +18,7 @@ files:
   - out/renderer/**
   - package.json
 
-# Installers go to the private dit-releases bucket (apps/web/scripts/publish-release.mjs)
+# Installers go to the private releases bucket (apps/web/scripts/publish-release.mjs)
 # and are handed out as short-lived signed URLs; electron-builder publishes nothing.
 publish: null
 

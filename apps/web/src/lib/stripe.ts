@@ -1,7 +1,7 @@
 import Stripe from 'stripe';
 import { env } from './env';
 
-/** Everything this site creates in the shared Stripe account carries this, so VC Writer's webhook can leave it alone. */
+/** Everything this site creates in Stripe carries this, so the webhook can tell VC DIT's subscriptions from anything else on the account. */
 export const PRODUCT_TAG = 'vc-dit';
 
 let cached: Stripe | null = null;

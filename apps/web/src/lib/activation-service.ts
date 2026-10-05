@@ -7,7 +7,7 @@ import { isWellFormedSerial, normalizeSerial } from './license';
 import type { LicenseStatus } from './plans';
 
 /**
- * Seats and entitlements, against the dit_ tables. The rules are in
+ * Seats and entitlements, against the license tables. The rules are in
  * activation.ts and plans.ts; this is where they meet rows. The client and the
  * signing key are arguments so the sequencing is tested against a fake.
  *
@@ -64,18 +64,18 @@ const UNKNOWN_CODE =
 
 const licenseByCode = async (client: SupabaseClient, code: string): Promise<LicenseRow | null> => {
   if (!isWellFormedSerial(code)) return null;
-  const { data } = await client.from('dit_licenses').select(LICENSE_COLUMNS).eq('serial', normalizeSerial(code)).maybeSingle();
+  const { data } = await client.from('licenses').select(LICENSE_COLUMNS).eq('serial', normalizeSerial(code)).maybeSingle();
   return (data as LicenseRow | null) ?? null;
 };
 
 const licensesOf = async (client: SupabaseClient, userId: string): Promise<LicenseRow[]> => {
-  const { data } = await client.from('dit_licenses').select(LICENSE_COLUMNS).eq('user_id', userId);
+  const { data } = await client.from('licenses').select(LICENSE_COLUMNS).eq('user_id', userId);
   return (data ?? []) as LicenseRow[];
 };
 
 const seatsOf = async (client: SupabaseClient, licenseIds: string[]): Promise<SeatRow[]> => {
   if (licenseIds.length === 0) return [];
-  const { data } = await client.from('dit_device_activations').select('*').in('license_id', licenseIds);
+  const { data } = await client.from('device_activations').select('*').in('license_id', licenseIds);
   return (data ?? []) as SeatRow[];
 };
 
@@ -118,7 +118,7 @@ export const activateDevice = async (
   }
 
   const now = new Date().toISOString();
-  const { error } = await client.from('dit_device_activations').upsert(
+  const { error } = await client.from('device_activations').upsert(
     {
       license_id: license.id,
       device_fingerprint: device.fingerprint,
@@ -161,7 +161,7 @@ export const checkDevice = async (
     return { ok: false, reason: 'license_inactive', message: explainRefusal({ result: 'refused', reason: 'license_inactive' }) };
   }
   await client
-    .from('dit_device_activations')
+    .from('device_activations')
     .update({ last_seen_at: new Date().toISOString(), app_version: device.appVersion })
     .eq('id', seat.id);
   return entitle(client, license, device.fingerprint, key);
@@ -179,7 +179,7 @@ export const deactivateByCode = async (
     (candidate) => candidate.device_fingerprint === fingerprint && candidate.deactivated_at === null,
   );
   if (!seat) return { ok: false, error: 'This computer is not activated.' };
-  const { error } = await client.from('dit_device_activations').update({ deactivated_at: new Date().toISOString() }).eq('id', seat.id);
+  const { error } = await client.from('device_activations').update({ deactivated_at: new Date().toISOString() }).eq('id', seat.id);
   return error ? { ok: false, error: error.message } : { ok: true, error: null };
 };
 
@@ -193,7 +193,7 @@ export const deactivateDevice = async (
   const seats = await seatsOf(client, licenses.map((license) => license.id));
   const seat = seats.find((candidate) => candidate.id === activationId && candidate.deactivated_at === null);
   if (!seat) return { ok: false, error: 'That computer is not on a subscription of yours.' };
-  const { error } = await client.from('dit_device_activations').update({ deactivated_at: new Date().toISOString() }).eq('id', seat.id);
+  const { error } = await client.from('device_activations').update({ deactivated_at: new Date().toISOString() }).eq('id', seat.id);
   return error ? { ok: false, error: error.message } : { ok: true, error: null };
 };
 

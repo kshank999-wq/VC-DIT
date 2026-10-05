@@ -1,11 +1,9 @@
 /**
  * Where to send a request that landed on the wrong page carrying Supabase auth
- * parameters (VC Writer's fix for its first real sign-in). A sign-in link goes
- * wherever Supabase allows; when `/auth/callback` is refused it falls back to
- * the project's Site URL. The project is shared with VC Writer, so that
- * fallback is vc-writer.com — which is why this site's callback must be on the
- * project's redirect allow list (docs/DEPLOYMENT.md). On this site, a stray
- * `code` is forwarded to the callback.
+ * parameters. A sign-in link goes wherever Supabase allows; when
+ * `/auth/callback` is refused it falls back to the project's Site URL, so the
+ * callback must be on the project's redirect allow list (docs/DEPLOYMENT.md).
+ * On this site, a stray `code` is forwarded to the callback.
  */
 export const CALLBACK_PATH = '/auth/callback';
 

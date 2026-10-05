@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { missingVariables, parseEnv, upsertEnv } from '../setup/env-file';
 import { setupResend, vercelRecord } from '../setup/resend-setup';
 import { lookupKey, parseAmounts, setupStripe, WEBHOOK_EVENTS } from '../setup/stripe-setup';
-import { addRedirect, carriesCode, setupSupabaseAuth } from '../setup/supabase-auth-setup';
+import { addRedirect, setupSupabaseAuth } from '../setup/supabase-auth-setup';
 import { envPayload, setupVercel } from '../setup/vercel-setup';
 
 describe('the env file', () => {
@@ -150,26 +150,29 @@ describe('resend setup', () => {
 });
 
 describe('supabase sign-in settings', () => {
-  it("adds this site's callback and keeps VC Writer's", () => {
-    expect(addRedirect('https://vc-writer.com/auth/callback', 'https://vc-dit.com/auth/callback')).toEqual({
-      list: 'https://vc-writer.com/auth/callback,https://vc-dit.com/auth/callback',
+  it("adds this site's callback and keeps what is there", () => {
+    expect(addRedirect('http://localhost:3000/auth/callback', 'https://vc-dit.com/auth/callback')).toEqual({
+      list: 'http://localhost:3000/auth/callback,https://vc-dit.com/auth/callback',
       changed: true,
     });
     expect(addRedirect('https://vc-dit.com/auth/callback', 'https://vc-dit.com/auth/callback').changed).toBe(false);
-    expect(carriesCode('<p>Code: {{ .Token }}</p>')).toBe(true);
-    expect(carriesCode('<a href="{{ .ConfirmationURL }}">Sign in</a>')).toBe(false);
   });
 
-  it('patches only the redirect list, and reports on the email', async () => {
+  it('patches the redirect list and the Site URL, and nothing when both are right', async () => {
     let patched: unknown = null;
     const url = 'https://api.supabase.com/v1/projects/ref/config/auth';
+    let current = { uri_allow_list: '', site_url: 'http://localhost:3000' };
     const { fetcher } = fakeFetch({
-      [`GET ${url}`]: () => [200, { uri_allow_list: 'https://vc-writer.com/auth/callback', mailer_templates_magic_link_content: '<a href="{{ .ConfirmationURL }}">x</a>' }],
+      [`GET ${url}`]: () => [200, current],
       [`PATCH ${url}`]: (body) => ((patched = body), [200, {}]),
     });
-    const result = await setupSupabaseAuth(fetcher, { accessToken: 't', projectRef: 'ref', callbackUrl: 'https://vc-dit.com/auth/callback' });
-    expect(patched).toEqual({ uri_allow_list: 'https://vc-writer.com/auth/callback,https://vc-dit.com/auth/callback' });
-    expect(result.codeInEmail).toBe(false);
+    const options = { accessToken: 't', projectRef: 'ref', callbackUrl: 'https://vc-dit.com/auth/callback', siteUrl: 'https://vc-dit.com' };
+    await setupSupabaseAuth(fetcher, options);
+    expect(patched).toEqual({ uri_allow_list: 'https://vc-dit.com/auth/callback', site_url: 'https://vc-dit.com' });
+    patched = null;
+    current = { uri_allow_list: 'https://vc-dit.com/auth/callback', site_url: 'https://vc-dit.com' };
+    await setupSupabaseAuth(fetcher, options);
+    expect(patched).toBeNull();
   });
 });
 

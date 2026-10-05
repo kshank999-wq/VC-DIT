@@ -10,9 +10,9 @@ export type Row = Record<string, unknown> & { id: string };
 export type Tables = Record<string, Row[]>;
 
 const UNIQUE: Record<string, string[][]> = {
-  dit_subscriptions: [['stripe_subscription_id']],
-  dit_licenses: [['subscription_id'], ['serial']],
-  dit_device_activations: [['license_id', 'device_fingerprint']],
+  subscriptions: [['stripe_subscription_id']],
+  licenses: [['subscription_id'], ['serial']],
+  device_activations: [['license_id', 'device_fingerprint']],
   profiles: [['email']],
 };
 

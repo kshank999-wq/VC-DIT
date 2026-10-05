@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server';
 import { adminClient } from './supabase';
 
 /**
- * Per-address rate limiting, on the limiter VC Writer already keeps in the
- * shared database (`consume_rate_limit`). For noise and cost, not access: it
+ * Per-address rate limiting, on the limiter in the database
+ * (`consume_rate_limit`, supabase/migrations). For noise and cost, not access: it
  * fails open, because a limiter that could take checkout down when it broke is
  * a worse risk than the burst it guards against. Keys are hashed addresses,
- * prefixed `dit-` so this site's allowances never mix with VC Writer's.
+ * prefixed by rule (`dit-activate`, …).
  */
 
 export interface RateLimitRule {

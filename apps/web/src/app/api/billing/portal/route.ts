@@ -15,7 +15,7 @@ export async function POST(): Promise<Response> {
   const user = await currentUser();
   if (!user) return NextResponse.json({ error: 'Sign in first' }, { status: 401 });
   const { data } = await adminClient()
-    .from('dit_subscriptions')
+    .from('subscriptions')
     .select('stripe_customer_id')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
@@ -26,7 +26,7 @@ export async function POST(): Promise<Response> {
     const session = await stripe().billingPortal.sessions.create({
       customer: data.stripe_customer_id as string,
       return_url: `${env.siteUrl}/account`,
-      // VC DIT's own portal (monthly and yearly), not VC Writer's default one.
+      // VC DIT's own portal configuration (monthly and yearly), when set.
       ...(env.stripePortalConfiguration ? { configuration: env.stripePortalConfiguration } : {}),
     });
     return NextResponse.json({ url: session.url });

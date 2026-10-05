@@ -23,7 +23,7 @@ const bodySchema = z.object({ code: z.string().min(1).max(60) });
 const mint = async (platform: 'windows' | 'macos'): Promise<Response> => {
   const client = adminClient();
   const { data: build, error } = await client
-    .from('dit_release_builds')
+    .from('release_builds')
     .select('version, artifact_key, sha256, minimum_os_version')
     .eq('platform', platform)
     .eq('channel', 'stable')

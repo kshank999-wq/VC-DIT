@@ -5,7 +5,7 @@ import { adminClient } from './supabase';
 
 /**
  * Transactional email through Resend. As in VC Writer, the outcome is logged
- * to `email_events` (the shared log, template names prefixed dit-) and a send
+ * to `email_events` (template names prefixed dit-) and a send
  * failure never fails the purchase: the license already exists and the
  * account page always shows it.
  */

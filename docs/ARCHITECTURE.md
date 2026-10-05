@@ -1,8 +1,9 @@
 # VC DIT architecture
 
-The stack matches VC Game Studio and VC Writer: an npm workspace with an
-Electron desktop app and a Next.js website on Vercel, backed by the shared
-VC Supabase project, Stripe and Resend. Product requirements are in
+The tools match VC Game Studio and VC Writer (an npm workspace with an
+Electron desktop app and a Next.js website on Vercel, with Supabase, Stripe
+and Resend), but VC DIT runs entirely on its own services: its own Supabase
+project, Stripe account, Resend domain and Vercel project. Product requirements are in
 [SPEC_v1.md](SPEC_v1.md); selling and releasing are in
 [DEPLOYMENT.md](DEPLOYMENT.md).
 
@@ -20,7 +21,7 @@ apps/
       theme.css       the handoff's tokens, light and dark
   web/       vc-dit.com (Next.js 14): pricing, checkout, account, downloads,
              and the licensing API the app calls
-supabase/migrations/   dit_* tables in the shared VCWriter project
+supabase/migrations/   the whole schema of the vc-dit Supabase project
 docs/                  spec, architecture, deployment
 ```
 

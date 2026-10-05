@@ -18,8 +18,8 @@ const license = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const seed = (licenses: Record<string, unknown>[]): Tables => ({
-  dit_licenses: licenses as Tables[string],
-  dit_device_activations: [],
+  licenses: licenses as Tables[string],
+  device_activations: [],
   profiles: [{ id: 'u1', email: 'dit@example.com' }],
 });
 
@@ -48,14 +48,14 @@ describe('activating computers with an authorization code', () => {
     expect((await activateDevice(CODE, device('a'), db.client, privateKey)).ok).toBe(true);
     expect((await activateDevice(CODE, device('b'), db.client, privateKey)).ok).toBe(true);
     expect(await activateDevice(CODE, device('c'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'no_slots' });
-    expect(db.tables['dit_device_activations']).toHaveLength(2);
+    expect(db.tables['device_activations']).toHaveLength(2);
   });
 
   it('refuses an unknown or malformed code, and an ended subscription', async () => {
     const db = fakeSupabase(seed([license()]));
     expect(await activateDevice('VCDIT-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ', device('a'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'unknown_code' });
     expect(await activateDevice('hello', device('a'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'unknown_code' });
-    (db.tables['dit_licenses'] ?? [])[0]!['status'] = 'expired';
+    (db.tables['licenses'] ?? [])[0]!['status'] = 'expired';
     expect(await activateDevice(CODE, device('a'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'license_inactive' });
   });
 
@@ -71,7 +71,7 @@ describe('activating computers with an authorization code', () => {
     expect(await checkDevice(CODE, device('a'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'device_removed' });
 
     await activateDevice(CODE, device('a'), db.client, privateKey);
-    (db.tables['dit_licenses'] ?? [])[0]!['status'] = 'expired';
+    (db.tables['licenses'] ?? [])[0]!['status'] = 'expired';
     expect(await checkDevice(CODE, device('a'), db.client, privateKey)).toMatchObject({ ok: false, reason: 'license_inactive' });
   });
 
@@ -89,7 +89,7 @@ describe('activating computers with an authorization code', () => {
     const db = fakeSupabase(seed([license()]));
     expect(await codeMayDownload(CODE, db.client)).toBe(true);
     expect(await codeMayDownload('VCDIT-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ', db.client)).toBe(false);
-    (db.tables['dit_licenses'] ?? [])[0]!['status'] = 'revoked';
+    (db.tables['licenses'] ?? [])[0]!['status'] = 'revoked';
     expect(await codeMayDownload(CODE, db.client)).toBe(false);
   });
 });

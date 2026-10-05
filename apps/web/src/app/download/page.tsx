@@ -16,7 +16,7 @@ interface Release {
 const readReleases = async (): Promise<Release[]> => {
   try {
     const { data } = await adminClient()
-      .from('dit_release_builds')
+      .from('release_builds')
       .select('platform, version, minimum_os_version')
       .eq('channel', 'stable')
       .eq('active', true);

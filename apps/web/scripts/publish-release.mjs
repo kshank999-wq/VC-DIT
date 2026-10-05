@@ -1,5 +1,5 @@
 /**
- * Publishes an installer: uploads it to the private dit-releases bucket, records
+ * Publishes an installer: uploads it to the private releases bucket, records
  * the build, and makes it the current one for its platform. Customers can then
  * download it from their account (through a signed URL, after a license check).
  *
@@ -26,7 +26,7 @@ if (!url || !key) {
   process.exit(1);
 }
 
-const bucket = process.env.RELEASE_BUCKET || 'dit-releases';
+const bucket = process.env.RELEASE_BUCKET || 'releases';
 const client = createClient(url, key, { auth: { persistSession: false } });
 const bytes = readFileSync(file);
 const sha256 = createHash('sha256').update(bytes).digest('hex');
@@ -49,14 +49,14 @@ const row = {
   minimum_os_version: minimumOs || (platform === 'macos' ? 'macOS 11' : 'Windows 10'),
 };
 const { data: build, error } = await client
-  .from('dit_release_builds')
+  .from('release_builds')
   .upsert(row, { onConflict: 'platform,channel,version' })
   .select('id')
   .single();
 if (error) throw new Error(`record: ${error.message}`);
 
 // One active build per platform: retire the previous, then raise this one.
-await client.from('dit_release_builds').update({ active: false }).eq('platform', platform).eq('channel', 'stable').neq('id', build.id);
-const raised = await client.from('dit_release_builds').update({ active: true, published_at: new Date().toISOString() }).eq('id', build.id);
+await client.from('release_builds').update({ active: false }).eq('platform', platform).eq('channel', 'stable').neq('id', build.id);
+const raised = await client.from('release_builds').update({ active: true, published_at: new Date().toISOString() }).eq('id', build.id);
 if (raised.error) throw new Error(`activate: ${raised.error.message}`);
 console.log(`Published ${platform} ${version} (${objectKey}, sha256 ${sha256}).`);

@@ -32,15 +32,15 @@ describe('recording a subscription', () => {
     const again = await recordSubscription(subscription(), deps(db.client));
     expect(first).toMatchObject({ userId: 'u1', plan: 'dit', interval: 'year', status: 'active', created: true });
     expect(again).toMatchObject({ serial: first?.serial, created: false });
-    expect(db.tables['dit_subscriptions']).toHaveLength(1);
-    expect(db.tables['dit_licenses']).toHaveLength(1);
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ user_id: 'u1', plan: 'dit', paid_through: new Date(1_800_000_000_000).toISOString() });
+    expect(db.tables['subscriptions']).toHaveLength(1);
+    expect(db.tables['licenses']).toHaveLength(1);
+    expect(db.tables['licenses']?.[0]).toMatchObject({ user_id: 'u1', plan: 'dit', paid_through: new Date(1_800_000_000_000).toISOString() });
   });
 
-  it("uses the VC Writer customer's own account: one account across products", async () => {
-    const db = fakeSupabase({ profiles: [{ id: 'writer-customer', email: 'ken@example.com' }] });
+  it('uses the existing account for a returning customer', async () => {
+    const db = fakeSupabase({ profiles: [{ id: 'returning-customer', email: 'ken@example.com' }] });
     const record = await recordSubscription(subscription({ metadata: { product: 'vc-dit' } }), deps(db.client));
-    expect(record?.userId).toBe('writer-customer');
+    expect(record?.userId).toBe('returning-customer');
     expect(db.authUsers).toHaveLength(0);
   });
 
@@ -60,18 +60,18 @@ describe('recording a subscription', () => {
   it('follows a switch to monthly, a cancellation and the end', async () => {
     const db = fakeSupabase({ profiles: [{ id: 'u1', email: 'ken@example.com' }] });
     await recordSubscription(subscription(), deps(db.client));
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ plan: 'dit', status: 'active' });
+    expect(db.tables['licenses']?.[0]).toMatchObject({ plan: 'dit', status: 'active' });
 
     await recordSubscription(subscription({ price: 'price_m' }), deps(db.client));
-    expect(db.tables['dit_subscriptions']?.[0]).toMatchObject({ billing_interval: 'month' });
+    expect(db.tables['subscriptions']?.[0]).toMatchObject({ billing_interval: 'month' });
 
     await recordSubscription(subscription({ price: 'price_m', cancel_at_period_end: true }), deps(db.client));
-    expect(db.tables['dit_subscriptions']?.[0]).toMatchObject({ cancel_at_period_end: true });
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ status: 'active' });
+    expect(db.tables['subscriptions']?.[0]).toMatchObject({ cancel_at_period_end: true });
+    expect(db.tables['licenses']?.[0]).toMatchObject({ status: 'active' });
 
     await recordSubscription(subscription({ price: 'price_m', status: 'canceled' }), deps(db.client));
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ status: 'expired' });
-    expect(db.tables['dit_licenses']).toHaveLength(1);
+    expect(db.tables['licenses']?.[0]).toMatchObject({ status: 'expired' });
+    expect(db.tables['licenses']).toHaveLength(1);
   });
 
   it('keeps a refunded license revoked', async () => {
@@ -79,7 +79,7 @@ describe('recording a subscription', () => {
     await recordSubscription(subscription(), deps(db.client));
     expect(await revokeForSubscription(db.client, 'sub_1')).toBe(true);
     await recordSubscription(subscription(), deps(db.client));
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ status: 'revoked' });
+    expect(db.tables['licenses']?.[0]).toMatchObject({ status: 'revoked' });
     expect(await revokeForSubscription(db.client, 'sub_vcwriter_room')).toBe(false);
   });
 
@@ -91,10 +91,10 @@ describe('recording a subscription', () => {
       items: { data: [{ price: { id: 'price_y' }, current_period_end: 1_900_000_000 }] },
     } as unknown as Stripe.Subscription;
     await recordSubscription(newer, deps(db.client));
-    expect(db.tables['dit_licenses']?.[0]).toMatchObject({ paid_through: new Date(1_900_000_000_000).toISOString(), status: 'active' });
+    expect(db.tables['licenses']?.[0]).toMatchObject({ paid_through: new Date(1_900_000_000_000).toISOString(), status: 'active' });
   });
 
-  it("leaves VC Writer's subscriptions on the shared account alone", async () => {
+  it('leaves subscriptions that are not VC DIT\'s alone', async () => {
     const db = fakeSupabase();
     const room = subscription({ metadata: { room_id: 'r1' }, price: 'price_writers_room_seat' });
     expect(isOurs(room, prices)).toBe(false);

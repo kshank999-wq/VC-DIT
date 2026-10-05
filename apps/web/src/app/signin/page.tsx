@@ -46,7 +46,7 @@ function SignInForm() {
     <>
       <div className="hero">
         <h1>Sign in</h1>
-        <p className="lede">We will email you a link. One VC account covers VC DIT, VC Writer and VC Game Studio.</p>
+        <p className="lede">We will email you a link. No password to remember.</p>
       </div>
       <div className="panel" style={{ maxWidth: 520 }}>
         {failed && status !== 'sent' ? (

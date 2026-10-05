@@ -53,9 +53,9 @@ const findProfileByEmail = async (client: SupabaseClient, email: string): Promis
 };
 
 /**
- * The account this subscription belongs to. Shared with VC Writer: a VC Writer
- * customer who subscribes here is the same profile. Someone who checked out
- * signed out gets an account for their email, as in VC Writer, so a paid
+ * The account this subscription belongs to: the signed-in customer who
+ * started checkout, or the account for the checkout's email. Someone who
+ * checked out signed out gets an account for their email, so a paid
  * subscription is never stranded.
  */
 const resolveUser = async (client: SupabaseClient, metadataUserId: string | undefined, email: string): Promise<string> => {
@@ -99,7 +99,7 @@ export const recordSubscription = async (
   const itemPeriodEnd = (item as unknown as { current_period_end?: number }).current_period_end;
   const paidThrough = iso(subscription.current_period_end ?? itemPeriodEnd);
   const { data: row, error: rowError } = await client
-    .from('dit_subscriptions')
+    .from('subscriptions')
     .upsert(
       {
         user_id: userId,
@@ -119,7 +119,7 @@ export const recordSubscription = async (
   if (rowError || !row) throw new Error(`Could not record subscription ${subscription.id}: ${rowError?.message}`);
 
   const { data: existing } = await client
-    .from('dit_licenses')
+    .from('licenses')
     .select('id, serial, status')
     .eq('subscription_id', row.id)
     .maybeSingle();
@@ -127,7 +127,7 @@ export const recordSubscription = async (
   if (existing) {
     const status = licenseStatusFor(subscription.status, existing.status as LicenseStatus);
     const { error } = await client
-      .from('dit_licenses')
+      .from('licenses')
       .update({ plan: which.plan, status, paid_through: paidThrough })
       .eq('id', existing.id);
     if (error) throw new Error(`Could not update license ${existing.serial}: ${error.message}`);
@@ -136,7 +136,7 @@ export const recordSubscription = async (
 
   const status = licenseStatusFor(subscription.status);
   const { data: license, error: licenseError } = await client
-    .from('dit_licenses')
+    .from('licenses')
     .insert({
       user_id: userId,
       subscription_id: row.id,
@@ -150,7 +150,7 @@ export const recordSubscription = async (
 
   if (licenseError || !license) {
     // A concurrent delivery won unique(subscription_id); read its license.
-    const { data: raced } = await client.from('dit_licenses').select('serial').eq('subscription_id', row.id).maybeSingle();
+    const { data: raced } = await client.from('licenses').select('serial').eq('subscription_id', row.id).maybeSingle();
     if (raced) return { userId, email, serial: raced.serial as string, plan: which.plan, interval: which.interval, status, created: false };
     throw new Error(`Could not issue a license for subscription ${subscription.id}: ${licenseError?.message}`);
   }
@@ -161,11 +161,11 @@ export const recordSubscription = async (
 /** A refund or dispute takes the license with it, and it stays revoked. */
 export const revokeForSubscription = async (client: SupabaseClient, stripeSubscriptionId: string): Promise<boolean> => {
   const { data: row } = await client
-    .from('dit_subscriptions')
+    .from('subscriptions')
     .select('id')
     .eq('stripe_subscription_id', stripeSubscriptionId)
     .maybeSingle();
   if (!row) return false;
-  const { error } = await client.from('dit_licenses').update({ status: 'revoked' }).eq('subscription_id', row.id);
+  const { error } = await client.from('licenses').update({ status: 'revoked' }).eq('subscription_id', row.id);
   return !error;
 };

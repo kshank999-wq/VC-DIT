@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(): Promise<Response> {
   try {
     const { data } = await adminClient()
-      .from('dit_release_builds')
+      .from('release_builds')
       .select('platform, version, minimum_os_version, release_notes, published_at')
       .eq('channel', 'stable')
       .eq('active', true);

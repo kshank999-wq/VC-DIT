@@ -17,7 +17,7 @@ const bodySchema = z.object({ interval: z.enum(['month', 'year']) });
  * webhook once Stripe says the subscription exists.
  *
  * Signing in first is required, so the subscription lands on the right account
- * from the start (one VC account across VC Writer, VC Game Studio and VC DIT).
+ * from the start.
  * A returning customer reuses their Stripe customer, so their cards and
  * invoices stay in one place.
  */
@@ -33,7 +33,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { data: previous } = await adminClient()
-      .from('dit_subscriptions')
+      .from('subscriptions')
       .select('stripe_customer_id')
       .eq('user_id', user.id)
       .limit(1)
@@ -51,7 +51,7 @@ export async function POST(request: Request): Promise<Response> {
           : {}),
       client_reference_id: user.id,
       // On the session and, through subscription_data, on the subscription and
-      // its events: how VC Writer's webhook on the shared account knows to skip them.
+      // its events: how the webhook knows the subscription is VC DIT's.
       metadata,
       subscription_data: { metadata },
       allow_promotion_codes: true,

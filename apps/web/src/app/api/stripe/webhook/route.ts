@@ -13,13 +13,12 @@ export const dynamic = 'force-dynamic';
 /**
  * Stripe webhook: the only place a license is issued or changed.
  *
- * VC Writer's order of operations: verify the signature; claim the event id
- * (in dit_stripe_webhook_events, this endpoint's own table, since VC Writer's
- * endpoint on the shared account sees the same events); act, idempotently;
+ * Order of operations: verify the signature; claim the event id (in
+ * stripe_webhook_events, so a redelivery is handled once); act, idempotently;
  * email, whose failure is logged and never fails the webhook.
  *
- * Events that are not VC DIT's (VC Writer's purchases and rooms, VC Game
- * Studio's subscriptions) are acknowledged and left alone before anything is claimed.
+ * Events that are not VC DIT's (anything not on its prices or tagged by its
+ * checkout) are acknowledged and left alone before anything is claimed.
  */
 export async function POST(request: Request): Promise<Response> {
   const signature = request.headers.get('stripe-signature');
@@ -44,9 +43,9 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const client = adminClient();
-  const { error: claimError } = await client.from('dit_stripe_webhook_events').insert({ id: event.id, type: event.type });
+  const { error: claimError } = await client.from('stripe_webhook_events').insert({ id: event.id, type: event.type });
   if (claimError) {
-    const { data: seen } = await client.from('dit_stripe_webhook_events').select('processed_at').eq('id', event.id).maybeSingle();
+    const { data: seen } = await client.from('stripe_webhook_events').select('processed_at').eq('id', event.id).maybeSingle();
     if (seen?.processed_at) return NextResponse.json({ received: true, duplicate: true });
   }
 
@@ -65,8 +64,8 @@ export async function POST(request: Request): Promise<Response> {
         await sendLicenseEmail({ to: record.email, userId: record.userId, serial: record.serial, planName: PLANS[record.plan].name });
       }
     } else {
-      // A refund or dispute: follow the money back to its subscription. Other
-      // VC products' charges have no subscription of ours and change nothing.
+      // A refund or dispute: follow the money back to its subscription. Charges
+      // that are not for one of our subscriptions change nothing.
       // Read back through the SDK's pinned API version: newer webhook versions
       // drop `invoice` from the charge, and this is how a refund finds its subscription.
       const object = event.data.object as Stripe.Charge | Stripe.Dispute;
@@ -85,12 +84,12 @@ export async function POST(request: Request): Promise<Response> {
       }
     }
 
-    await client.from('dit_stripe_webhook_events').update({ processed_at: new Date().toISOString() }).eq('id', event.id);
+    await client.from('stripe_webhook_events').update({ processed_at: new Date().toISOString() }).eq('id', event.id);
     return NextResponse.json({ received: true });
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : 'Handling failed';
     // processed_at stays null, so Stripe's retry runs the (idempotent) handling again.
-    await client.from('dit_stripe_webhook_events').update({ error: message }).eq('id', event.id);
+    await client.from('stripe_webhook_events').update({ error: message }).eq('id', event.id);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

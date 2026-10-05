@@ -77,7 +77,7 @@ export default function Home() {
             <h2>One subscription, two computers</h2>
             <p className="muted">
               Monthly or yearly. Each subscription activates on {DEVICES_PER_LICENSE} computers, Mac or Windows: the cart and a
-              second station. Already a VC Writer or VC Game Studio customer? It is the same account.
+              second station.
             </p>
           </div>
           <div className="actions" style={{ justifyContent: 'flex-end' }}>

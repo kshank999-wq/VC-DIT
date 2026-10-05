@@ -59,9 +59,8 @@ export const env = {
     return { month: required('STRIPE_PRICE_MONTHLY'), year: required('STRIPE_PRICE_YEARLY') };
   },
   /**
-   * This product's own customer portal (made by `npm run setup -- stripe`).
-   * Not the account default, which VC Writer's Writers Room uses; without it
-   * the portal falls back to that default, so set it before selling.
+   * VC DIT's customer portal configuration (made by `npm run setup -- stripe`),
+   * offering monthly ↔ yearly. Without it Stripe uses the account default.
    */
   get stripePortalConfiguration(): string | undefined {
     return process.env['STRIPE_PORTAL_CONFIGURATION']?.trim() || undefined;
@@ -85,7 +84,7 @@ export const env = {
     return required('LICENSE_SIGNING_PRIVATE_KEY');
   },
   get releaseBucket(): string {
-    return optional('RELEASE_BUCKET', 'dit-releases');
+    return optional('RELEASE_BUCKET', 'releases');
   },
   get releaseDownloadTtlSeconds(): number {
     return Number.parseInt(optional('RELEASE_DOWNLOAD_TTL_SECONDS', '900'), 10);

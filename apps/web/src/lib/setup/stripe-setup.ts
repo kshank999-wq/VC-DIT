@@ -7,10 +7,8 @@ import { PLAN } from '../plans';
  * its monthly and yearly prices, the webhook endpoint, and a customer
  * portal configuration of its own.
  *
- * The portal is this product's own configuration rather than the account's
- * default, because the account is shared: VC Writer's Writers Room sends its
- * customers to the default portal, and they must not be offered VC DIT
- * prices to switch to. /api/billing/portal names this configuration.
+ * The portal is a named configuration (not the account default) so it offers
+ * exactly monthly ↔ yearly of VC DIT; /api/billing/portal names it.
  */
 
 export const WEBHOOK_EVENTS: Stripe.WebhookEndpointCreateParams.EnabledEvent[] = [
@@ -126,6 +124,6 @@ export const setupStripe = async (
         metadata: { product: 'vc-dit' },
       });
   env['STRIPE_PORTAL_CONFIGURATION'] = portal.id;
-  notes.push(`${mine ? 'Updated' : 'Created'} the VC DIT customer portal (not the account default, which VC Writer uses).`);
+  notes.push(`${mine ? 'Updated' : 'Created'} the VC DIT customer portal.`);
   return { env, notes };
 };
