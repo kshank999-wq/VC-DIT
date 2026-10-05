@@ -14,7 +14,7 @@ identity and are reused as they are.)
 | --- | --- | --- |
 | Website | `apps/web` (Next.js on Vercel, project `vc-dit`) | Home, pricing, sign-in, account (code, computers, billing), downloads, and the API the app calls |
 | Desktop app | `apps/desktop` (Electron) | Activates with the authorization code and checks its license (`src/main/licensing.ts`) |
-| Accounts and records | Supabase project **vc-dit** (its own) | Schema in `supabase/migrations/0001_vc_dit_base.sql` |
+| Accounts and records | Supabase project **vcdit** (`wdpbzwqzjpxabvfailly`, Canada Central) | Schema `supabase/migrations/0001_vc_dit_base.sql`, **applied 5 Oct 2026** |
 | Payments | A Stripe account of VC DIT's own | One product, VC DIT: **$9.99 / month** or **$99 / year** |
 | Email | Resend, domain vc-dit.com | The authorization code email |
 
@@ -56,9 +56,8 @@ shown to its owner.
 
 ## Before setting up: two accounts to create
 
-1. **Supabase:** a new project named `vc-dit` in your organization (region
-   us-west-1). Then run `supabase/migrations/0001_vc_dit_base.sql` in its SQL
-   editor (or `supabase db push` with the CLI linked to it). It creates
+1. **Supabase:** done. Project `vcdit` (`wdpbzwqzjpxabvfailly`), with
+   `supabase/migrations/0001_vc_dit_base.sql` applied. It created
    everything: profiles (kept from sign-ups by a trigger), the email log, the
    rate limiter, subscriptions, licenses, device seats, release builds, the
    webhook event log, row level security, and the private `releases` bucket.
@@ -104,11 +103,10 @@ repository root, after `npm install`.
 
 ## Supabase (the vc-dit project)
 
-- **Database:** `supabase/migrations/0001_vc_dit_base.sql`, applied once to
-  the new project (see above). After applying, run the security advisor
-  (Advisors → Security): it should report only the three service-role-only
-  tables (`email_events`, `rate_limits`, `stripe_webhook_events`) as having
-  no policies, which is intended.
+- **Database:** `supabase/migrations/0001_vc_dit_base.sql`, applied 5 Oct
+  2026. The security advisor reports only the three service-role-only tables
+  (`email_events`, `rate_limits`, `stripe_webhook_events`) as having no
+  policies, which is intended.
 - **Auth → Providers → Email:** on (magic link). The website is the only
   place anyone signs in; the desktop app uses the authorization code.
 - **Auth → URL configuration:** Site URL `https://vc-dit.com`, redirect
@@ -118,9 +116,9 @@ repository root, after `npm install`.
 
 | Variable | Value | Notes |
 | --- | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | `https://<vc-dit ref>.supabase.co` | Public |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → vc-dit → API Keys → `sb_publishable_…` | Public |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → vc-dit → API Keys → `sb_secret_…` | **Secret** |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://wdpbzwqzjpxabvfailly.supabase.co` | Public |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `sb_publishable_8M_0eryvwynnQi9pjzTMIA_Y2tPcC8t` | Public |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → vcdit → API Keys → `sb_secret_…` | **Secret** |
 | `STRIPE_SECRET_KEY` | VC DIT's Stripe account → Developers → API keys | **Secret** |
 | `STRIPE_WEBHOOK_SECRET` | The vc-dit.com endpoint's signing secret, from step 3 | **Secret** |
 | `STRIPE_PRICE_MONTHLY` | `price_…` ($9.99 / month) | From step 3 |
@@ -155,7 +153,7 @@ artifacts, and, after approval in the `release` environment, publishes them
 | --- | --- | --- |
 | Variable | `MAIN_VITE_SITE_URL` | `https://vc-dit.com` |
 | Variable | `MAIN_VITE_LICENSE_PUBLIC_KEY` | The public key from step 2 |
-| Variable | `SUPABASE_URL` | `https://<vc-dit ref>.supabase.co` (the publish job) |
+| Variable | `SUPABASE_URL` | `https://wdpbzwqzjpxabvfailly.supabase.co` (the publish job) |
 | Secret | `SUPABASE_SERVICE_ROLE_KEY` | For the publish job |
 | Secret | `CSC_LINK`, `CSC_KEY_PASSWORD` | Apple Developer ID Application certificate (.p12, base64) and its password |
 | Secret | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |

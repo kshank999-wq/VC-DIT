@@ -261,6 +261,11 @@ create policy "customers read their own profile" on public.profiles
   for select to authenticated using (id = (select auth.uid()));
 create policy "customers update their own profile" on public.profiles
   for update to authenticated using (id = (select auth.uid())) with check (id = (select auth.uid()));
+-- Only the display name. `email` is what the webhook matches a buyer by, so it
+-- is written only by the auth triggers: a customer who could set it could
+-- claim someone else's address and receive their purchase.
+revoke update on public.profiles from anon, authenticated;
+grant update (display_name) on public.profiles to authenticated;
 
 create policy "customers read their own subscriptions" on public.subscriptions
   for select to authenticated using (user_id = (select auth.uid()));

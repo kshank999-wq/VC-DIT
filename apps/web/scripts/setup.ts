@@ -39,7 +39,7 @@ const say = (lines: string[]) => lines.forEach((line) => console.log(`· ${line}
 const [step, ...args] = process.argv.slice(2);
 const env = read();
 // The vc-dit Supabase project's ref (Supabase → Project Settings → General → Project ID).
-const SUPABASE_REF = env['SUPABASE_PROJECT_REF'] ?? process.env['SUPABASE_PROJECT_REF'] ?? '';
+const SUPABASE_REF = env['SUPABASE_PROJECT_REF'] ?? process.env['SUPABASE_PROJECT_REF'] ?? 'wdpbzwqzjpxabvfailly';
 
 const DEFAULTS = {
   ...(SUPABASE_REF ? { NEXT_PUBLIC_SUPABASE_URL: `https://${SUPABASE_REF}.supabase.co` } : {}),
@@ -76,7 +76,7 @@ switch (step) {
     break;
   }
   case 'supabase': {
-    const result = await setupSupabaseAuth(fetch, { accessToken: need(env, 'SUPABASE_ACCESS_TOKEN'), projectRef: need(env, 'SUPABASE_PROJECT_REF'), callbackUrl: `${SITE}/auth/callback`, siteUrl: SITE });
+    const result = await setupSupabaseAuth(fetch, { accessToken: need(env, 'SUPABASE_ACCESS_TOKEN'), projectRef: SUPABASE_REF, callbackUrl: `${SITE}/auth/callback`, siteUrl: SITE });
     say(result.notes);
     break;
   }
