@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Dailies } from '../screens/Dailies';
+import { Dailies, dailiesFigures } from '../screens/Dailies';
 import { Delivery } from '../screens/Delivery';
 import { Looks } from '../screens/Looks';
 import { SyncWorkspace } from '../screens/SyncWorkspace';
@@ -78,7 +78,9 @@ describe('Dailies', () => {
   it('changes options, builds, and goes on to delivery', () => {
     mount(<Dailies />);
     fireEvent.click(screen.getByRole('button', { name: /All takes/ }));
-    expect(screen.getByText('36 clips · ~52 min · ≈ 86 GB')).toBeTruthy();
+    const all = dailiesFigures(initialState().scenes, 'all');
+    expect(all.takes).toBe(32);
+    expect(screen.getByText(`${all.takes} clips · ~${all.minutes} min · ≈ ${all.gb} GB`)).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Codec'), { target: { value: 'DNxHD 36' } });
     expect((screen.getByLabelText('Codec') as HTMLSelectElement).value).toBe('DNxHD 36');
     const notes = screen.getByRole('button', { name: 'Notes' });

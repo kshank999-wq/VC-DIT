@@ -10,11 +10,25 @@ import './output.css';
  * recorded in metadata and in the report (spec §4.7).
  */
 
-const INCLUDE: { value: DailiesOptions['include']; title: string; detail: string }[] = [
-  { value: 'circle', title: 'Circle takes only', detail: '14 takes · 18 min' },
-  { value: 'all', title: 'All takes', detail: '36 takes · 52 min' },
-  { value: 'scene', title: 'By scene…', detail: 'choose scenes' },
+const INCLUDE: { value: DailiesOptions['include']; title: string }[] = [
+  { value: 'circle', title: 'Circle takes only' },
+  { value: 'all', title: 'All takes' },
+  { value: 'scene', title: 'By scene…' },
 ];
+
+/** About 1.7 GB a minute for ProRes 422 Proxy at 1080; a planning figure, not a promise. */
+const GB_PER_MINUTE = 1.7;
+
+/** Takes, minutes and size for an include choice, counted from the day's takes. */
+export const dailiesFigures = (scenes: Scene[], include: DailiesOptions['include']) => {
+  const takes = scenes.flatMap((scene) => scene.setups.flatMap((setup) => setup.takes)).filter((take) => include === 'all' || take.circle);
+  const seconds = takes.reduce((sum, take) => {
+    const [minutes = 0, secs = 0] = take.duration.split(':').map(Number);
+    return sum + minutes * 60 + secs;
+  }, 0);
+  const minutes = Math.round(seconds / 60);
+  return { takes: takes.length, minutes, gb: Math.round(minutes * GB_PER_MINUTE) };
+};
 
 type Field = 'codec' | 'resolution' | 'audio' | 'look' | 'grouping' | 'destination';
 
@@ -27,11 +41,6 @@ const FIELDS: { key: Field; label: string; options: string[] }[] = [
   { key: 'destination', label: 'Destination', options: ['Frame.io + PROD_NAS', 'Frame.io only', 'PROD_NAS only'] },
 ];
 
-const SUMMARY: Record<DailiesOptions['include'], string> = {
-  circle: '14 clips · ~18 min · ≈ 31 GB',
-  all: '36 clips · ~52 min · ≈ 86 GB',
-  scene: '14 clips · ~18 min · ≈ 31 GB',
-};
 
 const sceneFolder = (id: string) => `Sc ${id.replace(/^\d+/, (digits) => digits.padStart(3, '0'))}/`;
 const clipName = (scene: string, setup: string, take: string) => `${scene}${/[A-Z]$/.test(scene) ? '-' : ''}${setup}_${take} ◎.mov`;
@@ -62,6 +71,13 @@ export function Dailies() {
   const { state, dispatch } = useStore();
   const { dailies } = state;
   const tree = publishTree(state.production.name, state.day.number, state.day.date, state.scenes);
+  const detail = (include: DailiesOptions['include']) => {
+    if (include === 'scene') return 'choose scenes';
+    const figures = dailiesFigures(state.scenes, include);
+    return `${figures.takes} takes · ${figures.minutes} min`;
+  };
+  // "By scene" has no scene picker yet, so it counts the circle takes like the default.
+  const chosen = dailiesFigures(state.scenes, dailies.include === 'all' ? 'all' : 'circle');
 
   return (
     <div className="screen out">
@@ -88,7 +104,7 @@ export function Dailies() {
                   onClick={() => dispatch({ type: 'setDailies', patch: { include: option.value } })}
                 >
                   <span className="strong">{option.title}</span>
-                  <span className="mono muted small">{option.detail}</span>
+                  <span className="mono muted small">{detail(option.value)}</span>
                 </button>
               ))}
             </div>
@@ -125,7 +141,7 @@ export function Dailies() {
 
           <div className="row summary-row">
             <div className="grow stack gap-3">
-              <span className="mono strong summary-title">{SUMMARY[dailies.include]}</span>
+              <span className="mono strong summary-title">{`${chosen.takes} clips · ~${chosen.minutes} min · ≈ ${chosen.gb} GB`}</span>
               <span className="muted small">Originals untouched. Look recorded in metadata and report.</span>
             </div>
             {dailies.built ? (
