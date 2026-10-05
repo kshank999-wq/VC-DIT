@@ -1,9 +1,263 @@
-import { ScreenHeader } from '../ui/kit';
+import { useState, type FormEvent } from 'react';
+import type { ChecksumMethod, SceneStatus, Status } from '../model/types';
+import { useStore } from '../state/store';
+import { ScreenHeader, StatusText, statusVar, stepVar, tone } from '../ui/kit';
+import './ingest.css';
+
+/**
+ * Project setup: what is set once per production (name, frame rate, the
+ * default checksum, cameras and sound), the day's scene list, the naming
+ * template and the script supervisor's log. Spec rule shown here: original
+ * camera filenames are never rewritten; scene/setup/take mapping lives in
+ * the media index (spec §4.4).
+ */
+
+const CHECKSUMS: ChecksumMethod[] = ['xxHash64', 'MD5', 'SHA-1'];
+const FRAME_RATES = ['23.976 fps', '24 fps', '25 fps', '29.97 fps', '30 fps', '48 fps', '50 fps', '59.94 fps', '60 fps'];
+const SCENE_STATUSES: SceneStatus[] = ['Scheduled', 'Shooting', 'Shot', 'Dropped'];
+const SCENE_TONE: Record<SceneStatus, Status> = { Scheduled: 'idle', Shooting: 'working', Shot: 'done', Dropped: 'needs' };
 
 export function ProjectSetup() {
+  const { state, dispatch } = useStore();
+  const { production, day, scriptLog } = state;
+  const [sceneId, setSceneId] = useState('');
+  const [sceneDescription, setSceneDescription] = useState('');
+  const pad3 = (n: number) => String(n).padStart(3, '0');
+
+  const sceneTaken = state.scenes.some((scene) => scene.id === sceneId.trim().toUpperCase());
+  const addScene = (event: FormEvent) => {
+    event.preventDefault();
+    if (!sceneId.trim() || sceneTaken) return;
+    dispatch({ type: 'addScene', id: sceneId, description: sceneDescription });
+    setSceneId('');
+    setSceneDescription('');
+  };
+
+  // Matched / Review the same way the flow bar counts them (status.ts summarize).
+  const review = state.matches.filter((match) => match.resolution === null).length;
+  const matched = scriptLog.entries - review;
+
+  // A sample take, to show what the template and the folder layout produce.
+  const sample = { scene: '14', setup: 'B', take: '04', cam: 'A', reel: '014' };
+  const exampleName = production.namingTokens
+    .join('')
+    .replace('{PROD}', production.code || 'PROD')
+    .replace('{DAY}', pad3(day.number))
+    .replace('{SCENE}', sample.scene)
+    .replace('{SETUP}', sample.setup)
+    .replace('{TAKE}', sample.take)
+    .replace('{CAM}', sample.cam)
+    .replace('{REEL}', sample.reel);
+  const folders = [
+    production.name || 'PRODUCTION',
+    `SHOOT_DAY_${pad3(day.number)}_${day.date}`,
+    'CAMERA_ORIGINALS',
+    `SCENE_${sample.scene.padStart(3, '0')}`,
+    `SETUP_${sample.setup}`,
+  ];
+
   return (
-    <div className="screen">
-      <ScreenHeader eyebrow="Project setup" title="Production settings" description="To be built." />
+    <div className="screen setup">
+      <ScreenHeader
+        eyebrow="Project setup"
+        title="Production settings"
+        description="Saved per production — you set this up once, not every card."
+        actions={
+          <span className="mono setup-saved" style={tone(statusVar('done'))}>
+            ● Changes save as you type
+          </span>
+        }
+      />
+
+      <div className="setup-row">
+        <section className="card" aria-labelledby="setup-production">
+          <div className="card-head">
+            <h3 id="setup-production">Production</h3>
+          </div>
+          <div className="card-body setup-fields">
+            <label className="field">
+              <span className="label">Production</span>
+              <input className="input" value={production.name} onChange={(event) => dispatch({ type: 'setProduction', patch: { name: event.target.value } })} />
+            </label>
+            <label className="field">
+              <span className="label">Code</span>
+              <input
+                className="input mono"
+                value={production.code}
+                maxLength={6}
+                onChange={(event) => dispatch({ type: 'setProduction', patch: { code: event.target.value.toUpperCase() } })}
+              />
+            </label>
+            <label className="field">
+              <span className="label">Shoot day</span>
+              <span className="row setup-day">
+                <input className="input" value={pad3(day.number)} readOnly aria-readonly="true" title="Set by the shoot day you have open" />
+                <span className="muted">of</span>
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  aria-label="Total shoot days"
+                  value={production.totalDays}
+                  onChange={(event) => dispatch({ type: 'setProduction', patch: { totalDays: Math.max(1, Number(event.target.value) || 1) } })}
+                />
+              </span>
+            </label>
+            <label className="field">
+              <span className="label">Date</span>
+              <input className="input" value={day.date} readOnly aria-readonly="true" title="Set by the shoot day you have open" />
+            </label>
+            <label className="field">
+              <span className="label">Frame rate</span>
+              <select className="select" value={production.frameRate} onChange={(event) => dispatch({ type: 'setProduction', patch: { frameRate: event.target.value } })}>
+                {(FRAME_RATES.includes(production.frameRate) ? FRAME_RATES : [production.frameRate, ...FRAME_RATES]).map((rate) => (
+                  <option key={rate}>{rate}</option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span className="label">Checksum default</span>
+              <select
+                className="select"
+                value={production.checksum}
+                onChange={(event) => dispatch({ type: 'setProduction', patch: { checksum: event.target.value as ChecksumMethod } })}
+              >
+                {CHECKSUMS.map((method) => (
+                  <option key={method}>{method}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="field setup-span">
+              <span className="label">Cameras &amp; sound</span>
+              <ul className="setup-devices">
+                {production.devices.map((device) => (
+                  <li key={device.slot}>
+                    <span className="setup-slot mono">{device.slot}</span>
+                    <span className="grow">{device.name}</span>
+                    <span className="muted mono">{device.format}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section className="card" aria-labelledby="setup-scenes">
+          <div className="card-head">
+            <h3 id="setup-scenes">Day {pad3(day.number)} scene list</h3>
+            <span className="muted">Set each scene's status</span>
+          </div>
+          <ul className="setup-scenes">
+            {state.scenes.map((scene) => (
+              <li key={scene.id} className={scene.status === 'Dropped' ? 'dropped' : undefined}>
+                <span className="mono setup-scene-id">{scene.id}</span>
+                <span className="grow setup-scene-desc">{scene.description}</span>
+                <span className="setup-status" style={tone(statusVar(SCENE_TONE[scene.status]))}>
+                  <span className="dot" />
+                  <select
+                    aria-label={`Scene ${scene.id} status`}
+                    value={scene.status}
+                    onChange={(event) => dispatch({ type: 'setSceneStatus', scene: scene.id, status: event.target.value as SceneStatus })}
+                  >
+                    {SCENE_STATUSES.map((status) => (
+                      <option key={status}>{status}</option>
+                    ))}
+                  </select>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <form className="setup-add" onSubmit={addScene}>
+            <input className="input mono setup-add-id" placeholder="Scene no. — e.g. 23" aria-label="New scene number" value={sceneId} onChange={(event) => setSceneId(event.target.value)} />
+            <input
+              className="input grow"
+              placeholder="Description (optional) — e.g. EXT. HANGAR – NIGHT"
+              aria-label="New scene description"
+              value={sceneDescription}
+              onChange={(event) => setSceneDescription(event.target.value)}
+            />
+            <button type="submit" className="btn" disabled={!sceneId.trim() || sceneTaken} title={sceneTaken ? 'That scene is already on the list' : undefined}>
+              Add scene
+            </button>
+          </form>
+          {sceneTaken ? <p className="why-disabled setup-add-why">Scene {sceneId.trim().toUpperCase()} is already on the list.</p> : null}
+        </section>
+      </div>
+
+      <div className="setup-row wide">
+        <section className="card" aria-labelledby="setup-naming">
+          <div className="card-head">
+            <h3 id="setup-naming">Naming template</h3>
+          </div>
+          <div className="card-body stack">
+            <div className="setup-tokens" aria-label="Naming template tokens">
+              {production.namingTokens.map((token, index) =>
+                token === '_' ? (
+                  <span key={index} className="setup-sep mono" aria-hidden="true">
+                    _
+                  </span>
+                ) : (
+                  <span key={index} className="setup-token mono">
+                    {token}
+                  </span>
+                ),
+              )}
+            </div>
+            <div className="field">
+              <span className="label">Folder preview</span>
+              <div className="mono setup-preview">
+                {folders.join(' / ')} / <span style={{ color: stepVar('intake') }}>A014C018_261005_R1ZK.ari</span>
+              </div>
+              <div className="mono setup-preview muted">
+                Indexed as <span style={{ color: stepVar('organize') }}>{exampleName}</span>
+              </div>
+            </div>
+            <p className="muted setup-note">
+              Original camera filenames are preserved. Scene/setup/take mapping is stored in the media index, not written into protected originals.
+            </p>
+          </div>
+        </section>
+
+        <section className="card" aria-labelledby="setup-log">
+          <div className="card-head">
+            <h3 id="setup-log">Script supervisor log</h3>
+            <button type="button" className="link" onClick={() => dispatch({ type: 'go', screen: 'match' })}>
+              Match review →
+            </button>
+          </div>
+          <div className="card-body stack">
+            <div className="setup-file">
+              <span className="setup-csv mono">CSV</span>
+              <div className="grow">
+                <div className="mono setup-file-name">{scriptLog.file}</div>
+                <div className="muted">Imported {scriptLog.importedAt} · neutral interchange schema</div>
+              </div>
+              <button type="button" className="btn small" onClick={() => dispatch({ type: 'reimportScriptLog' })}>
+                Re-import
+              </button>
+            </div>
+            <div className="setup-stats">
+              <Stat value={scriptLog.entries} label="Entries" />
+              <Stat value={matched} label="Matched" color={statusVar('done')} />
+              <Stat value={review} label="Review" color={statusVar(review > 0 ? 'needs' : 'done')} />
+              <Stat value={scriptLog.vfxFlags} label="VFX flags" color={stepVar('vfx')} />
+            </div>
+            {review > 0 ? <StatusText status="needs" word={`${review} entr${review === 1 ? 'y needs' : 'ies need'} a decision in Match review`} /> : null}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ value, label, color }: { value: number; label: string; color?: string }) {
+  return (
+    <div className="setup-stat">
+      <span className="setup-stat-value" style={color ? { color } : undefined}>
+        {value}
+      </span>
+      <span className="muted">{label}</span>
     </div>
   );
 }
