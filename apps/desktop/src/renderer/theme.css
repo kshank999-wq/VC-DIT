@@ -116,6 +116,7 @@ button, input, select { font: inherit; color: inherit; }
 .btn.primary { background: var(--tone, var(--ink)); border-color: var(--tone, var(--ink)); color: var(--on-tone, var(--on-ink)); font-weight: 600; }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--tone, var(--ink)); }
 .btn.danger { background: var(--s-problem); border-color: var(--s-problem); color: #fff; font-weight: 600; }
+[data-theme='dark'] .btn.danger { color: var(--on-ink); }
 .btn.big { height: 42px; padding: 0 20px; font-size: 13.5px; }
 .btn.small { height: 26px; padding: 0 10px; font-size: 12px; }
 .btn.ghost { border-color: transparent; background: transparent; }
