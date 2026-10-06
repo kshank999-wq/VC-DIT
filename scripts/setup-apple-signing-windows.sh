@@ -78,7 +78,24 @@ for f in "$DIR"/*.cer "$DIR"/*.crt "$DIR"/*.pem; do
     fi
   done
 done
+fp() { openssl sha256 | tail -c 13; }
 if [ -z "$best_cert" ]; then
+  # Show what was compared: public-key fingerprints only, nothing secret.
+  say "Your private key(s):"
+  for k in "${keys[@]}"; do say "  $(openssl pkey -in "$k" -pubout 2>/dev/null | fp)  $(basename "$k")"; done
+  for f in "$DIR"/*.csr; do
+    [ -f "$f" ] && say "  $(openssl req -in "$f" -noout -pubkey 2>/dev/null | fp)  $(basename "$f") (request)"
+  done
+  say "Certificates found:"
+  for f in "$DIR"/*.cer "$DIR"/*.crt "$DIR"/*.pem; do
+    [ -f "$f" ] || continue
+    pem="$(openssl x509 -in "$f" -inform DER 2>/dev/null || openssl x509 -in "$f" 2>/dev/null || true)"
+    [ -n "$pem" ] || continue
+    kind="$(printf '%s' "$pem" | openssl x509 -noout -subject 2>/dev/null | sed -E 's/.*CN ?= ?([^,/]*).*/\1/' | cut -c1-34)"
+    end="$(printf '%s' "$pem" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)"
+    say "  $(printf '%s' "$pem" | openssl x509 -noout -pubkey 2>/dev/null | fp)  $(basename "$f")  [$kind, expires $end]"
+  done
+  say ""
   say "None of the Developer ID certificates here belongs to your private key."
   say "Download the right one: developer.apple.com → Certificates → the Developer ID Application"
   say "made from your .csr → Download, put it in this folder, and run this again."
