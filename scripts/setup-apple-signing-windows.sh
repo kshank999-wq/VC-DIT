@@ -137,6 +137,27 @@ say ""
 [ -n "$apple_id" ] && [ -n "$app_password" ] || fail "Both are needed."
 say ""
 
+# Put one value where you can paste it: the clipboard, checked; if the
+# clipboard did not take it, a text file opened in Notepad, deleted as soon as
+# you press Enter.
+clip_len() { powershell.exe -NoProfile -Command "[Console]::Out.Write((Get-Clipboard -Raw).Length)" 2>/dev/null | tr -d '\r'; }
+give() {
+  local n="$1" name="$2" value="$3" got file
+  printf '%s' "$value" | copy 2>/dev/null || true
+  got="$(clip_len || true)"
+  if [ -n "$got" ] && [ "$got" = "${#value}" ]; then
+    read -r -p "  $n/5  Name: $name   (value copied: paste with Ctrl+V) - press Enter when saved " _
+  else
+    file="$HOME/Desktop"; [ -d "$file" ] || file="$HOME"; file="$file/VCDIT-$name.txt"
+    printf '%s' "$value" > "$file"
+    (notepad.exe "$(cygpath -w "$file" 2>/dev/null || echo "$file")" &) 2>/dev/null || true
+    say "  $n/5  Name: $name"
+    say "        The value is open in Notepad: press Ctrl+A, Ctrl+C there, paste into GitHub, close Notepad."
+    read -r -p "        Press Enter when saved (the file is then deleted) " _
+    rm -f "$file"
+  fi
+}
+
 # ---------------------------------------------------------------- 5. into GitHub
 names=(CSC_LINK CSC_KEY_PASSWORD APPLE_TEAM_ID APPLE_ID APPLE_APP_SPECIFIC_PASSWORD)
 values=("$csc_link" "$export_pass" "$team_id" "$apple_id" "$app_password")
@@ -152,10 +173,9 @@ else
   say "type the name shown, paste (Ctrl+V) into Secret, save, then come back here."
   open_url "$SECRETS_PAGE"
   for i in "${!names[@]}"; do
-    printf '%s' "${values[$i]}" | copy
-    read -r -p "  $((i + 1))/5  Name: ${names[$i]}   (value copied) - press Enter when saved " _
+    give "$((i + 1))" "${names[$i]}" "${values[$i]}"
   done
-  printf ' ' | copy
+  printf ' ' | copy 2>/dev/null || true
 fi
 
 say ""
