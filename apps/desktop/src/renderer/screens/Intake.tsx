@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import type { ChecksumMethod, Volume, VolumeRole } from '../model/types';
+import { engine, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import './ingest.css';
@@ -30,6 +32,29 @@ const freeOf = (volume: Volume): string => {
 
 export function Intake() {
   const { state, dispatch } = useStore();
+  const media = state.engine ? engine() : null;
+  const [notice, setNotice] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const answer = (result: { ok: boolean; reason?: string }) => setNotice(result.ok ? null : (result.reason ?? null));
+
+  const setRole = (volume: Volume, role: VolumeRole) => {
+    dispatch({ type: 'setVolumeRole', volume: volume.id, role });
+    if (media) void media.setRole(volume.id, role).then(answer);
+  };
+  const start = async () => {
+    if (!media) {
+      dispatch({ type: 'startIngest' });
+      return;
+    }
+    setStarting(true);
+    try {
+      const result = await media.ingest(ingestRequest(state));
+      answer(result);
+      if (result.ok) dispatch({ type: 'go', screen: 'verify' });
+    } finally {
+      setStarting(false);
+    }
+  };
   const isSource = (volume: Volume) => SOURCE_ROLES.includes(volume.role);
   const sources = state.volumes.filter((volume) => isSource(volume) && volume.included && !volume.ingested);
   const volumeDestinations = state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role));
@@ -39,8 +64,9 @@ export function Intake() {
   ];
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-  const blocker =
-    sources.length === 0
+  const blocker = starting
+    ? 'Reading the cards…'
+    : sources.length === 0
       ? 'Tick at least one camera or sound card that has not been ingested yet.'
       : destinations.length === 0
         ? 'Pick at least one destination on the right.'
@@ -59,6 +85,11 @@ export function Intake() {
             <span className="muted">Cards · read-only</span>
           </div>
           <div className="intake-list">
+            {state.volumes.length === 0 ? (
+              <div className="intake-empty muted" role="status">
+                No cards or drives found. Plug in a camera card, sound card or drive and it shows up here within a few seconds.
+              </div>
+            ) : null}
             {state.volumes.map((volume) => {
               const source = isSource(volume);
               return (
@@ -75,7 +106,7 @@ export function Intake() {
                         <span className="muted intake-detected">{volume.detected}</span>
                       </div>
                       <div className="muted">
-                        {volume.media} · {volume.used}
+                        {volume.media} · {volume.used} used{volume.filesystem ? ` · ${volume.filesystem}` : ''}
                       </div>
                     </div>
                     <select
@@ -83,7 +114,7 @@ export function Intake() {
                       aria-label={`Role of ${volume.name}`}
                       value={volume.role}
                       disabled={volume.ingested}
-                      onChange={(event) => dispatch({ type: 'setVolumeRole', volume: volume.id, role: event.target.value as VolumeRole })}
+                      onChange={(event) => setRole(volume, event.target.value as VolumeRole)}
                     >
                       {ROLES.map((role) => (
                         <option key={role}>{role}</option>
@@ -154,9 +185,15 @@ export function Intake() {
               <span className="muted">Keep at least two verified copies before a card is formatted.</span>
             </div>
           ) : null}
-          <StartButton step="intake" big disabledReason={blocker} onClick={() => dispatch({ type: 'startIngest' })}>
+          <StartButton step="intake" big disabledReason={blocker} onClick={() => void start()}>
             Start verified ingest
           </StartButton>
+          {notice ? (
+            <div className="intake-warning" role="alert" style={tone(statusVar('problem'))}>
+              <StatusText status="problem" word="Not started" />
+              <span className="muted">{notice}</span>
+            </div>
+          ) : null}
         </section>
 
         <section className="intake-zone" aria-labelledby="intake-out">
@@ -176,6 +213,7 @@ export function Intake() {
                 fillPct={destination.fillPct}
                 selected={destination.selected}
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: destination.id })}
+                onRemove={media ? () => void media.removeFolder(destination.id) : undefined}
               />
             ))}
             {volumeDestinations.map((volume) => (
@@ -189,8 +227,20 @@ export function Intake() {
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: volume.id })}
               />
             ))}
-            <button type="button" className="intake-add" disabled title="Coming with the media engine">
-              + Add destination or preset
+            {media && state.destinations.length === 0 && volumeDestinations.length === 0 ? (
+              <div className="intake-empty muted">
+                No destinations yet. Set a drive's role to Destination, Shuttle or Archive on the left, or add a folder (a NAS share, a LucidLink
+                folder, a folder on the RAID).
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="intake-add"
+              disabled={!media}
+              title={media ? 'Pick a folder to copy into: a NAS share, a LucidLink folder, a folder on the RAID' : 'Available in the desktop app'}
+              onClick={() => media && void media.addFolder().then(answer)}
+            >
+              + Add destination folder
             </button>
           </div>
         </section>
@@ -206,6 +256,7 @@ function DestinationCard({
   fillPct,
   selected,
   onToggle,
+  onRemove,
 }: {
   name: string;
   kind: string;
@@ -213,6 +264,7 @@ function DestinationCard({
   fillPct: number;
   selected: boolean;
   onToggle: () => void;
+  onRemove?: () => void;
 }) {
   return (
     <label className={`card intake-card intake-dest${selected ? ' selected' : ''}`}>
@@ -223,6 +275,20 @@ function DestinationCard({
           <div className="muted">{kind}</div>
         </div>
         <span className="muted">{free} free</span>
+        {onRemove ? (
+          <button
+            type="button"
+            className="btn ghost small"
+            aria-label={`Remove ${name} from destinations`}
+            title="Remove from the list (nothing is deleted)"
+            onClick={(event) => {
+              event.preventDefault();
+              onRemove();
+            }}
+          >
+            ×
+          </button>
+        ) : null}
       </div>
       <ProgressBar pct={fillPct} color="var(--s-working)" label={`${name} capacity used`} />
     </label>

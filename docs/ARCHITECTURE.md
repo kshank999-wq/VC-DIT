@@ -10,7 +10,8 @@ project, Stripe account, Resend domain and Vercel project. Product requirements 
 ```
 apps/
   desktop/   Electron app (TypeScript, React, electron-vite, electron-builder)
-    src/main/       main process: window, license, and (to come) the media engine
+    src/main/       main process: window, license, and the media engine (media/)
+    src/shared/     types the engine and the screens share over IPC
     src/preload/    the narrow bridge the renderer may call (window.vcdit)
     src/renderer/   React UI, built from docs/ui/HANDOFF.md
       model/          types (spec §6), the HALCYON demo day, status.ts (all derived status)
@@ -47,6 +48,23 @@ reads and exports but starts no new ingest or delivery; a running transfer
 always finishes. Code: `apps/desktop/src/main/licensing.ts`,
 `apps/web/src/lib/activation-service.ts`.
 
+## The media engine (`src/main/media`)
+
+| File | Does |
+| --- | --- |
+| `volumes.ts` | Finds mounted volumes every 2 s (`/Volumes` on macOS, drive letters on Windows), describes each once (diskutil / CIM), and suggests a role from what is on it (ARRI, RED, Sony, Blackmagic, Canon, sound WAVs, a VC DIT drive, empty) |
+| `transfer.ts` | The verified copy: reads the card once, hashes and writes every destination in the same pass, then reads each copy back and compares |
+| `checksum.ts` | xxHash64 (WebAssembly), MD5, SHA-1, fed chunk by chunk |
+| `reports.ts` | ASC MHL v2.0 generation + chain file in each card folder; CSV and JSON transfer logs in `REPORTS/ingest_verification/` |
+| `rules.ts` | Where copies go (spec §5 folder model) and where they may never go |
+| `media-service.ts` | Roles (remembered per volume), destination folders, the queue (one transfer at a time), retries, preflight (space, safety), what the screens see |
+| `transfer-worker.ts` | Runs one transfer in a worker thread, so the window never stalls while gigabytes are hashed |
+
+Copies land in `PRODUCTION/SHOOT_DAY_###_DATE/CAMERA_ORIGINALS/<card>/` (or
+`SOUND_ORIGINALS`) on every destination, the card's own folder tree inside.
+Scene/setup organization (spec §4.4) is a view over these, coming with the
+local database.
+
 ## Media integrity rules (spec §8), as engineering constraints
 
 - **Originals are read-only.** The copy engine opens sources read-only; no
@@ -56,7 +74,22 @@ always finishes. Code: `apps/desktop/src/main/licensing.ts`,
   destination is verified when its copy has been read back and its checksum
   matches the source's (xxHash64 by default for speed; MD5 and SHA-1
   selectable where a production requires them). The method is in every log.
+- **A copy is unfinished until it is verified.** Each file is written as
+  `<name>.vcdit-part` and renamed to its real name only after its read-back
+  checksum matched the card's. A failed copy is removed, never left under a
+  real name.
+- **Nothing is overwritten.** A file already at a destination is compared
+  with the card: identical counts as verified (so a re-run resumes a card),
+  different is a failure and the file is left alone.
+- **A vanished destination is never written into.** Before each file the
+  engine checks the destination is still the same disk, so an unplugged
+  drive cannot turn into a folder on the boot disk's `/Volumes`.
 - **Failure is loud.** A failed or partial verification can never show green.
+- **Known limit:** the read-back goes through the operating system, which may
+  answer from its memory cache for files just written (most of a large card
+  will not fit in it). Bypassing the cache needs native code (`F_NOCACHE` on
+  macOS, `FILE_FLAG_NO_BUFFERING` on Windows); it is planned with the local
+  database work.
 - **Everything is a record.** Every transfer writes a manifest (source,
   destinations, files, sizes, checksums, method, times, retries) to the
   production's `REPORTS/ingest_verification/` and to the local database.
@@ -100,10 +133,11 @@ because the media is there and must not pass through vc-dit.com.
 1. Done: the UI handoff is built as the renderer, on demo data. Status is
    derived in one place (`model/status.ts`), so the header, flow bar, file
    tree and Today never disagree, and nothing shows green while a copy failed.
-2. The media engine in the main process: volume detection (macOS
-   DiskArbitration events and Windows volume notifications), the
-   multi-destination copy-and-verify engine in worker threads, and the local
-   production database.
+2. Done: the media engine's first part. Volume detection, the
+   multi-destination copy-and-verify engine in a worker thread, ASC MHL and
+   transfer logs, wired to Intake, Verify and Today. Next: the local
+   production database (SQLite), so clips, transfers and scenes persist
+   and the other screens leave the demo day.
 3. Script-supervisor import (CSV / JSON / XML neutral schema) and the match
    review screen.
 4. Sync, LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats

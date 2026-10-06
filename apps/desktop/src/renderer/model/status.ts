@@ -209,12 +209,12 @@ export const todos = (state: AppState): Todo[] => {
       out.push({
         id: `retry-${job.id}-${leg.name}`,
         status: 'problem',
-        title: `${job.id} → ${leg.name} checksum mismatch`,
-        detail: 'Files failed verification. Card is not safe to format.',
+        title: `${job.id} → ${leg.name} ${leg.error ? 'did not verify' : 'checksum mismatch'}`,
+        detail: `${leg.error ? `${leg.error} ` : 'Files failed verification. '}Card is not safe to format.`,
         step: 'verify',
         action: 'Retry',
         screen: 'verify',
-        retry: { job: job.id, leg: leg.name },
+        retry: { job: job.id, leg: leg.id ?? leg.name },
       });
     }
   }

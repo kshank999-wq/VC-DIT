@@ -1,8 +1,13 @@
+import type { ChecksumMethod, VolumeRole } from '../../shared/media';
+
 /**
- * The records the UI works with, after the spec's data model (§6). Today they
- * are filled with the HALCYON demo day (demo.ts); the media engine in the
- * main process will fill them for real, with the same shapes.
+ * The records the UI works with, after the spec's data model (§6). In the
+ * desktop app the media engine fills the volumes, destinations and transfers
+ * (state/engine.ts); the rest still comes from the HALCYON demo day
+ * (demo.ts) until its engine work lands.
  */
+
+export type { ChecksumMethod, VolumeRole };
 
 /** The six steps of the pipeline, in order. */
 export type StepId = 'intake' | 'verify' | 'organize' | 'vfx' | 'sync' | 'output';
@@ -24,7 +29,6 @@ export type ScreenId =
 /** Every status is shown as a dot and a word, never colour alone. */
 export type Status = 'done' | 'working' | 'needs' | 'problem' | 'idle';
 
-export type ChecksumMethod = 'xxHash64' | 'MD5' | 'SHA-1';
 
 export interface Production {
   name: string;
@@ -77,8 +81,6 @@ export interface ShootDay {
   operator: { name: string; initials: string };
 }
 
-export type VolumeRole = 'Camera' | 'Sound' | 'Destination' | 'Shuttle' | 'Archive' | 'Other';
-
 /** A mounted volume (spec "Media Source"). */
 export interface Volume {
   id: string;
@@ -93,6 +95,8 @@ export interface Volume {
   included: boolean;
   /** Already ingested today. */
   ingested: boolean;
+  /** Where it is mounted (from the media engine). */
+  mountPath?: string;
 }
 
 export interface IngestDestination {
@@ -112,6 +116,10 @@ export interface TransferLeg {
   failed: boolean;
   /** Simulated speed, % per tick. */
   rate: number;
+  /** From the media engine: the destination's id, why it failed, and the card's folder there. */
+  id?: string;
+  error?: string | null;
+  targetDir?: string;
 }
 
 export interface TransferJob {
@@ -122,6 +130,9 @@ export interface TransferJob {
   queued: boolean;
   checksum: ChecksumMethod;
   legs: TransferLeg[];
+  /** From the media engine, while copying. */
+  bytesPerSecond?: number;
+  etaSeconds?: number | null;
 }
 
 export interface MatchCandidate {

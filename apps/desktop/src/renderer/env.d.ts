@@ -26,5 +26,20 @@ interface Window {
       deactivate: () => Promise<Access>;
       open: (page: 'pricing' | 'download' | 'account') => Promise<void>;
     };
+    /** The media engine (src/main/media). Absent in the browser preview, which runs on the demo day. */
+    media?: MediaApi;
   };
+}
+
+type MediaState = import('../shared/media').MediaState;
+
+interface MediaApi {
+  state: () => Promise<MediaState>;
+  onChange: (listener: (state: MediaState) => void) => () => void;
+  setRole: (volumeId: string, role: import('../shared/media').VolumeRole) => Promise<{ ok: boolean; reason?: string }>;
+  addFolder: () => Promise<{ ok: boolean; reason?: string }>;
+  removeFolder: (id: string) => Promise<void>;
+  ingest: (request: import('../shared/media').IngestRequest) => Promise<import('../shared/media').IngestResult>;
+  retry: (jobId: string, legId: string) => Promise<import('../shared/media').IngestResult>;
+  show: (path: string) => Promise<void>;
 }

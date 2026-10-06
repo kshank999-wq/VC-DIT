@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
+import type { MediaState } from '../../shared/media';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -23,6 +24,7 @@ import type {
   Volume,
   VolumeRole,
 } from '../model/types';
+import { engine, fromEngine } from './engine';
 
 /**
  * The whole UI state and every way it changes, in one reducer, so each
@@ -30,9 +32,10 @@ import type {
  * the file tree and Today can never disagree (they are all derived in
  * model/status.ts).
  *
- * Today the reducer also stands in for the media engine (the `tick` action
- * advances transfers). When the engine lands it sends the same changes as
- * events from the main process.
+ * In the desktop app the media engine (src/main/media) owns the volumes,
+ * destinations and transfers and sends them as `engineState`. In the browser
+ * preview and the tests the reducer stands in for it (the `tick` action
+ * advances simulated transfers on the demo day).
  */
 
 export type PoolFilter = 'all' | 'circle' | 'vfx';
@@ -40,6 +43,8 @@ export type ThemeChoice = 'light' | 'dark' | 'system';
 export type ReportFilter = 'all' | StepId;
 
 export interface AppState {
+  /** Volumes, destinations and transfers come from the real media engine. */
+  engine: boolean;
   screen: ScreenId;
   filesOpen: boolean;
   theme: ThemeChoice;
@@ -77,6 +82,7 @@ export interface AppState {
 }
 
 export const initialState = (): AppState => ({
+  engine: false,
   screen: 'today',
   filesOpen: true,
   theme: 'system',
@@ -131,6 +137,7 @@ export type Action =
   // Verify
   | { type: 'tick' }
   | { type: 'retryLeg'; job: string; leg: string }
+  | { type: 'engineState'; media: MediaState }
   // Organize
   | { type: 'selectSetup'; key: string }
   | { type: 'selectTake'; take: string }
@@ -227,7 +234,12 @@ export const reducer = (state: AppState, action: Action): AppState => {
         volumes: state.volumes.map((volume) =>
           volume.id === action.volume
             ? // A card can never be a destination, and only a card is ever ingested (spec §4.2).
-              { ...volume, role: action.role, included: SOURCE_ROLES.includes(action.role) ? volume.included : false }
+              // A volume just marked to receive copies is picked as a destination.
+              {
+                ...volume,
+                role: action.role,
+                included: SOURCE_ROLES.includes(action.role) ? volume.included : DESTINATION_ROLES.includes(action.role),
+              }
             : volume,
         ),
       };
@@ -281,6 +293,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
       const jobs = advance(state.jobs);
       return jobs.every((job, index) => job === state.jobs[index]) ? state : { ...state, jobs };
     }
+    case 'engineState':
+      return { ...state, ...fromEngine(state, action.media) };
     case 'retryLeg':
       return {
         ...state,
@@ -413,14 +427,32 @@ const readTheme = (): ThemeChoice => {
 const StoreContext = createContext<{ state: AppState; dispatch: Dispatch<Action> } | null>(null);
 
 export function StoreProvider({ children, initial, simulate = true }: { children: ReactNode; initial?: AppState; simulate?: boolean }) {
-  const [state, dispatch] = useReducer(reducer, undefined, () => initial ?? { ...initialState(), theme: readTheme() });
+  const [state, dispatch] = useReducer(reducer, undefined, () => {
+    if (initial) return initial;
+    const start = { ...initialState(), theme: readTheme() };
+    // With the real engine, no demo cards or transfers: only what is plugged in.
+    return engine() ? { ...start, engine: true, volumes: [], destinations: [], jobs: [] } : start;
+  });
 
-  // The transfer engine's stand-in: progress every half second.
+  // The media engine: its state now and every change after.
   useEffect(() => {
-    if (!simulate) return undefined;
+    const media = state.engine ? engine() : null;
+    if (!media) return undefined;
+    let live = true;
+    const stop = media.onChange((next) => dispatch({ type: 'engineState', media: next }));
+    void media.state().then((next) => live && dispatch({ type: 'engineState', media: next }));
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [state.engine]);
+
+  // The engine's stand-in in the preview: progress every half second.
+  useEffect(() => {
+    if (!simulate || state.engine) return undefined;
     const timer = setInterval(() => dispatch({ type: 'tick' }), 500);
     return () => clearInterval(timer);
-  }, [simulate]);
+  }, [simulate, state.engine]);
 
   useEffect(() => {
     try {

@@ -9,5 +9,5 @@
     "composite": false,
     "declaration": false
   },
-  "include": ["electron.vite.config.ts", "vite.renderer.config.mts", "vitest.config.mts", "src/main/**/*.ts", "src/preload/**/*.ts"]
+  "include": ["electron.vite.config.ts", "vite.renderer.config.mts", "vitest.config.mts", "src/main/**/*.ts", "src/preload/**/*.ts", "src/shared/**/*.ts"]
 }

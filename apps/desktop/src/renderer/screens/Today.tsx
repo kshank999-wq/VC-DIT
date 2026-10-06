@@ -1,4 +1,5 @@
 import { overall, STEPS, summarize, todos } from '../model/status';
+import { engine } from '../state/engine';
 import { useStore } from '../state/store';
 import { StatusText, stepVar, statusVar, tone } from '../ui/kit';
 import './today.css';
@@ -65,7 +66,9 @@ export function Today() {
                 type="button"
                 className={`btn primary${todo.status === 'problem' ? ' danger' : ''}`}
                 onClick={() => {
-                  if (todo.retry) dispatch({ type: 'retryLeg', ...todo.retry });
+                  const media = state.engine ? engine() : null;
+                  if (todo.retry && media) void media.retry(todo.retry.job, todo.retry.leg);
+                  else if (todo.retry) dispatch({ type: 'retryLeg', ...todo.retry });
                   dispatch({ type: 'go', screen: todo.screen });
                 }}
               >

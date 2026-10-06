@@ -1,5 +1,6 @@
 import { jobProgress, jobState, legProgress, legState, legWord, type JobState } from '../model/status';
 import type { Status, TransferJob, TransferLeg } from '../model/types';
+import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
 import './ingest.css';
@@ -33,6 +34,11 @@ const legStatus = (leg: TransferLeg): Status => {
 
 export function Verify() {
   const { state, dispatch } = useStore();
+  const media = state.engine ? engine() : null;
+  const retry = (job: TransferJob, leg: TransferLeg) => {
+    if (media) void media.retry(job.id, leg.id ?? leg.name);
+    else dispatch({ type: 'retryLeg', job: job.id, leg: leg.name });
+  };
   // Problems first, then what is moving, then the queue, then the finished cards.
   const jobs = state.jobs.map((job, index) => ({ job, index })).sort((a, b) => ORDER[jobState(a.job)] - ORDER[jobState(b.job)] || a.index - b.index);
   const count = (which: JobState) => state.jobs.filter((job) => jobState(job) === which).length;
@@ -47,13 +53,25 @@ export function Verify() {
         step="verify"
         eyebrow="02 · Verify"
         title="Copy & verification"
-        description="Each card is copied, then checked. It's safe to format only when every destination says Verified."
+        description={
+          media
+            ? "Each card is copied, then checked. It's safe to format only when every destination says Verified. Each destination gets an ASC MHL and a transfer log (REPORTS/ingest_verification)."
+            : "Each card is copied, then checked. It's safe to format only when every destination says Verified."
+        }
         actions={
-          <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
-            Export transfer logs
-          </button>
+          media ? null : (
+            <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
+              Export transfer logs
+            </button>
+          )
         }
       />
+
+      {state.jobs.length === 0 ? (
+        <p className="muted" role="status">
+          No transfers yet. Start one from Intake.
+        </p>
+      ) : null}
 
       <p className="verify-summary" aria-live="polite">
         {count('safe')} of {state.jobs.length} cards safe to format
@@ -69,7 +87,14 @@ export function Verify() {
               <span className="mono verify-id">{job.id}</span>
               <span className="muted">
                 {job.label} · {job.size}
+                {media ? ` · ${job.files}` : ''}
               </span>
+              {job.bytesPerSecond ? (
+                <span className="mono muted verify-rate">
+                  {formatRate(job.bytesPerSecond)}
+                  {job.etaSeconds != null ? ` · ${formatEta(job.etaSeconds)}` : ''}
+                </span>
+              ) : null}
               <span className="mono faint verify-sum" title="Checksum used for this card">
                 {job.checksum}
               </span>
@@ -83,6 +108,11 @@ export function Verify() {
                   <div key={leg.name} className="verify-leg">
                     <div className="row">
                       <span className="mono muted grow">→ {leg.name}</span>
+                      {media && leg.targetDir && legState(leg) === 'verified' ? (
+                        <button type="button" className="btn ghost small" onClick={() => void media.show(leg.targetDir!)}>
+                          Show
+                        </button>
+                      ) : null}
                       <span className="verify-word" style={{ color: statusVar(status) }}>
                         {legWord(leg)}
                       </span>
@@ -90,10 +120,10 @@ export function Verify() {
                     <ProgressBar pct={leg.failed ? 100 : legProgress(leg)} color={statusVar(status === 'idle' ? 'working' : status)} label={`${job.id} to ${leg.name}`} />
                     {leg.failed ? (
                       <div className="row">
-                        <button type="button" className="btn danger small" aria-label={`Retry copy ${job.id} → ${leg.name}`} onClick={() => dispatch({ type: 'retryLeg', job: job.id, leg: leg.name })}>
+                        <button type="button" className="btn danger small" aria-label={`Retry copy ${job.id} → ${leg.name}`} onClick={() => retry(job, leg)}>
                           Retry copy
                         </button>
-                        <span className="muted verify-why">Checksum mismatch — copy again from the card.</span>
+                        <span className="muted verify-why">{leg.error ?? 'Checksum mismatch — copy again from the card.'}</span>
                       </div>
                     ) : null}
                   </div>
