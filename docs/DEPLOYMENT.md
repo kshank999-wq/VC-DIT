@@ -169,7 +169,17 @@ Application" certificate, paste into Terminal:
 bash <(curl -fsSL https://raw.githubusercontent.com/kshank999-wq/VC-DIT/HEAD/scripts/setup-apple-signing.sh)
 ```
 
-It finds the certificate, exports only it and its key, reads the Team ID,
+On **Windows** (a certificate made there with OpenSSL: a `.key` file and
+Apple's `.cer` files), use Git Bash and give the folder holding them:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kshank999-wq/VC-DIT/HEAD/scripts/setup-apple-signing-windows.sh) ~/vcgs-signing
+```
+
+It tries every certificate in the folder against the key and uses the
+Developer ID one that matches, so numbered duplicate downloads don't matter.
+
+The Mac script finds the certificate, exports only it and its key, reads the Team ID,
 asks for your Apple ID and an app-specific password (checking them with
 Apple), and sets the five secrets: by itself if the GitHub CLI (`gh`) is
 signed in, otherwise by copying each value to the clipboard while you paste
