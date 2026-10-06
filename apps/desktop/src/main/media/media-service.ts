@@ -14,6 +14,7 @@ import {
   type MediaVolume,
   type VolumeRole,
 } from '../../shared/media';
+import type { TransferRecord } from '../db/production-db';
 import type { ReportContext } from './reports';
 import { cardFolder, destinationProblem, headroom, reportsFolder } from './rules';
 import { listSource, type FileOutcome, type LegPlan, type LegProgress, type SourceFile } from './transfer';
@@ -38,6 +39,8 @@ export interface MediaServiceDeps {
   onChange: (state: MediaState) => void;
   platform?: NodeJS.Platform;
   pollEveryMs?: number;
+  /** Keep a transfer in the production's database: when it is queued, and again when it ends. */
+  onRecord?: (record: TransferRecord) => void;
   /** Tests: where volumes are found, and how a transfer is run, instead of the system's mounts and a worker thread. */
   mounts?: () => Promise<Mount[]>;
   startWorker?: (plan: WorkerPlan) => TransferRunner;
@@ -68,12 +71,16 @@ interface Leg {
 
 interface Job {
   id: string;
+  day: number;
+  sound: boolean;
   label: string;
   sourceId: string;
   sourceRoot: string;
   card: string;
   checksum: IngestRequest['checksum'];
   files: SourceFile[];
+  /** The card's checksum of each file, once read. */
+  hashes: Map<string, { hash: string | null; hashedAt: string | null }>;
   totalBytes: number;
   legs: Leg[];
   bytesPerSecond: number;
@@ -125,9 +132,17 @@ export class MediaService {
     this.timer.unref?.();
   }
 
+  /** Stop looking for volumes and stop transferring: the running copy cleans up after itself, the queue is dropped. */
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    this.queue.length = 0;
     this.current?.worker.postMessage('stop');
+  }
+
+  /** Resolves once nothing is running, or after `timeoutMs`. */
+  async idle(timeoutMs: number): Promise<void> {
+    const until = Date.now() + timeoutMs;
+    while (this.busy() && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   /** A transfer is copying or checking: quitting now would leave a card not safe to format. */
@@ -323,12 +338,15 @@ export class MediaService {
       for (let n = 2; this.jobs.some((job) => job.id === id); n += 1) id = `${card.name} (${n})`;
       const job: Job = {
         id,
+        day: request.day.number,
+        sound,
         label: sound && !card.detected.startsWith('Sound') ? `Sound · ${card.detected}` : card.detected,
         sourceId: card.id,
         sourceRoot: card.mountPath,
         card: card.name,
         checksum: request.checksum,
         files,
+        hashes: new Map(),
         totalBytes: bytes,
         legs: destinations.map((destination) => ({
           plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: cardFolder(destination.root, request, sound, card.name) },
@@ -343,6 +361,7 @@ export class MediaService {
         finishedAt: null,
       };
       this.jobs.push(job);
+      this.record(job);
       this.queue.push({ job, legIds: job.legs.map((leg) => leg.plan.id), only: null });
       const entry = this.volumes.get(card.id);
       if (entry) entry.volume = { ...entry.volume, ingested: true };
@@ -411,7 +430,7 @@ export class MediaService {
       job.etaSeconds = null;
       if (!this.queue.some((queued) => queued.job === job)) job.finishedAt = new Date().toISOString();
       this.current = null;
-      void this.record(job);
+      this.record(job);
       this.emit(true);
       this.next();
     };
@@ -428,6 +447,7 @@ export class MediaService {
         this.emit();
       } else if (message.type === 'done') {
         finished = true;
+        for (const file of message.result.files) job.hashes.set(file.path, { hash: file.sourceHash, hashedAt: file.hashedAt });
         for (const leg of legs) {
           for (const file of message.result.files) leg.outcomes.set(file.path, file.legs[leg.plan.id] ?? { state: 'failed', error: 'No result.' });
           leg.error = message.result.legs[leg.plan.id]?.error ?? null;
@@ -441,30 +461,77 @@ export class MediaService {
     worker.on('exit', (code) => end(finished && code === 0 ? null : 'The transfer stopped unexpectedly.'));
   }
 
-  /** The app's own copy of each finished transfer, for the Reports screen and support. */
-  private async record(job: Job): Promise<void> {
-    if (!job.finishedAt) return;
+  private record(job: Job): void {
+    if (!this.deps.onRecord) return;
     try {
-      const dir = join(this.deps.dataDir, 'transfers');
-      await mkdir(dir, { recursive: true });
-      const body = {
+      this.deps.onRecord({
         id: job.id,
+        day: job.day,
         card: job.card,
-        source: job.sourceRoot,
+        label: job.label,
+        sourceRoot: job.sourceRoot,
+        sound: job.sound,
         checksum: job.checksum,
         startedAt: job.startedAt,
         finishedAt: job.finishedAt,
+        files: job.files.map((file) => ({ ...file, hash: job.hashes.get(file.path)?.hash ?? null, hashedAt: job.hashes.get(file.path)?.hashedAt ?? null })),
         destinations: job.legs.map((leg) => ({
+          id: leg.plan.id,
           name: leg.plan.name,
+          root: leg.plan.root,
           targetDir: leg.plan.targetDir,
+          reportsDir: leg.reportsDir,
           error: leg.error,
-          files: job.files.map((file) => ({ path: file.path, size: file.size, ...leg.outcomes.get(file.path) })),
+          outcomes: Object.fromEntries(leg.outcomes),
         })),
-      };
-      await writeFile(join(dir, `${job.startedAt!.replace(/[:.]/g, '-')}_${job.id.replace(/[^\w.-]+/g, '_')}.json`), JSON.stringify(body, null, 2), 'utf8');
+      });
     } catch {
-      // The destinations hold the real logs; this copy is a convenience.
+      // The destinations hold the transfer logs; a database hiccup must not stop a copy.
     }
+  }
+
+  /**
+   * Show a day's transfers as the database kept them (at start, or when
+   * another day or production is opened). Not while a transfer is running.
+   * One that never finished (the app closed mid-copy) shows as failed.
+   */
+  load(records: TransferRecord[]): boolean {
+    if (this.busy()) return false;
+    this.jobs.length = 0;
+    for (const record of records) {
+      const interrupted = record.finishedAt === null;
+      const reason = 'VC DIT closed before this transfer finished. Not safe to format: copy it again.';
+      this.jobs.push({
+        id: record.id,
+        day: record.day,
+        sound: record.sound,
+        label: record.label,
+        sourceId: record.sourceRoot,
+        sourceRoot: record.sourceRoot,
+        card: record.card,
+        checksum: record.checksum,
+        files: record.files.map(({ path, size, mtimeMs }) => ({ path, size, mtimeMs })),
+        hashes: new Map(record.files.map((file) => [file.path, { hash: file.hash, hashedAt: file.hashedAt }])),
+        totalBytes: record.files.reduce((sum, file) => sum + file.size, 0),
+        legs: record.destinations.map((destination) => {
+          const outcomes = new Map(Object.entries(destination.outcomes));
+          if (interrupted) for (const file of record.files) if (!outcomes.has(file.path)) outcomes.set(file.path, { state: 'failed', error: reason });
+          return {
+            plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: destination.targetDir },
+            reportsDir: destination.reportsDir,
+            live: null,
+            outcomes,
+            error: destination.error ?? (interrupted ? reason : null),
+          };
+        }),
+        bytesPerSecond: 0,
+        etaSeconds: null,
+        startedAt: record.startedAt,
+        finishedAt: record.finishedAt ?? record.startedAt ?? new Date(0).toISOString(),
+      });
+    }
+    this.emit(true);
+    return true;
   }
 
   // ------------------------------------------------ what the screens see

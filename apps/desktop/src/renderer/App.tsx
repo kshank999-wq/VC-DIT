@@ -5,8 +5,21 @@ import { FilesPanel } from './shell/FilesPanel';
 import { FlowBar, SubTabs } from './shell/FlowBar';
 import { Header } from './shell/Header';
 import { LicenseDialog } from './shell/License';
+import type { ScreenId } from './model/types';
 import { useStore } from './state/store';
 import { useAccess } from './ui/kit';
+
+/** Screens still on the HALCYON sample day in the desktop app, and what brings them real data. */
+const SAMPLE: Partial<Record<ScreenId, string>> = {
+  scenes: 'the script supervisor import (it places clips in scenes and takes)',
+  match: 'the script supervisor import',
+  vfx: 'the script supervisor import (it brings the VFX flags)',
+  sync: 'picture and sound sync',
+  looks: 'the LUT library',
+  dailies: 'dailies rendering',
+  delivery: 'the delivery engine',
+  reports: 'the reports list',
+};
 
 /** Light, dark, or the system's, on the document so every token switches at once. */
 const useTheme = (choice: 'light' | 'dark' | 'system') => {
@@ -63,6 +76,12 @@ export function App() {
       <FlowBar />
       <main className="content" id="content">
         <SubTabs />
+        {state.project && SAMPLE[state.screen] ? (
+          <p className="sample-note" role="note">
+            <strong>Sample data.</strong> This screen shows the HALCYON demo day until {SAMPLE[state.screen]} is built. Your cards and
+            transfers are on Intake and Verify.
+          </p>
+        ) : null}
         <Screen />
       </main>
       <FilesPanel />

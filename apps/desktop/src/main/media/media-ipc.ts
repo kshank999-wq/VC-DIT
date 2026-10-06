@@ -1,5 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import type { IngestRequest, VolumeRole } from '../../shared/media';
+import type { TransferRecord } from '../db/production-db';
 import { licensing } from '../licensing-ipc';
 import { MediaService } from './media-service';
 import transferWorkerPath from './transfer-worker?modulePath';
@@ -12,19 +13,17 @@ import transferWorkerPath from './transfer-worker?modulePath';
 
 const ROLES: VolumeRole[] = ['Camera', 'Sound', 'Destination', 'Shuttle', 'Archive', 'Other'];
 
-export let media: MediaService | null = null;
-
-export const registerMedia = async (): Promise<void> => {
-  media = new MediaService({
+export const registerMedia = async (record: (transfer: TransferRecord) => void): Promise<MediaService> => {
+  const service = new MediaService({
     dataDir: app.getPath('userData'),
     workerPath: transferWorkerPath,
     tool: { name: 'VC DIT', version: app.getVersion() },
     canStartTransfers: () => licensing.canStartTransfers(),
+    onRecord: record,
     onChange: (state) => {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:media', state);
     },
   });
-  const service = media;
 
   ipcMain.handle('vcdit:media-state', () => service.state());
   ipcMain.handle('vcdit:media-set-role', (_e, volumeId: unknown, role: unknown) => {
@@ -48,4 +47,5 @@ export const registerMedia = async (): Promise<void> => {
   });
 
   await service.start();
+  return service;
 };

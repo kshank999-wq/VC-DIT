@@ -1,28 +1,61 @@
 import { useState, type FormEvent } from 'react';
+import type { ProjectResult } from '../../shared/project';
 import type { ChecksumMethod, SceneStatus, Status } from '../model/types';
+import { projectApi } from '../state/engine';
 import { useStore } from '../state/store';
 import { ScreenHeader, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import './ingest.css';
 
 /**
  * Project setup: what is set once per production (name, frame rate, the
- * default checksum, cameras and sound), the day's scene list, the naming
- * template and the script supervisor's log. Spec rule shown here: original
- * camera filenames are never rewritten; scene/setup/take mapping lives in
- * the media index (spec §4.4).
+ * default checksum, cameras and sound), the shoot day and its scene list,
+ * the naming template and the script supervisor's log. In the desktop app
+ * it all lives in the production's database file (src/main/db), and this is
+ * where productions and days are made, opened and saved. Spec rule shown
+ * here: original camera filenames are never rewritten; scene/setup/take
+ * mapping lives in the media index (spec §4.4).
  */
 
 const CHECKSUMS: ChecksumMethod[] = ['xxHash64', 'MD5', 'SHA-1'];
 const FRAME_RATES = ['23.976 fps', '24 fps', '25 fps', '29.97 fps', '30 fps', '48 fps', '50 fps', '59.94 fps', '60 fps'];
 const SCENE_STATUSES: SceneStatus[] = ['Scheduled', 'Shooting', 'Shot', 'Dropped'];
 const SCENE_TONE: Record<SceneStatus, Status> = { Scheduled: 'idle', Shooting: 'working', Shot: 'done', Dropped: 'needs' };
+const OPEN_ANOTHER = '__open';
+
+/** "Morgan Reyes" → "MR". */
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0]!.toUpperCase())
+    .join('')
+    .slice(0, 3);
 
 export function ProjectSetup() {
   const { state, dispatch } = useStore();
   const { production, day, scriptLog } = state;
   const [sceneId, setSceneId] = useState('');
   const [sceneDescription, setSceneDescription] = useState('');
+  const [device, setDevice] = useState({ slot: '', name: '', format: '' });
+  const [notice, setNotice] = useState<string | null>(null);
   const pad3 = (n: number) => String(n).padStart(3, '0');
+  const api = state.project ? projectApi() : null;
+  /** Opening, making or saving a production or a day: the database answers with the new state, or why not. */
+  const act = (call: Promise<ProjectResult>) =>
+    void call.then((result) => {
+      if (result.ok) {
+        setNotice(null);
+        dispatch({ type: 'projectState', project: result.state });
+      } else if (result.reason) setNotice(result.reason);
+    });
+
+  const addDevice = (event: FormEvent) => {
+    event.preventDefault();
+    if (!device.name.trim()) return;
+    const slot = device.slot.trim().toUpperCase() || String.fromCharCode(65 + production.devices.length);
+    dispatch({ type: 'setProduction', patch: { devices: [...production.devices, { slot, name: device.name.trim(), format: device.format.trim() }] } });
+    setDevice({ slot: '', name: '', format: '' });
+  };
 
   const sceneTaken = state.scenes.some((scene) => scene.id === sceneId.trim().toUpperCase());
   const addScene = (event: FormEvent) => {
@@ -63,11 +96,46 @@ export function ProjectSetup() {
         title="Production settings"
         description="Saved per production — you set this up once, not every card."
         actions={
-          <span className="mono setup-saved" style={tone(statusVar('done'))}>
-            ● Changes save as you type
-          </span>
+          <div className="row setup-actions">
+            {api && state.project ? (
+              <>
+                <select
+                  className="select"
+                  aria-label="Open production"
+                  value={state.project.file}
+                  onChange={(event) => act(event.target.value === OPEN_ANOTHER ? api.open() : api.open(event.target.value))}
+                >
+                  {state.project.recent.map((item) => (
+                    <option key={item.file} value={item.file}>
+                      {item.file === state.project!.file ? production.name || item.name : item.name}
+                    </option>
+                  ))}
+                  <option value={OPEN_ANOTHER}>Open another production…</option>
+                </select>
+                <button type="button" className="btn" onClick={() => act(api.create())}>
+                  New production
+                </button>
+                <button
+                  type="button"
+                  className="btn"
+                  title="One file holds the whole production: keep a copy with the media or hand it on"
+                  onClick={() => act(api.saveCopy())}
+                >
+                  Save a copy…
+                </button>
+              </>
+            ) : null}
+            <span className="mono setup-saved" style={tone(statusVar('done'))}>
+              ● Changes save as you type
+            </span>
+          </div>
         }
       />
+      {notice ? (
+        <p className="setup-notice" role="alert" style={tone(statusVar('problem'))}>
+          <StatusText status="problem" word="Not done" /> {notice}
+        </p>
+      ) : null}
 
       <div className="setup-row">
         <section className="card" aria-labelledby="setup-production">
@@ -91,10 +159,20 @@ export function ProjectSetup() {
             <label className="field">
               <span className="label">Shoot day</span>
               <span className="row setup-day">
-                <input className="input" value={pad3(day.number)} readOnly aria-readonly="true" title="Set by the shoot day you have open" />
+                {api && state.project ? (
+                  <select className="select" aria-label="Open shoot day" value={day.number} onChange={(event) => act(api.openDay(Number(event.target.value)))}>
+                    {state.project.days.map((candidate) => (
+                      <option key={candidate.number} value={candidate.number}>
+                        {pad3(candidate.number)}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className="input" value={pad3(day.number)} readOnly aria-readonly="true" title="Set by the shoot day you have open" />
+                )}
                 <span className="muted">of</span>
                 <input
-                  className="input"
+                  className="input setup-total"
                   type="number"
                   min={1}
                   aria-label="Total shoot days"
@@ -103,13 +181,50 @@ export function ProjectSetup() {
                 />
               </span>
             </label>
+            <div className="field">
+              <label className="label" htmlFor="setup-date">
+                Date
+              </label>
+              <span className="row setup-day">
+                <input
+                  id="setup-date"
+                  className="input"
+                  type="date"
+                  value={day.date}
+                  onChange={(event) => /^\d{4}-\d{2}-\d{2}$/.test(event.target.value) && dispatch({ type: 'setDay', patch: { date: event.target.value } })}
+                />
+                {api ? (
+                  <button type="button" className="btn" title="Start the next shoot day: its own scene list and transfers" onClick={() => act(api.addDay())}>
+                    New day
+                  </button>
+                ) : null}
+              </span>
+            </div>
             <label className="field">
-              <span className="label">Date</span>
-              <input className="input" value={day.date} readOnly aria-readonly="true" title="Set by the shoot day you have open" />
+              <span className="label">Locations</span>
+              <input
+                className="input"
+                value={day.locations}
+                placeholder="Hangar & Rooftop"
+                onChange={(event) => dispatch({ type: 'setDay', patch: { locations: event.target.value } })}
+              />
+            </label>
+            <label className="field">
+              <span className="label">DIT</span>
+              <input
+                className="input"
+                value={day.operator.name}
+                placeholder="Your name"
+                onChange={(event) => dispatch({ type: 'setDay', patch: { operator: { name: event.target.value, initials: initialsOf(event.target.value) } } })}
+              />
             </label>
             <label className="field">
               <span className="label">Frame rate</span>
-              <select className="select" value={production.frameRate} onChange={(event) => dispatch({ type: 'setProduction', patch: { frameRate: event.target.value } })}>
+              <select
+                className="select"
+                value={production.frameRate}
+                onChange={(event) => dispatch({ type: 'setProduction', patch: { frameRate: event.target.value } })}
+              >
                 {(FRAME_RATES.includes(production.frameRate) ? FRAME_RATES : [production.frameRate, ...FRAME_RATES]).map((rate) => (
                   <option key={rate}>{rate}</option>
                 ))}
@@ -131,14 +246,49 @@ export function ProjectSetup() {
             <div className="field setup-span">
               <span className="label">Cameras &amp; sound</span>
               <ul className="setup-devices">
-                {production.devices.map((device) => (
-                  <li key={device.slot}>
-                    <span className="setup-slot mono">{device.slot}</span>
-                    <span className="grow">{device.name}</span>
-                    <span className="muted mono">{device.format}</span>
+                {production.devices.map((item, index) => (
+                  <li key={`${item.slot}-${index}`}>
+                    <span className="setup-slot mono">{item.slot}</span>
+                    <span className="grow">{item.name}</span>
+                    <span className="muted mono">{item.format}</span>
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      aria-label={`Remove ${item.name}`}
+                      onClick={() => dispatch({ type: 'setProduction', patch: { devices: production.devices.filter((_, i) => i !== index) } })}
+                    >
+                      ×
+                    </button>
                   </li>
                 ))}
               </ul>
+              <form className="setup-add setup-add-device" onSubmit={addDevice}>
+                <input
+                  className="input mono setup-add-slot"
+                  placeholder="Slot"
+                  aria-label="New device slot"
+                  maxLength={3}
+                  value={device.slot}
+                  onChange={(event) => setDevice({ ...device, slot: event.target.value })}
+                />
+                <input
+                  className="input"
+                  placeholder="Camera or recorder"
+                  aria-label="New device name"
+                  value={device.name}
+                  onChange={(event) => setDevice({ ...device, name: event.target.value })}
+                />
+                <input
+                  className="input"
+                  placeholder="Format (optional)"
+                  aria-label="New device format"
+                  value={device.format}
+                  onChange={(event) => setDevice({ ...device, format: event.target.value })}
+                />
+                <button type="submit" className="btn" disabled={!device.name.trim()}>
+                  Add
+                </button>
+              </form>
             </div>
           </div>
         </section>
@@ -165,11 +315,26 @@ export function ProjectSetup() {
                     ))}
                   </select>
                 </span>
+                <button
+                  type="button"
+                  className="btn ghost small"
+                  aria-label={`Remove scene ${scene.id}`}
+                  onClick={() => dispatch({ type: 'removeScene', scene: scene.id })}
+                >
+                  ×
+                </button>
               </li>
             ))}
           </ul>
+          {state.scenes.length === 0 ? <p className="muted setup-empty">No scenes on today's list yet. Add the scenes being shot below.</p> : null}
           <form className="setup-add" onSubmit={addScene}>
-            <input className="input mono setup-add-id" placeholder="Scene no." aria-label="New scene number" value={sceneId} onChange={(event) => setSceneId(event.target.value)} />
+            <input
+              className="input mono setup-add-id"
+              placeholder="Scene no."
+              aria-label="New scene number"
+              value={sceneId}
+              onChange={(event) => setSceneId(event.target.value)}
+            />
             <input
               className="input grow"
               placeholder="Description (optional)"
@@ -226,25 +391,34 @@ export function ProjectSetup() {
               Match review →
             </button>
           </div>
-          <div className="card-body stack">
-            <div className="setup-file">
-              <span className="setup-csv mono">CSV</span>
-              <div className="grow">
-                <div className="mono setup-file-name">{scriptLog.file}</div>
-                <div className="muted">Imported {scriptLog.importedAt} · neutral interchange schema</div>
+          {state.project ? (
+            <div className="card-body">
+              <p className="muted setup-note">
+                Importing the script supervisor&apos;s log (CSV, JSON or XML) is the next piece being built. It will fill the setups, takes, circle takes and
+                VFX flags for the day&apos;s scenes.
+              </p>
+            </div>
+          ) : (
+            <div className="card-body stack">
+              <div className="setup-file">
+                <span className="setup-csv mono">CSV</span>
+                <div className="grow">
+                  <div className="mono setup-file-name">{scriptLog.file}</div>
+                  <div className="muted">Imported {scriptLog.importedAt} · neutral interchange schema</div>
+                </div>
+                <button type="button" className="btn small" onClick={() => dispatch({ type: 'reimportScriptLog' })}>
+                  Re-import
+                </button>
               </div>
-              <button type="button" className="btn small" onClick={() => dispatch({ type: 'reimportScriptLog' })}>
-                Re-import
-              </button>
+              <div className="setup-stats">
+                <Stat value={scriptLog.entries} label="Entries" />
+                <Stat value={matched} label="Matched" color={statusVar('done')} />
+                <Stat value={review} label="Review" color={statusVar(review > 0 ? 'needs' : 'done')} />
+                <Stat value={scriptLog.vfxFlags} label="VFX flags" color={stepVar('vfx')} />
+              </div>
+              {review > 0 ? <StatusText status="needs" word={`${review} entr${review === 1 ? 'y needs' : 'ies need'} a decision in Match review`} /> : null}
             </div>
-            <div className="setup-stats">
-              <Stat value={scriptLog.entries} label="Entries" />
-              <Stat value={matched} label="Matched" color={statusVar('done')} />
-              <Stat value={review} label="Review" color={statusVar(review > 0 ? 'needs' : 'done')} />
-              <Stat value={scriptLog.vfxFlags} label="VFX flags" color={stepVar('vfx')} />
-            </div>
-            {review > 0 ? <StatusText status="needs" word={`${review} entr${review === 1 ? 'y needs' : 'ies need'} a decision in Match review`} /> : null}
-          </div>
+          )}
         </section>
       </div>
     </div>

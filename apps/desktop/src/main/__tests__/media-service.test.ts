@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IngestRequest, MediaState } from '../../shared/media';
+import type { TransferRecord } from '../db/production-db';
 import { MediaService, type TransferRunner } from '../media/media-service';
 import { writeReports } from '../media/reports';
 import { runTransfer } from '../media/transfer';
@@ -34,6 +35,7 @@ let corrupt: { path: string; leg: string } | null;
 let mounts: string[];
 let service: MediaService;
 let states: MediaState[];
+let records: TransferRecord[];
 
 const settle = () =>
   vi.waitFor(
@@ -56,6 +58,7 @@ beforeEach(async () => {
   licensed = true;
   corrupt = null;
   states = [];
+  records = [];
   const card = join(base, 'A015');
   await mkdir(join(card, 'A015R1AB'), { recursive: true });
   await writeFile(join(card, 'A015R1AB', 'A015C001_261005_R1AB.mxf'), 'take one');
@@ -69,6 +72,7 @@ beforeEach(async () => {
     tool: { name: 'VC DIT', version: 'test' },
     canStartTransfers: () => licensed,
     onChange: (state) => states.push(state),
+    onRecord: (record) => records.push(structuredClone(record)),
     platform: 'linux',
     pollEveryMs: 60_000,
     mounts: async () => mounts.map((path) => ({ path, name: path.split(/[\\/]/).pop()! })),
@@ -104,7 +108,11 @@ describe('the media service', () => {
     ]);
     const reports = join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'REPORTS', 'ingest_verification');
     expect((await readdir(reports)).sort().map((name) => name.replace(/\d{8}_\d{6}Z/, 'T'))).toEqual(['A015_T.csv', 'A015_T.json']);
-    expect(await readdir(join(base, 'appdata', 'transfers'))).toHaveLength(1);
+    // Kept in the production database when queued, and again with every result when done.
+    expect(records.map((record) => record.finishedAt === null)).toEqual([true, false]);
+    expect(records[1]).toMatchObject({ id: 'A015', day: 14, card: 'A015', sound: false, checksum: 'xxHash64' });
+    expect(records[1]!.files.map((file) => file.hash)).toEqual([expect.stringMatching(/^[0-9a-f]{16}$/), expect.stringMatching(/^[0-9a-f]{16}$/)]);
+    expect(Object.values(records[1]!.destinations[0]!.outcomes)).toEqual([{ state: 'verified' }, { state: 'verified' }]);
     expect(service.state().volumes.find((volume) => volume.name === 'A015')!.ingested).toBe(true);
     // The screens heard about it as it went.
     expect(states.some((state) => state.jobs[0]?.running)).toBe(true);
@@ -160,5 +168,35 @@ describe('the media service', () => {
     expect(jobs.map((job) => job.id)).toEqual(['A015', 'A015 (2)']);
     // The second pass found the first one's verified copies and kept them.
     expect(jobs[1]!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+  });
+
+  it('shows a day\'s kept transfers after a restart, and one cut off mid-copy as failed until it is copied again', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    const finished = records.at(-1)!;
+    const cutOff: TransferRecord = { ...structuredClone(records[0]!), id: 'B010', card: 'B010', destinations: records[0]!.destinations.map((d) => ({ ...d, outcomes: {} })) };
+
+    expect(service.load([finished, cutOff])).toBe(true);
+    const [done, broken] = service.state().jobs;
+    expect(done).toMatchObject({ id: 'A015', queued: false, running: false });
+    expect(done!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+    expect(broken!.legs[0]).toMatchObject({ failed: true, error: expect.stringMatching(/closed before this transfer finished/) });
+
+    // Copying it again from the card (here the same card stands in for it) puts it right.
+    expect(service.retry('B010', mounts[1]!)).toEqual({ ok: true, jobs: ['B010'] });
+    await settle();
+    expect(service.state().jobs[1]!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+    // A new ingest of a card already listed today gets its own entry.
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    expect(service.state().jobs.map((job) => job.id)).toEqual(['A015', 'B010', 'A015 (2)']);
+    await settle();
+  });
+
+  it('will not swap the day\'s transfers while one is running', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    expect(service.load([])).toBe(false);
+    await settle();
+    expect(service.load([])).toBe(true);
+    expect(service.state().jobs).toEqual([]);
   });
 });

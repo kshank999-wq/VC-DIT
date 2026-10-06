@@ -47,4 +47,5 @@ npm run dev -w @vcdit/web       # the site
 - Commerce and licensing: ported from VC Game Studio and tested. Its database goes in a Supabase project of its own (`supabase/migrations/0001_vc_dit_base.sql`).
 - Desktop UI: every screen of the UI handoff (`docs/ui/`) built in React on the HALCYON demo day, light and dark. Run it in a browser with `npm run dev:renderer -w @vcdit/desktop`.
 - Media engine, first part: real volume detection, the verified copy to several destinations at once (xxHash64 / MD5 / SHA-1), ASC MHL and transfer logs, behind Intake, Verify and Today in the desktop app (`apps/desktop/src/main/media`).
-- Next: the local production database (SQLite), so the remaining screens run on real media instead of the demo day.
+- Production database: one SQLite file per production (settings, shoot days, scene lists, transfers, every clip and its checksum), kept across restarts; new, open and save-a-copy in Project setup (`apps/desktop/src/main/db`).
+- Next: script supervisor log import and match review, which places clips into scenes, setups and takes.

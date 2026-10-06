@@ -10,7 +10,8 @@ project, Stripe account, Resend domain and Vercel project. Product requirements 
 ```
 apps/
   desktop/   Electron app (TypeScript, React, electron-vite, electron-builder)
-    src/main/       main process: window, license, and the media engine (media/)
+    src/main/       main process: window, license, the production database (db/)
+                    and the media engine (media/)
     src/shared/     types the engine and the screens share over IPC
     src/preload/    the narrow bridge the renderer may call (window.vcdit)
     src/renderer/   React UI, built from docs/ui/HANDOFF.md
@@ -64,6 +65,30 @@ Copies land in `PRODUCTION/SHOOT_DAY_###_DATE/CAMERA_ORIGINALS/<card>/` (or
 `SOUND_ORIGINALS`) on every destination, the card's own folder tree inside.
 Scene/setup organization (spec §4.4) is a view over these, coming with the
 local database.
+
+## The production database (`src/main/db`)
+
+One SQLite file per production (`*.vcdit`), so a production can be copied,
+archived with its media, or handed to another cart as one file. SQLite runs
+as WebAssembly (sql.js): no native module to build per platform. The database
+is held in memory and written back half a second after each change, to a
+temporary file renamed over the old one, so a crash mid-write never corrupts
+it; opening a file keeps the previous version as `.bak`. The schema is
+versioned (`pragma user_version`) and migrated forward on open; a file from a
+newer app is refused rather than damaged.
+
+| Table | Holds |
+| --- | --- |
+| `production` | Name, code, frame rate, checksum default, cameras and sound, naming template, the day open |
+| `shoot_day` | Number, date, locations, DIT |
+| `scene` | Each day's scene list and statuses (spec §4.1) |
+| `transfer`, `transfer_destination` | Every card's ingest and where it went (spec "Transfer Record") |
+| `clip`, `clip_copy` | Every file of every card: original path and name, size, checksum, and each copy's verification. The start of the media index: a clip is found by name across the production |
+
+`library.ts` keeps the list of productions on the cart and which is open;
+`project-ipc.ts` is what the screens call. Transfers are recorded when queued
+and again when they end, so after a restart Verify shows the day as it was,
+and a transfer cut off by a crash shows as failed, never as safe.
 
 ## Media integrity rules (spec §8), as engineering constraints
 
@@ -135,9 +160,10 @@ because the media is there and must not pass through vc-dit.com.
    tree and Today never disagree, and nothing shows green while a copy failed.
 2. Done: the media engine's first part. Volume detection, the
    multi-destination copy-and-verify engine in a worker thread, ASC MHL and
-   transfer logs, wired to Intake, Verify and Today. Next: the local
-   production database (SQLite), so clips, transfers and scenes persist
-   and the other screens leave the demo day.
+   transfer logs, wired to Intake, Verify and Today.
+   Done: the production database: productions, shoot days, scene lists,
+   transfers and every clip with its checksum, kept across restarts. The
+   screens not yet on real data say so ("Sample data").
 3. Script-supervisor import (CSV / JSON / XML neutral schema) and the match
    review screen.
 4. Sync, LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats

@@ -1,4 +1,5 @@
 import type { ChecksumMethod, VolumeRole } from '../../shared/media';
+import type { Production, SceneStatus, ShootDay } from '../../shared/project';
 
 /**
  * The records the UI works with, after the spec's data model (§6). In the
@@ -7,7 +8,7 @@ import type { ChecksumMethod, VolumeRole } from '../../shared/media';
  * (demo.ts) until its engine work lands.
  */
 
-export type { ChecksumMethod, VolumeRole };
+export type { ChecksumMethod, Production, SceneStatus, ShootDay, VolumeRole };
 
 /** The six steps of the pipeline, in order. */
 export type StepId = 'intake' | 'verify' | 'organize' | 'vfx' | 'sync' | 'output';
@@ -29,19 +30,6 @@ export type ScreenId =
 /** Every status is shown as a dot and a word, never colour alone. */
 export type Status = 'done' | 'working' | 'needs' | 'problem' | 'idle';
 
-
-export interface Production {
-  name: string;
-  code: string;
-  frameRate: string;
-  checksum: ChecksumMethod;
-  totalDays: number;
-  devices: { slot: string; name: string; format: string }[];
-  /** Naming template tokens, in order, e.g. {PROD}, _, D{DAY}. */
-  namingTokens: string[];
-}
-
-export type SceneStatus = 'Scheduled' | 'Shooting' | 'Shot' | 'Dropped';
 
 export interface Take {
   /** Unique within the day: `${scene}|${setup}|${take}`. */
@@ -71,14 +59,6 @@ export interface Scene {
   notes: string;
   look: string;
   setups: Setup[];
-}
-
-export interface ShootDay {
-  number: number;
-  date: string;
-  /** "Hangar & Rooftop". */
-  locations: string;
-  operator: { name: string; initials: string };
 }
 
 /** A mounted volume (spec "Media Source"). */

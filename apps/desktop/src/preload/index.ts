@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-/** What the renderer may ask of its host: the license and the media engine. */
+/** What the renderer may ask of its host: the license, the production database and the media engine. */
 contextBridge.exposeInMainWorld('vcdit', {
   platform: process.platform,
   desktop: true,
@@ -16,6 +16,26 @@ contextBridge.exposeInMainWorld('vcdit', {
     refresh: (): Promise<unknown> => ipcRenderer.invoke('vcdit:license-refresh'),
     deactivate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:license-deactivate'),
     open: (page: string): Promise<void> => ipcRenderer.invoke('vcdit:license-open', page),
+  },
+  /** The production database (src/main/db): settings, shoot days, scene lists. */
+  project: {
+    now: (): unknown => ipcRenderer.sendSync('vcdit:project-now'),
+    onChange: (listener: (state: unknown) => void): (() => void) => {
+      const handler = (_e: unknown, state: unknown) => listener(state);
+      ipcRenderer.on('vcdit:project', handler);
+      return () => ipcRenderer.removeListener('vcdit:project', handler);
+    },
+    update: (patch: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-update', patch),
+    updateDay: (patch: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-update-day', patch),
+    addScene: (scene: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-add-scene', scene),
+    updateScene: (id: string, patch: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-update-scene', id, patch),
+    removeScene: (id: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-remove-scene', id),
+    addDay: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-add-day'),
+    openDay: (number: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-open-day', number),
+    create: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-new'),
+    open: (file?: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-open', file),
+    saveCopy: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-copy'),
+    reveal: (): Promise<void> => ipcRenderer.invoke('vcdit:project-reveal'),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

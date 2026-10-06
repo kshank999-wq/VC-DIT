@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useReducer, type Dispatch, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
+import type { ProjectState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -24,7 +25,7 @@ import type {
   Volume,
   VolumeRole,
 } from '../model/types';
-import { engine, fromEngine } from './engine';
+import { engine, fromEngine, fromProject, persist, projectApi } from './engine';
 
 /**
  * The whole UI state and every way it changes, in one reducer, so each
@@ -32,10 +33,12 @@ import { engine, fromEngine } from './engine';
  * the file tree and Today can never disagree (they are all derived in
  * model/status.ts).
  *
- * In the desktop app the media engine (src/main/media) owns the volumes,
- * destinations and transfers and sends them as `engineState`. In the browser
- * preview and the tests the reducer stands in for it (the `tick` action
- * advances simulated transfers on the demo day).
+ * In the desktop app the production database (src/main/db) holds the
+ * production, the day and its scene list (`projectState`; edits are written
+ * back by `persist`), and the media engine (src/main/media) owns the
+ * volumes, destinations and transfers (`engineState`). In the browser
+ * preview and the tests the HALCYON demo day stands in for both (the `tick`
+ * action advances simulated transfers).
  */
 
 export type PoolFilter = 'all' | 'circle' | 'vfx';
@@ -45,6 +48,8 @@ export type ReportFilter = 'all' | StepId;
 export interface AppState {
   /** Volumes, destinations and transfers come from the real media engine. */
   engine: boolean;
+  /** The open production's file, its days and the recent productions, when the database is in use. */
+  project: { file: string; days: ShootDay[]; recent: { file: string; name: string }[] } | null;
   screen: ScreenId;
   filesOpen: boolean;
   theme: ThemeChoice;
@@ -83,6 +88,7 @@ export interface AppState {
 
 export const initialState = (): AppState => ({
   engine: false,
+  project: null,
   screen: 'today',
   filesOpen: true,
   theme: 'system',
@@ -125,8 +131,11 @@ export type Action =
   | { type: 'toggleFolder'; path: string }
   // Project setup
   | { type: 'setProduction'; patch: Partial<Production> }
+  | { type: 'setDay'; patch: Partial<Omit<ShootDay, 'number'>> }
   | { type: 'setSceneStatus'; scene: string; status: SceneStatus }
   | { type: 'addScene'; id: string; description: string }
+  | { type: 'removeScene'; scene: string }
+  | { type: 'projectState'; project: ProjectState }
   | { type: 'reimportScriptLog' }
   // Intake
   | { type: 'setVolumeRole'; volume: string; role: VolumeRole }
@@ -215,6 +224,12 @@ export const reducer = (state: AppState, action: Action): AppState => {
 
     case 'setProduction':
       return { ...state, production: { ...state.production, ...action.patch } };
+    case 'setDay':
+      return { ...state, day: { ...state.day, ...action.patch, operator: { ...state.day.operator, ...action.patch.operator } } };
+    case 'removeScene':
+      return { ...state, scenes: state.scenes.filter((scene) => scene.id !== action.scene) };
+    case 'projectState':
+      return { ...state, ...fromProject(state, action.project) };
     case 'setSceneStatus':
       return { ...state, scenes: state.scenes.map((scene) => (scene.id === action.scene ? { ...scene, status: action.status } : scene)) };
     case 'addScene': {
@@ -222,7 +237,7 @@ export const reducer = (state: AppState, action: Action): AppState => {
       if (!id || state.scenes.some((scene) => scene.id === id)) return state;
       return {
         ...state,
-        scenes: [...state.scenes, { id, description: action.description.trim() || 'Added on the day', status: 'Scheduled', notes: '', look: state.luts[0]?.name ?? '', setups: [] }],
+        scenes: [...state.scenes, { id, description: action.description.trim() || 'Added on the day', status: 'Scheduled', notes: '', look: state.project ? '' : (state.luts[0]?.name ?? ''), setups: [] }],
       };
     }
     case 'reimportScriptLog':
@@ -429,10 +444,29 @@ const StoreContext = createContext<{ state: AppState; dispatch: Dispatch<Action>
 export function StoreProvider({ children, initial, simulate = true }: { children: ReactNode; initial?: AppState; simulate?: boolean }) {
   const [state, dispatch] = useReducer(reducer, undefined, () => {
     if (initial) return initial;
-    const start = { ...initialState(), theme: readTheme() };
+    let start: AppState = { ...initialState(), theme: readTheme() };
     // With the real engine, no demo cards or transfers: only what is plugged in.
-    return engine() ? { ...start, engine: true, volumes: [], destinations: [], jobs: [] } : start;
+    if (engine()) start = { ...start, engine: true, volumes: [], destinations: [], jobs: [] };
+    // With the database, the production open on this cart, from the first frame.
+    const project = projectApi();
+    if (project) start = { ...start, ...fromProject({ ...start, scenes: [] }, project.now()) };
+    return start;
   });
+
+  // Edits the database keeps are written through as they are made.
+  const hasProject = useRef(state.project !== null);
+  hasProject.current = state.project !== null;
+  const send = useCallback<Dispatch<Action>>((action) => {
+    dispatch(action);
+    if (hasProject.current) persist(action);
+  }, []);
+
+  // Another production or day opened (here or from another window).
+  useEffect(() => {
+    const project = state.project ? projectApi() : null;
+    if (!project) return undefined;
+    return project.onChange((next) => dispatch({ type: 'projectState', project: next }));
+  }, [state.project !== null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The media engine: its state now and every change after.
   useEffect(() => {
@@ -462,7 +496,7 @@ export function StoreProvider({ children, initial, simulate = true }: { children
     }
   }, [state.theme]);
 
-  return <StoreContext.Provider value={{ state, dispatch }}>{children}</StoreContext.Provider>;
+  return <StoreContext.Provider value={{ state, dispatch: send }}>{children}</StoreContext.Provider>;
 }
 
 export const useStore = () => {

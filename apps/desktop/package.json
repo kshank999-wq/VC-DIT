@@ -21,6 +21,7 @@
     "@types/node": "^22.20.4",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
+    "@types/sql.js": "^1.4.11",
     "@vitejs/plugin-react": "^4.7.0",
     "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
@@ -28,6 +29,7 @@
     "jsdom": "^25.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "sql.js": "^1.14.2",
     "typescript": "^5.9.3",
     "vite": "^5.4.21",
     "xxhash-wasm": "^1.1.0"

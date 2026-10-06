@@ -26,7 +26,9 @@ interface Window {
       deactivate: () => Promise<Access>;
       open: (page: 'pricing' | 'download' | 'account') => Promise<void>;
     };
-    /** The media engine (src/main/media). Absent in the browser preview, which runs on the demo day. */
+    /** The production database (src/main/db). Absent in the browser preview, which runs on the demo day. */
+    project?: ProjectApi;
+    /** The media engine (src/main/media). Absent in the browser preview. */
     media?: MediaApi;
   };
 }
@@ -42,4 +44,23 @@ interface MediaApi {
   ingest: (request: import('../shared/media').IngestRequest) => Promise<import('../shared/media').IngestResult>;
   retry: (jobId: string, legId: string) => Promise<import('../shared/media').IngestResult>;
   show: (path: string) => Promise<void>;
+}
+
+type ProjectState = import('../shared/project').ProjectState;
+type ProjectResult = import('../shared/project').ProjectResult;
+
+interface ProjectApi {
+  now: () => ProjectState;
+  onChange: (listener: (state: ProjectState) => void) => () => void;
+  update: (patch: Partial<import('../shared/project').Production>) => Promise<ProjectResult>;
+  updateDay: (patch: Partial<Omit<import('../shared/project').ShootDay, 'number'>>) => Promise<ProjectResult>;
+  addScene: (scene: { id: string; description?: string }) => Promise<ProjectResult>;
+  updateScene: (id: string, patch: Partial<Omit<import('../shared/project').SceneEntry, 'id'>>) => Promise<ProjectResult>;
+  removeScene: (id: string) => Promise<ProjectResult>;
+  addDay: () => Promise<ProjectResult>;
+  openDay: (number: number) => Promise<ProjectResult>;
+  create: () => Promise<ProjectResult>;
+  open: (file?: string) => Promise<ProjectResult>;
+  saveCopy: () => Promise<ProjectResult>;
+  reveal: () => Promise<void>;
 }
