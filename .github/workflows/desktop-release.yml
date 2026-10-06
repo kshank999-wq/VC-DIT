@@ -40,14 +40,21 @@ jobs:
       - name: Install
         run: npm ci
 
-      # A build without these is a developer build with licensing switched off
-      # (everything unlocked). It must never reach a customer.
-      - name: Require the licensing configuration
+      # A build without the public key is a developer build with licensing
+      # switched off (everything unlocked). It must never reach a customer. The
+      # key comes from the repository variable if set, otherwise from the live
+      # site (/api/license/public-key), so it only has to be set up in Vercel.
+      - name: Get the license public key
         shell: bash
         run: |
           if [ -z "$MAIN_VITE_LICENSE_PUBLIC_KEY" ]; then
-            echo "::error::Set the repository variable MAIN_VITE_LICENSE_PUBLIC_KEY (Settings → Secrets and variables → Actions → Variables). See docs/DEPLOYMENT.md."
-            exit 1
+            pem=$(curl -fsS --retry 3 "$MAIN_VITE_SITE_URL/api/license/public-key") || pem=""
+            if ! printf '%s' "$pem" | grep -q "BEGIN PUBLIC KEY"; then
+              echo "::error::No license public key: $MAIN_VITE_SITE_URL/api/license/public-key did not return one. Set LICENSE_SIGNING_PRIVATE_KEY in Vercel (and redeploy), or the MAIN_VITE_LICENSE_PUBLIC_KEY repository variable. See docs/DEPLOYMENT.md."
+              exit 1
+            fi
+            echo "MAIN_VITE_LICENSE_PUBLIC_KEY=$(printf '%s' "$pem" | base64 | tr -d '\r\n')" >> "$GITHUB_ENV"
+            echo "Using the public key served by $MAIN_VITE_SITE_URL."
           fi
 
       - name: Decide whether to notarize

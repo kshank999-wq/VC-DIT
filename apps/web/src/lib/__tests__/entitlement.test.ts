@@ -1,6 +1,7 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { issueEntitlement, OFFLINE_GRACE_DAYS, privateKeyFrom, publicKeyPem, readEntitlement } from '../entitlement';
+import { publicKeyFrom } from '../../../../desktop/src/main/license-token';
 
 const { privateKey } = generateKeyPairSync('ed25519');
 const pem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -33,5 +34,21 @@ describe('entitlements', () => {
     for (const form of [pem, pem.replace(/\n/g, '\\n'), Buffer.from(pem).toString('base64')]) {
       expect(publicKeyPem(privateKeyFrom(form))).toBe(pub);
     }
+  });
+
+  it('takes a passphrase instead of a key: the same passphrase is always the same key', () => {
+    const passphrase = 'correct-horse-battery-staple-on-the-dit-cart-2026';
+    const key = privateKeyFrom(passphrase);
+    expect(publicKeyPem(privateKeyFrom(`  ${passphrase}\n`))).toBe(publicKeyPem(key));
+    expect(publicKeyPem(privateKeyFrom(`${passphrase}!`))).not.toBe(publicKeyPem(key));
+    // The desktop app reads the public half from /api/license/public-key and checks real tokens with it.
+    const { token, entitlement } = issueEntitlement(input, key);
+    expect(readEntitlement(token, publicKeyFrom(publicKeyPem(key))!)).toEqual(entitlement);
+  });
+
+  it('still takes a PEM key, raw or base64, and refuses a short passphrase', () => {
+    expect(publicKeyPem(privateKeyFrom(pem))).toBe(publicKeyPem(privateKey));
+    expect(publicKeyPem(privateKeyFrom(Buffer.from(pem).toString('base64')))).toBe(publicKeyPem(privateKey));
+    expect(() => privateKeyFrom('too-short')).toThrow(/at least 32/);
   });
 });

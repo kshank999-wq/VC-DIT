@@ -1,4 +1,4 @@
-import { createPrivateKey, createPublicKey, sign, verify, type KeyObject } from 'node:crypto';
+import { createPrivateKey, createPublicKey, scryptSync, sign, verify, type KeyObject } from 'node:crypto';
 import type { Plan } from './env';
 
 /**
@@ -33,10 +33,31 @@ export interface Entitlement {
 
 const base64url = (data: Buffer | string): string => Buffer.from(data).toString('base64url');
 
-/** The key from its environment variable: PEM, or the PEM base64-encoded (one line, easier to paste). */
+/** The fixed DER prefix of an Ed25519 PKCS#8 private key; the 32-byte seed follows it. */
+const ED25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b657004220420', 'hex');
+export const MIN_PASSPHRASE_LENGTH = 32;
+
+/**
+ * The key from its environment variable, in any of three forms:
+ * - a PEM private key;
+ * - the PEM base64-encoded on one line;
+ * - a long random passphrase (32+ characters, from a password manager), from
+ *   which the key is derived. This is the easy one: nothing to generate in a
+ *   terminal, and the desktop build fetches the matching public key from
+ *   /api/license/public-key, so there is nothing else to copy anywhere.
+ *   scrypt makes the derivation slow on purpose, so the key is no easier to
+ *   guess than the passphrase. Changing the passphrase is changing the key.
+ */
 export const privateKeyFrom = (value: string): KeyObject => {
-  const pem = value.includes('BEGIN') ? value.replace(/\\n/g, '\n') : Buffer.from(value, 'base64').toString('utf8');
-  return createPrivateKey(pem);
+  const text = value.trim();
+  if (text.includes('BEGIN')) return createPrivateKey(text.replace(/\\n/g, '\n'));
+  const decoded = Buffer.from(text, 'base64').toString('utf8');
+  if (decoded.includes('BEGIN')) return createPrivateKey(decoded);
+  if (text.length < MIN_PASSPHRASE_LENGTH) {
+    throw new Error(`LICENSE_SIGNING_PRIVATE_KEY is too short: use a key, or a random passphrase of at least ${MIN_PASSPHRASE_LENGTH} characters.`);
+  }
+  const seed = scryptSync(text, 'vcdit-license-key-v1', 32, { N: 2 ** 15, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+  return createPrivateKey({ key: Buffer.concat([ED25519_PKCS8_PREFIX, seed]), format: 'der', type: 'pkcs8' });
 };
 
 export const publicKeyPem = (privateKey: KeyObject): string =>

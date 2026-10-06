@@ -10,7 +10,7 @@
  *   npm run setup -w @vcdit/web -- vercel        (needs VERCEL_TOKEN)
  *   npm run setup -w @vcdit/web -- check
  */
-import { generateKeyPairSync } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import Stripe from 'stripe';
@@ -51,14 +51,14 @@ const DEFAULTS = {
 switch (step) {
   case 'keys': {
     if (env['LICENSE_SIGNING_PRIVATE_KEY'] && !args.includes('--new')) {
-      console.log('· The license key pair is already in the file (--new makes another, which signs every installed copy out).');
+      console.log('· The license signing key is already in the file (--new makes another, which signs every installed copy out).');
       break;
     }
-    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
-    const line = (pem: string | Buffer) => Buffer.from(pem).toString('base64');
-    const pub = line(publicKey.export({ type: 'spki', format: 'pem' }));
-    write({ ...Object.fromEntries(Object.entries(DEFAULTS).filter(([key]) => !env[key])), LICENSE_SIGNING_PRIVATE_KEY: line(privateKey.export({ type: 'pkcs8', format: 'pem' })), MAIN_VITE_LICENSE_PUBLIC_KEY: pub });
-    say(['Wrote LICENSE_SIGNING_PRIVATE_KEY (for Vercel) and MAIN_VITE_LICENSE_PUBLIC_KEY to the file.', 'Add MAIN_VITE_LICENSE_PUBLIC_KEY as a GitHub Actions variable (it is public):', pub]);
+    // A long random passphrase: the site derives the key pair from it, and the
+    // release build reads the public half from vc-dit.com/api/license/public-key.
+    const passphrase = randomBytes(36).toString('base64url');
+    write({ ...Object.fromEntries(Object.entries(DEFAULTS).filter(([key]) => !env[key])), LICENSE_SIGNING_PRIVATE_KEY: passphrase });
+    say(['Wrote LICENSE_SIGNING_PRIVATE_KEY (a random passphrase) to the file; the vercel step uploads it.', 'Nothing to copy to GitHub: release builds fetch the public key from the site.']);
     break;
   }
   case 'stripe': {

@@ -84,8 +84,12 @@ repository root, after `npm install`.
    `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY` (the new Stripe account)
    and `RESEND_API_KEY`; and the two personal tokens used only by these steps
    and never uploaded: `VERCEL_TOKEN` and `SUPABASE_ACCESS_TOKEN`.
-2. `npm run setup -w @vcdit/web -- keys` makes the license key pair and
-   prints the public half for GitHub.
+2. `npm run setup -w @vcdit/web -- keys` makes the license signing key: a
+   long random passphrase in `LICENSE_SIGNING_PRIVATE_KEY`. (Or skip it and
+   paste any 32+ character random password from a password manager into
+   Vercel as `LICENSE_SIGNING_PRIVATE_KEY`; the site derives the key pair
+   from it, and release builds read the public half from
+   `https://vc-dit.com/api/license/public-key`. Nothing goes to GitHub.)
 3. `npm run setup -w @vcdit/web -- stripe --monthly=9.99 --yearly=99` makes:
    - the VC DIT product and its two prices;
    - the webhook (its secret goes into the file);
@@ -126,7 +130,7 @@ repository root, after `npm install`.
 | `STRIPE_PORTAL_CONFIGURATION` | `bpc_…`, from step 3 | The customer portal (monthly ↔ yearly) |
 | `RESEND_API_KEY` | Resend → API keys | **Secret** |
 | `RESEND_FROM_ADDRESS` | `VC DIT <noreply@vc-dit.com>` | Needs vc-dit.com verified in Resend |
-| `LICENSE_SIGNING_PRIVATE_KEY` | From step 2 | **Secret.** Signs what the app may do |
+| `LICENSE_SIGNING_PRIVATE_KEY` | A random password of 32+ characters (password manager), or step 2 | **Secret.** Signs what the app may do. Changing it signs every installed copy out until the next release |
 | `NEXT_PUBLIC_SITE_URL` | `https://vc-dit.com` | |
 | `STRIPE_AUTOMATIC_TAX` | `1` once Stripe Tax is active | Optional |
 | `RELEASE_BUCKET` | `releases` | Optional; the default |
@@ -152,16 +156,28 @@ artifacts, and, after approval in the `release` environment, publishes them
 | Kind | Name | Value |
 | --- | --- | --- |
 | Variable | `MAIN_VITE_SITE_URL` | `https://vc-dit.com` |
-| Variable | `MAIN_VITE_LICENSE_PUBLIC_KEY` | The public key from step 2 |
+| Variable | `MAIN_VITE_LICENSE_PUBLIC_KEY` | Optional. When unset, the build fetches it from the live site |
 | Variable | `SUPABASE_URL` | `https://wdpbzwqzjpxabvfailly.supabase.co` (the publish job) |
 | Secret | `SUPABASE_SERVICE_ROLE_KEY` | For the publish job |
-| Secret | `CSC_LINK`, `CSC_KEY_PASSWORD` | Apple Developer ID Application certificate (.p12, base64) and its password |
-| Secret | `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Notarization |
+| Secret | `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Mac signing and notarization: set all five with the one-line script below |
 | Secret | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` | Windows signing via Azure Artifact Signing (**pending**) |
 
-The workflow refuses to package without `MAIN_VITE_LICENSE_PUBLIC_KEY`,
-because a build without it has licensing switched off. **macOS** can be
-signed and notarized now with the Apple certificate. **Windows** builds
+**Mac signing, in one line.** On the Mac that has your "Developer ID
+Application" certificate, paste into Terminal:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/kshank999-wq/VC-DIT/HEAD/scripts/setup-apple-signing.sh)
+```
+
+It finds the certificate, exports only it and its key, reads the Team ID,
+asks for your Apple ID and an app-specific password (checking them with
+Apple), and sets the five secrets: by itself if the GitHub CLI (`gh`) is
+signed in, otherwise by copying each value to the clipboard while you paste
+it into the secrets page it opens.
+
+The workflow refuses to package without a license public key (from the
+variable, or the live site), because a build without it has licensing
+switched off. **Windows** builds
 unsigned until Azure Artifact Signing is approved; SmartScreen warns on an
 unsigned installer, so do not publish one to customers. Add the `release`
 environment (Settings → Environments) with yourself as a required reviewer.
