@@ -69,4 +69,7 @@ interface ProjectApi {
   tagVfx: (clip: string, note: string) => Promise<ProjectResult>;
   mirrorVfx: () => Promise<ProjectResult>;
   sendVfx: () => Promise<ProjectResult>;
+  syncWaveform: () => Promise<ProjectResult>;
+  syncNudge: (id: string, frames: number) => Promise<ProjectResult>;
+  syncAccept: (ids: string[]) => Promise<ProjectResult>;
 }

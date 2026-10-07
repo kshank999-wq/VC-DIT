@@ -98,7 +98,7 @@ export interface TransferJob {
   etaSeconds?: number | null;
 }
 
-export type SyncMethod = 'Timecode' | 'Waveform' | 'Manual';
+export type SyncMethod = 'Timecode' | 'Waveform' | 'Manual' | 'None';
 
 export interface SyncItem {
   take: string;
@@ -108,6 +108,12 @@ export interface SyncItem {
   offsetFrames: number;
   confidence: number;
   accepted: boolean;
+  /** From the production database: the record's id, the clip's rate, why it stands as it does, and loudness to draw. */
+  id?: string;
+  fps?: number | null;
+  why?: string;
+  barsPicture?: number[];
+  barsSound?: number[];
 }
 
 export interface Lut {

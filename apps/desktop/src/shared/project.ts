@@ -121,6 +121,28 @@ export interface VfxEntry {
   sentAt: string | null;
 }
 
+/** One camera clip's sync with production sound (spec "Sync Record"). */
+export interface SyncEntry {
+  /** `${card}|${clip}`. */
+  id: string;
+  /** The take it belongs to ("14B-03"), or the clip when the log does not have it. */
+  take: string;
+  clip: string;
+  /** The sound file, or "—". */
+  sound: string;
+  method: 'Timecode' | 'Waveform' | 'Manual' | 'None';
+  /** The correction on top of timecode (or of the waveform's answer), in frames. */
+  offsetFrames: number;
+  confidence: number;
+  accepted: boolean;
+  /** The clip's frame rate, for "1 frame @ 23.976 fps". */
+  fps: number | null;
+  why: string;
+  /** Loudness bars of the scratch audio and of the sound as synced, for drawing. */
+  barsPicture: number[];
+  barsSound: number[];
+}
+
 /** The day's script supervisor log, as last imported. */
 export interface LogSummary {
   file: string;
@@ -150,6 +172,10 @@ export interface ProjectState {
   vfx: VfxEntry[];
   /** What the VFX mirroring is doing now ("Copying A015C002 to RAID…"), or null. */
   vfxActivity: string | null;
+  /** Every camera clip of the day and its sync. */
+  sync: SyncEntry[];
+  /** What sync is doing now ("Reading timecode…"), or null. */
+  syncActivity: string | null;
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }

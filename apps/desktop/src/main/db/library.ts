@@ -110,6 +110,8 @@ export class Library {
       days: db.days(),
       ...db.logView(day.number),
       vfxActivity: null,
+      sync: db.syncView(day.number),
+      syncActivity: null,
       recent: this.index.recent,
     };
   }

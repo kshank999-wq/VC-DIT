@@ -123,6 +123,42 @@ day, scene/setup/take, clip, notes, who flagged it, mirror folder, editorial
 folder, files and checksums) and a CSV of the same into each destination's
 `VFX/` folder, and marks those shots sent.
 
+## Picture and sound sync (`src/main/media/metadata`, `src/main/sync`)
+
+**Reading media headers** (no picture is decoded):
+
+| Format | What is read |
+| --- | --- |
+| QuickTime / MP4 (ProRes, H.264, HEVC) | Frame rate, length, the timecode track (tmcd), uncompressed scratch audio (sowt, twos, in24, in32, lpcm, fl32, ipcm) |
+| MXF (ARRI, Sony, Canon, Panasonic) | Start timecode (Timecode Component), picture rate and length, the sound descriptor, and frame- or clip-wrapped PCM scratch audio (picture elements are skipped by their length) |
+| WAV / Broadcast WAV / RF64 | Format, length, start time (bext time reference) and the recorder's iXML (scene, take, roll, rate, track names) |
+| R3D, BRAW, ARRIRAW .ari, Canon RAW | Not read: their timecode needs the vendor's SDK. Each clip says so |
+
+Headers are read in the analysis worker as each card finishes, from a
+verified destination copy (or the card if it is still in).
+
+**Sync**, for every camera clip of the day:
+
+1. *Timecode* (`plan.ts`): the sound file whose timecode covers the clip. Sound
+   starts (seconds since midnight) become timecode frames at the clip's real rate,
+   so 23.976 and 29.97 line up as they do on set.
+2. *Checked by waveform* (`analyse.ts`) when the clip has scratch audio: if the
+   waveform puts the sound more than a frame away from timecode, the sync waits
+   for a look and says by how much (a recorder that was not jammed).
+3. A whole-clip timecode match nothing disagrees with is accepted on its own;
+   anything else waits for the DIT.
+4. *Waveform pass* (on request) for clips timecode cannot place: the scratch audio
+   against the log's sound file and the nearest in time (`waveform.ts`: log
+   loudness, coarse search at 100 Hz, fine at 1 kHz; millisecond accuracy).
+   Waveform results are never accepted without a look.
+5. The DIT nudges by frames and accepts; those decisions are never redone.
+
+Reading a clip's timecode also lets the log match takes that name no clip:
+the logged timecode inside exactly one clip's own timecode is a match.
+
+Test media: `src/main/__tests__/fixtures/` holds a short MOV and MXF made by
+ffmpeg (`make-sync-fixtures.mjs`), with matching timecode and scratch audio.
+
 ## Media integrity rules (spec §8), as engineering constraints
 
 - **Originals are read-only.** The copy engine opens sources read-only; no
@@ -201,6 +237,8 @@ because the media is there and must not pass through vc-dit.com.
    Match review run on the real log and clips.
    Done: VFX mirroring (hard link, reference or verified copy) and the
    VC VFX Prep handoff package.
-4. Sync, LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats
+   Done: picture/sound sync by timecode, checked by waveform, with a waveform
+   pass and manual nudges.
+4. LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats
    need them), VFX mirroring, delivery packages and manifests.
 5. Frame.io, then Google Drive, as destination adapters.

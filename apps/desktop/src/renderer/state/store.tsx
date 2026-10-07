@@ -80,6 +80,8 @@ export interface AppState {
   mirrorMethod: MirrorMethod;
   /** What the VFX mirroring is doing now, in the desktop app. */
   vfxActivity: string | null;
+  /** What sync is doing now, in the desktop app. */
+  syncActivity: string | null;
   dailies: DailiesOptions;
   packages: DeliveryPackage[];
   deliveryDestinations: DeliveryDestination[];
@@ -119,6 +121,7 @@ export const initialState = (): AppState => ({
   selectedVfx: 2,
   mirrorMethod: 'Hard link',
   vfxActivity: null,
+  syncActivity: null,
   dailies: structuredClone(demo.DAILIES),
   packages: structuredClone(demo.PACKAGES),
   deliveryDestinations: demo.DELIVERY_DESTINATIONS.map((destination) => ({ ...destination })),
@@ -394,6 +397,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
       return { ...state, sync, selectedSync: next >= 0 ? next : state.selectedSync };
     }
     case 'waveformPass':
+      // In the desktop app the real waveform pass answers (state/engine.ts persist).
+      if (state.project) return state;
       // Exceptions with no timecode get a waveform attempt; it raises confidence but still asks for a look.
       return {
         ...state,

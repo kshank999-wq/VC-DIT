@@ -32,6 +32,9 @@ type FromProject = Pick<
   | 'selectedMatch'
   | 'mirrorMethod'
   | 'vfxActivity'
+  | 'sync'
+  | 'selectedSync'
+  | 'syncActivity'
 >;
 
 /** The production as the database has it, into the UI's state. */
@@ -65,6 +68,10 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     vfx,
     mirrorMethod: project.production.vfxMethod,
     vfxActivity: project.vfxActivity,
+    sync: project.sync,
+    // Stay on the clip being looked at, wherever it moves in the list.
+    selectedSync: Math.max(0, project.sync.findIndex((item) => item.id === state.sync[state.selectedSync]?.id)),
+    syncActivity: project.syncActivity,
     scriptLog: project.log
       ? {
           file: project.log.file,
@@ -99,6 +106,24 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
     }
     case 'markWild':
       apply(api.resolveMatch(action.id, null));
+      return;
+    case 'nudgeSync': {
+      const item = before.sync[before.selectedSync];
+      if (item?.id) apply(api.syncNudge(item.id, action.frames));
+      return;
+    }
+    case 'acceptSync': {
+      const item = before.sync[before.selectedSync];
+      if (item?.id) apply(api.syncAccept([item.id]));
+      return;
+    }
+    case 'batchSync': {
+      const ids = before.sync.filter((item) => item.take.startsWith(action.scene) && item.confidence >= 90 && !item.accepted && item.id).map((item) => item.id!);
+      if (ids.length) apply(api.syncAccept(ids));
+      return;
+    }
+    case 'waveformPass':
+      apply(api.syncWaveform());
       return;
     case 'setProduction':
       void api.update(action.patch);

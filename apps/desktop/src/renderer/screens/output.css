@@ -123,3 +123,7 @@
 .fill > span { display: block; height: 100%; }
 .delivery-summary { padding: 14px 16px; gap: 16px; border-color: var(--border-strong); }
 .manifest td.sans { font-size: 12.5px; }
+
+.sync-activity { margin: -6px 0 0; font-size: 12.5px; }
+.sync-why { margin: -4px 0 0; font-size: 12.5px; }
+.wave-empty { display: flex; align-items: center; font-size: 12px; }

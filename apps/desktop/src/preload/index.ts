@@ -42,6 +42,9 @@ contextBridge.exposeInMainWorld('vcdit', {
     tagVfx: (clip: string, note: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-tag', clip, note),
     mirrorVfx: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-mirror'),
     sendVfx: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-send'),
+    syncWaveform: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-waveform'),
+    syncNudge: (id: string, frames: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-nudge', id, frames),
+    syncAccept: (ids: string[]): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-accept', ids),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

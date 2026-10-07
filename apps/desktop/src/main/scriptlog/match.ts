@@ -21,6 +21,8 @@ export interface DayClip {
   kind: 'camera' | 'sound';
   size: number;
   mtimeMs: number;
+  /** The clip's timecode span in timecode seconds (frames / timebase), once its header is read. */
+  tc?: { start: number; end: number } | null;
 }
 
 /** A clip as the log sees it: one camera take may be several files (RED spans, sidecars). */
@@ -31,6 +33,7 @@ export interface ClipGroup {
   files: DayClip[];
   /** When the camera finished writing it: the closest thing to its end timecode until media is read. */
   endMs: number;
+  tc: { start: number; end: number } | null;
 }
 
 export interface Candidate {
@@ -70,9 +73,10 @@ export const groupClips = (clips: DayClip[]): ClipGroup[] => {
     if (!key && !media) continue;
     const name = key ?? clip.fileName.replace(/\.[^.]+$/, '');
     const id = `${clip.kind}|${clip.card}|${name}`;
-    const group = groups.get(id) ?? { key: name, card: clip.card, kind: clip.kind, files: [], endMs: 0 };
+    const group = groups.get(id) ?? { key: name, card: clip.card, kind: clip.kind, files: [], endMs: 0, tc: null };
     group.files.push(clip);
     if (media) group.endMs = Math.max(group.endMs, clip.mtimeMs);
+    if (media && clip.tc && !group.tc) group.tc = clip.tc;
     groups.set(id, group);
   }
   return [...groups.values()].filter((group) => group.files.some((file) => (group.kind === 'sound' ? AUDIO : VIDEO).test(file.fileName)));
@@ -84,9 +88,12 @@ const secondsOfDay = (ms: number) => {
 };
 const clock = (ms: number) => (ms ? new Date(ms).toTimeString().slice(0, 8) : '—');
 const tcSeconds = (tc: string): number | null => {
-  const found = /^(\d{2}):(\d{2}):(\d{2})/.exec(tc);
-  return found ? Number(found[1]) * 3600 + Number(found[2]) * 60 + Number(found[3]) : null;
+  const found = /^(\d{2}):(\d{2}):(\d{2})(?::(\d{2,3}))?/.exec(tc);
+  return found ? Number(found[1]) * 3600 + Number(found[2]) * 60 + Number(found[3]) + Number(found[4] ?? 0) / 100 : null;
 };
+
+/** How sure a logged timecode inside a clip's own timecode makes a match. */
+export const INSIDE_TC = 95;
 const candidate = (group: ClipGroup, confidence: number, why: string): Candidate => ({
   key: group.key,
   card: group.card,
@@ -101,9 +108,24 @@ const byTime = (pool: ClipGroup[], entry: LogEntry): Candidate[] => {
   const start = tcSeconds(entry.tcIn);
   const target = end ?? start;
   if (target === null) return [];
+  // Clips whose timecode has been read: the logged start inside the clip's span is near-certain.
+  const coded = pool.filter((group) => group.tc);
+  if (coded.length && start !== null) {
+    const inside = coded.filter((group) => start >= group.tc!.start - 1 && start <= group.tc!.end + 1);
+    const nearest = coded
+      .filter((group) => !inside.includes(group))
+      .map((group) => ({ group, gap: Math.round(Math.min(Math.abs(group.tc!.start - start), Math.abs(group.tc!.end - start))) }))
+      .filter((item) => item.gap < 600)
+      .sort((a, b) => a.gap - b.gap)
+      .slice(0, 3);
+    return [
+      ...inside.map((group) => candidate(group, inside.length === 1 ? INSIDE_TC : 70, "Logged TC is inside this clip's timecode")),
+      ...nearest.map(({ group, gap }) => candidate(group, Math.max(10, 50 - gap / 6), `Clip timecode ${gap < 60 ? `${gap}s` : `${Math.round(gap / 60)} min`} from the logged TC`)),
+    ];
+  }
   return pool
     .map((group) => {
-      const gap = Math.abs(secondsOfDay(group.endMs) - target);
+      const gap = Math.round(Math.abs(secondsOfDay(group.endMs) - target));
       // A clip's file time is when it stopped recording: after the logged start, close to the logged end.
       const closeness = Math.max(0, 1 - gap / (end !== null ? 300 : 900));
       return { group, gap, closeness };
@@ -185,6 +207,11 @@ const matchWithoutName = (entry: LogEntry, camera: string, cameras: ClipGroup[])
       candidates: [],
       reason: roll ? `No clips from roll ${roll} ingested today yet.` : 'No clip near the logged timecode.',
     };
+  }
+  // The logged timecode inside exactly one clip's own timecode: matched.
+  const sure = candidates.filter((item) => item.confidence >= INSIDE_TC);
+  if (sure.length === 1) {
+    return { ...base, state: 'matched', clip: { key: sure[0]!.key, card: sure[0]!.card }, confidence: INSIDE_TC, candidates: [], reason: '' };
   }
   return {
     ...base,

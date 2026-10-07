@@ -7,6 +7,9 @@ import type { ChecksumMethod } from '../../shared/media';
 import { MIRROR_METHODS, SCENE_STATUSES, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import transferWorkerPath from '../media/transfer-worker?modulePath';
 import type { WorkerMessage, WorkerPlan } from '../media/transfer-worker';
+import analysisWorkerPath from '../sync/analysis-worker?modulePath';
+import type { AnalysisMessage } from '../sync/analysis-worker';
+import { SyncService, type RunAnalysis } from '../sync/sync-service';
 import type { RunCopy } from '../vfx/mirror';
 import { VfxService } from '../vfx/vfx-service';
 import { LOG_TEMPLATE, parseScriptLog } from '../scriptlog/parse';
@@ -90,9 +93,24 @@ const runCopy: RunCopy = (plan: WorkerPlan) =>
     worker.on('exit', (code) => code !== 0 && reject(new Error('The copy stopped unexpectedly.')));
   });
 
+/** Sync's reading and comparing, in its own worker: one per batch of jobs. */
+const runAnalysis: RunAnalysis = (jobs) =>
+  new Promise((resolve, reject) => {
+    const results: unknown[] = [];
+    const worker = new Worker(analysisWorkerPath, { workerData: jobs });
+    worker.on('message', (message: AnalysisMessage) => {
+      if (message.type === 'result') results[message.index] = message.value;
+      else if (message.type === 'done') resolve(results);
+      else reject(new Error(message.message));
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => code !== 0 && reject(new Error('Sync stopped unexpectedly.')));
+  });
+
 export interface Project {
   library: Library;
   vfx: VfxService;
+  sync: SyncService;
   /** Tell the windows the production changed. */
   changed: () => void;
   /** A card finished: match the log again, then mirror any VFX shot it completes. */
@@ -104,22 +122,28 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   await library.start();
 
   let vfx: VfxService | null = null;
-  const stateNow = (): ProjectState => ({ ...library.state(), vfxActivity: vfx?.activity ?? null });
+  let sync: SyncService | null = null;
+  const stateNow = (): ProjectState => ({ ...library.state(), vfxActivity: vfx?.activity ?? null, syncActivity: sync?.activity ?? null });
   const broadcast = () => {
     const state = stateNow();
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:project', state);
   };
   vfx = new VfxService({ db: () => library.current, runCopy, tool: { name: 'VC DIT', version: app.getVersion() }, changed: broadcast });
   const mirrors = vfx;
+  sync = new SyncService({ db: () => library.current, runAnalysis, changed: broadcast });
+  const syncing = sync;
+  /** Read new files' timecode and sync what timecode can; quick, so it follows every change. */
+  const syncQuick = () => void syncing.run({ waveform: false });
   /** Make the quick mirrors (links, references) for anything newly flagged, matched or verified. */
   const mirrorQuick = () => void mirrors.run({ copies: false, retry: false });
-  const busy = () => hooks.busy() || mirrors.activity !== null;
+  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null;
 
   const openedNow = () => {
     const db = library.current;
     hooks.opened(db.transfers(db.currentDay().number));
     broadcast();
     mirrorQuick();
+    syncQuick();
   };
   const answer = async (work: () => void | Promise<void>, options: { switching?: boolean } = {}): Promise<ProjectResult> => {
     if (options.switching && busy()) return { ok: false, reason: 'A transfer or VFX copy is running. Wait for it to finish first.' };
@@ -221,6 +245,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       const db = library.current;
       db.importLog(db.currentDay().number, basename(path), parsed);
       mirrorQuick();
+      syncQuick();
     });
   });
   ipcMain.handle('vcdit:project-resolve-match', (_e, id: unknown, clip: unknown) =>
@@ -252,14 +277,26 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     }),
   );
 
+  // ------------------------------------------------ sync
+  const day = () => library.current.currentDay().number;
+  ipcMain.handle('vcdit:project-sync-waveform', () => answer(() => void syncing.run({ waveform: true })));
+  ipcMain.handle('vcdit:project-sync-nudge', (_e, id: unknown, frames: unknown) =>
+    answer(() => library.current.nudgeSync(day(), String(id), Math.max(-500, Math.min(500, Math.round(Number(frames) || 0))))),
+  );
+  ipcMain.handle('vcdit:project-sync-accept', (_e, ids: unknown) =>
+    answer(() => library.current.acceptSync(day(), Array.isArray(ids) ? ids.map(String).slice(0, 5000) : [])),
+  );
+
   return {
     library,
     vfx: mirrors,
+    sync: syncing,
     changed: broadcast,
     cardIn: (day) => {
       library.current.rematch(day);
       broadcast();
       mirrorQuick();
+      syncQuick();
     },
   };
 };

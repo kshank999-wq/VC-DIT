@@ -201,4 +201,22 @@ describe('matching the log to the clips', () => {
     ]);
     expect(results.get(nothing)!.camera[0]).toMatchObject({ state: 'unmatched', reason: 'The log gives no clip name, roll or timecode for this take.' });
   });
+
+  it("matches by the clip's own timecode once it is read: inside exactly one clip is sure, inside two is a question", () => {
+    const at = (h: number, m: number, sec: number) => h * 3600 + m * 60 + sec;
+    const coded = [
+      { ...clip('A015', 'A015C001_261005_R1AB.mxf'), tc: { start: at(14, 2, 11), end: at(14, 3, 2) } },
+      { ...clip('A015', 'A015C002_261005_R1AB.mxf'), tc: { start: at(14, 5, 40), end: at(14, 6, 31) } },
+    ];
+    const logged = entry({ roll: 'A015', tcIn: '14:05:52:10' });
+    expect(matchDay([logged], coded).get(logged)!.camera[0]).toMatchObject({ state: 'matched', clip: { key: 'A015C002', card: 'A015' }, confidence: 95 });
+
+    const overlapping = [...coded, { ...clip('A015', 'A015C003_261005_R1AB.mxf'), tc: { start: at(14, 5, 0), end: at(14, 6, 0) } }];
+    const [ref] = matchDay([logged], overlapping).get(logged)!.camera;
+    expect(ref).toMatchObject({ state: 'review' });
+    expect(ref!.candidates.slice(0, 2).map((candidate) => [candidate.key, candidate.confidence])).toEqual([
+      ['A015C002', 70],
+      ['A015C003', 70],
+    ]);
+  });
 });

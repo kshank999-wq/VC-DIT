@@ -29,39 +29,72 @@ const confidenceText = (confidence: number) => (confidence > 0 ? `${confidence}%
 
 const syncChip = (item: SyncItem) => {
   if (item.accepted) return <Chip color={statusVar('done')}>Synced</Chip>;
+  if (item.method === 'None') return <Chip color={statusVar('problem')}>No sound</Chip>;
   if (item.confidence === 0) return <Chip color={statusVar('problem')}>No TC</Chip>;
   return <Chip color={statusVar('needs')}>Review</Chip>;
 };
 
-function Waveform({ label, color, shift }: { label: string; color: string; shift: number }) {
+/** Loudness bars: the clip's own (0–100) when the engine has drawn them, the sample shape otherwise. */
+function Waveform({ label, color, shift, levels }: { label: string; color: string; shift: number; levels?: number[] }) {
+  const heights = levels ? levels.map((level) => Math.max(2, Math.round(level / 2))) : BARS;
   return (
     <>
       <span className="label">{label}</span>
-      <div className="wave" style={{ transform: `translateX(${shift}px)` }} aria-hidden="true">
-        {BARS.map((height, index) => (
-          <span key={index} style={{ height, background: color }} />
-        ))}
-      </div>
+      {heights.length ? (
+        <div className="wave" style={{ transform: `translateX(${shift}px)` }} aria-hidden="true">
+          {heights.map((height, index) => (
+            <span key={index} style={{ height, background: color }} />
+          ))}
+        </div>
+      ) : (
+        <div className="wave wave-empty muted">No audio to draw</div>
+      )}
     </>
   );
 }
 
+const rateText = (fps: number | null | undefined) => (fps ? `${Number.isInteger(fps) ? fps : fps.toFixed(3)} fps` : `${FPS} fps`);
+
 export function SyncWorkspace() {
   const { state, dispatch } = useStore();
-  const selected = state.sync[state.selectedSync] ?? state.sync[0]!;
+  const real = state.project !== null;
+  const selected = state.sync[state.selectedSync] ?? state.sync[0];
   const toReview = state.sync.filter((item) => !item.accepted).length;
   const exceptions = state.sync.filter((item) => !item.accepted && item.confidence < 50).length;
-  const scene14 = state.sync.filter((item) => item.take.startsWith('14') && !item.accepted && item.confidence >= 90).length;
+  // The sample day batches Scene 14; a real day accepts everything at 90% or more.
+  const batchScene = real ? '' : '14';
+  const batchable = state.sync.filter((item) => item.take.startsWith(batchScene) && !item.accepted && item.confidence >= 90).length;
+  const header = (
+    <ScreenHeaderSync
+      toReview={toReview}
+      exceptions={exceptions}
+      batchable={batchable}
+      batchLabel={real ? (batchable ? `Accept ${batchable} at 90%+` : 'Accept all at 90%+') : 'Batch sync Scene 14'}
+      busy={Boolean(state.syncActivity)}
+      onWaveform={() => dispatch({ type: 'waveformPass' })}
+      onBatch={() => dispatch({ type: 'batchSync', scene: batchScene })}
+    />
+  );
+
+  if (!selected) {
+    return (
+      <div className="screen out">
+        {header}
+        <p className="muted" role="status">
+          {state.syncActivity ?? 'No camera clips today yet. Each clip is paired with its sound here as its card comes in.'}
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="screen out">
-      <ScreenHeaderSync
-        toReview={toReview}
-        exceptions={exceptions}
-        scene14={scene14}
-        onWaveform={() => dispatch({ type: 'waveformPass' })}
-        onBatch={() => dispatch({ type: 'batchSync', scene: '14' })}
-      />
+      {header}
+      {state.syncActivity ? (
+        <p className="muted sync-activity" role="status">
+          {state.syncActivity}
+        </p>
+      ) : null}
 
       <section className="card sync-top" aria-label={`Sync for ${selected.take}`}>
         <div className="row sync-title">
@@ -77,27 +110,45 @@ export function SyncWorkspace() {
             {confidenceText(selected.confidence)}
           </span>
         </div>
+        {selected.why ? <p className="muted sync-why">{selected.why}</p> : null}
 
         <div className="wave-compare">
           <div className="playhead" aria-hidden="true" />
-          <Waveform label="Camera scratch" color="var(--st-intake)" shift={0} />
-          <Waveform label="Production sound · 888 TRK 1 (Boom)" color="var(--s-done)" shift={selected.offsetFrames * PX_PER_FRAME} />
+          <Waveform label="Camera scratch" color="var(--st-intake)" shift={0} levels={real ? (selected.barsPicture ?? []) : undefined} />
+          <Waveform
+            label={real ? `Production sound · ${selected.sound}` : 'Production sound · 888 TRK 1 (Boom)'}
+            color="var(--s-done)"
+            shift={selected.offsetFrames * PX_PER_FRAME}
+            levels={real ? (selected.barsSound ?? []) : undefined}
+          />
         </div>
 
         <div className="row">
           <span className="muted">Offset</span>
-          <button type="button" className="btn nudge mono" aria-label="Nudge sound one frame earlier" onClick={() => dispatch({ type: 'nudgeSync', frames: -1 })}>
+          <button
+            type="button"
+            className="btn nudge mono"
+            aria-label="Nudge sound one frame earlier"
+            disabled={selected.method === 'None'}
+            onClick={() => dispatch({ type: 'nudgeSync', frames: -1 })}
+          >
             −
           </button>
           <span className="mono offset" aria-live="polite">
             {formatOffset(selected.offsetFrames)}
           </span>
-          <button type="button" className="btn nudge mono" aria-label="Nudge sound one frame later" onClick={() => dispatch({ type: 'nudgeSync', frames: 1 })}>
+          <button
+            type="button"
+            className="btn nudge mono"
+            aria-label="Nudge sound one frame later"
+            disabled={selected.method === 'None'}
+            onClick={() => dispatch({ type: 'nudgeSync', frames: 1 })}
+          >
             +
           </button>
-          <span className="faint">1 frame @ {FPS} fps</span>
+          <span className="faint">1 frame @ {rateText(selected.fps)}</span>
           <span className="grow" />
-          <button type="button" className="btn primary" disabled={selected.accepted} onClick={() => dispatch({ type: 'acceptSync' })}>
+          <button type="button" className="btn primary" disabled={selected.accepted || selected.method === 'None'} onClick={() => dispatch({ type: 'acceptSync' })}>
             {selected.accepted ? 'Accepted' : 'Accept sync'}
           </button>
         </div>
@@ -119,7 +170,7 @@ export function SyncWorkspace() {
           <tbody>
             {state.sync.map((item, index) => (
               <tr
-                key={item.take}
+                key={item.id ?? item.take}
                 className="clickable"
                 aria-selected={index === state.selectedSync}
                 tabIndex={0}
@@ -135,7 +186,7 @@ export function SyncWorkspace() {
                 <td>{item.clip}</td>
                 <td className="muted">{item.sound}</td>
                 <td>{item.method}</td>
-                <td>{formatOffset(item.offsetFrames)}</td>
+                <td>{item.method === 'None' ? '—' : formatOffset(item.offsetFrames)}</td>
                 <td style={{ color: statusVar(confidenceStatus(item.confidence)) }}>{confidenceText(item.confidence)}</td>
                 <td>{syncChip(item)}</td>
               </tr>
@@ -150,13 +201,17 @@ export function SyncWorkspace() {
 function ScreenHeaderSync({
   toReview,
   exceptions,
-  scene14,
+  batchable,
+  batchLabel,
+  busy,
   onWaveform,
   onBatch,
 }: {
   toReview: number;
   exceptions: number;
-  scene14: number;
+  batchable: number;
+  batchLabel: string;
+  busy: boolean;
   onWaveform: () => void;
   onBatch: () => void;
 }) {
@@ -175,17 +230,23 @@ function ScreenHeaderSync({
       }
       actions={
         <>
-          <button type="button" className="btn tall" disabled={exceptions === 0} title={exceptions === 0 ? 'No takes without timecode left to analyse.' : undefined} onClick={onWaveform}>
+          <button
+            type="button"
+            className="btn tall"
+            disabled={exceptions === 0 || busy}
+            title={exceptions === 0 ? 'No takes without timecode left to analyse.' : 'Compares each one\'s scratch audio with nearby sound files.'}
+            onClick={onWaveform}
+          >
             Waveform pass on exceptions
           </button>
           <button
             type="button"
             className="btn primary tall"
-            disabled={scene14 === 0}
-            title={scene14 === 0 ? 'Every Scene 14 take at 90% or more is already synced; the rest need a look.' : 'Accepts every Scene 14 take at 90% confidence or more.'}
+            disabled={batchable === 0 || busy}
+            title={batchable === 0 ? 'Every take at 90% or more is already synced; the rest need a look.' : 'Accepts every take at 90% confidence or more.'}
             onClick={onBatch}
           >
-            Batch sync Scene 14
+            {batchLabel}
           </button>
         </>
       }

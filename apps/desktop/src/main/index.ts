@@ -4,6 +4,7 @@ import { registerLicensing } from './licensing-ipc';
 import type { Library } from './db/library';
 import { registerProject } from './db/project-ipc';
 import type { MediaService } from './media/media-service';
+import type { SyncService } from './sync/sync-service';
 import type { VfxService } from './vfx/vfx-service';
 import { registerMedia } from './media/media-ipc';
 
@@ -47,6 +48,7 @@ const createMainWindow = (): BrowserWindow => {
 let library: Library | null = null;
 let media: MediaService | null = null;
 let vfx: VfxService | null = null;
+let sync: SyncService | null = null;
 
 void app.whenReady().then(async () => {
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
@@ -57,6 +59,7 @@ void app.whenReady().then(async () => {
   });
   library = project.library;
   vfx = project.vfx;
+  sync = project.sync;
   const open = library;
   media = await registerMedia((transfer) => {
     open.current.saveTransfer(transfer);
@@ -97,6 +100,7 @@ app.on('before-quit', (event) => {
       await media.idle(15_000);
     }
     await vfx?.idle();
+    await sync?.idle();
     await library?.close().catch(() => undefined);
     app.quit();
   })();

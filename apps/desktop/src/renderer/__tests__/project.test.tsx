@@ -7,6 +7,7 @@ import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
 import { ProjectSetup } from '../screens/ProjectSetup';
 import { SceneOrganizer } from '../screens/SceneOrganizer';
+import { SyncWorkspace } from '../screens/SyncWorkspace';
 import { VfxHandoff } from '../screens/VfxHandoff';
 import { StoreProvider, useStore } from '../state/store';
 
@@ -28,6 +29,8 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   matches: [],
   vfx: [],
   vfxActivity: null,
+  sync: [],
+  syncActivity: null,
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
 });
@@ -103,6 +106,9 @@ beforeEach(() => {
     tagVfx: vi.fn(async () => ok(current)),
     mirrorVfx: vi.fn(async () => ok(current)),
     sendVfx: vi.fn(async () => ok(current)),
+    syncWaveform: vi.fn(async () => ok(current)),
+    syncNudge: vi.fn(async () => ok(current)),
+    syncAccept: vi.fn(async () => ok(current)),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -270,5 +276,45 @@ describe('a production from the database', () => {
     expect(api.sendVfx).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Physical copy' }));
     expect(api.update).toHaveBeenCalledWith({ vfxMethod: 'Physical copy' });
+  });
+
+  it("shows the day's real sync, and nudges, accepts and runs the waveform pass through the database", () => {
+    const entry = (patch: Partial<ProjectState['sync'][number]>): ProjectState['sync'][number] => ({
+      id: 'A001|A001C001',
+      take: '4A-01',
+      clip: 'A001C001',
+      sound: '4A-T01',
+      method: 'Timecode',
+      offsetFrames: 0,
+      confidence: 99,
+      accepted: true,
+      fps: 24000 / 1001,
+      why: 'Timecode: the sound file covers the whole clip; the waveform agrees',
+      barsPicture: [10, 80, 40],
+      barsSound: [12, 78, 41],
+      ...patch,
+    });
+    current = fresh({
+      sync: [
+        entry({}),
+        entry({ id: 'A001|A001C002', take: '4A-02', clip: 'A001C002', sound: '—', method: 'None', confidence: 0, accepted: false, why: "No sound file's timecode overlaps this clip. Try the waveform pass.", barsPicture: [], barsSound: [] }),
+        entry({ id: 'A001|A001C003', take: '4A-03', clip: 'A001C003', method: 'Timecode', confidence: 99, accepted: false }),
+      ],
+    });
+    render(
+      <StoreProvider>
+        <SyncWorkspace />
+      </StoreProvider>,
+    );
+    expect(screen.getByText(/the waveform agrees/)).toBeTruthy();
+    expect(screen.getByText('1 frame @ 23.976 fps')).toBeTruthy();
+    expect(screen.getByText('No sound')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Nudge sound one frame later' }));
+    expect(api.syncNudge).toHaveBeenCalledWith('A001|A001C001', 1);
+    fireEvent.click(screen.getByRole('button', { name: 'Waveform pass on exceptions' }));
+    expect(api.syncWaveform).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept 1 at 90%+' }));
+    expect(api.syncAccept).toHaveBeenCalledWith(['A001|A001C003']);
   });
 });

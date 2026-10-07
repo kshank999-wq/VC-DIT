@@ -21,6 +21,8 @@ import type { LogEntry, ParsedLog } from '../scriptlog/parse';
 import { clipKeyOfFile } from '../scriptlog/clip-key';
 import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch, type VfxFlag } from '../scriptlog/view';
 import type { MirrorFile, MirrorOutcome, MirrorPlan } from '../vfx/mirror';
+import type { MediaMeta, MetaResult } from '../media/metadata';
+import type { SyncEntry } from '../../shared/project';
 
 /**
  * One production's database: a single SQLite file on the cart (spec §2
@@ -261,6 +263,66 @@ const MIGRATION_3 = `
 `;
 // Kept beside the code that reads it; appended, so the order of versions never changes.
 MIGRATIONS.push(MIGRATION_3);
+
+const MIGRATION_4 = `
+  -- Sync (spec §4.6): what each media file's header says (timecode, rate,
+  -- length, start of recording), and each camera clip's sync with sound.
+  alter table clip add column meta text;
+
+  create table sync_record (
+    day integer not null,
+    card text not null,
+    clip_key text not null,
+    sound_card text,
+    sound_key text,
+    method text not null check (method in ('Timecode', 'Waveform', 'Manual', 'None')),
+    -- Where the sound file starts relative to the clip's first frame, in frames; and the method's own answer.
+    align_frames real,
+    base_frames real,
+    fps real,
+    confidence integer not null,
+    why text not null default '',
+    accepted integer not null default 0,
+    decided text not null default 'auto' check (decided in ('auto', 'dit')),
+    bars_picture text not null default '[]',
+    bars_sound text not null default '[]',
+    made_at text not null,
+    primary key (day, card, clip_key)
+  );
+`;
+MIGRATIONS.push(MIGRATION_4);
+
+const VIDEO_FILE = /\.(mxf|mov|mp4|m4v|ari|arx|r3d|braw|crm|mts|m2ts|avi)$/i;
+const AUDIO_FILE = /\.(wav|bwf)$/i;
+
+/** A sync record as kept. */
+export interface SyncRecord {
+  card: string;
+  clipKey: string;
+  soundCard: string | null;
+  soundKey: string | null;
+  method: 'Timecode' | 'Waveform' | 'Manual' | 'None';
+  alignFrames: number | null;
+  baseFrames: number | null;
+  fps: number | null;
+  confidence: number;
+  why: string;
+  accepted: boolean;
+  decided: 'auto' | 'dit';
+  barsPicture: number[];
+  barsSound: number[];
+}
+
+/** A media file of the day as sync sees it. */
+export interface SyncMedia {
+  card: string;
+  key: string;
+  meta: MediaMeta | null;
+  metaError: string | null;
+  mtimeMs: number;
+  /** Readable copies, best first: verified destination copies, then the card. */
+  paths: string[];
+}
 
 /** A VFX shot's key: the take and the clip on its card. */
 const shotKey = (shot: { scene: string; setup: string; take: string; card: string | null; clip: string }) =>
@@ -819,15 +881,23 @@ export class ProductionDb {
   rematch(day: number): void {
     const entries = this.logEntries(day);
     if (entries.length === 0) return;
-    const clips = this.rows<Record<string, SqlValue>>('select card, path, file_name, kind, size, mtime_ms from clip where day = ?', [day]).map<DayClip>(
-      (row) => ({
-        card: String(row['card']),
-        path: String(row['path']),
-        fileName: String(row['file_name']),
-        kind: row['kind'] as DayClip['kind'],
-        size: Number(row['size']),
-        mtimeMs: Number(row['mtime_ms']),
-      }),
+    const clips = this.rows<Record<string, SqlValue>>('select card, path, file_name, kind, size, mtime_ms, meta from clip where day = ?', [day]).map<DayClip>(
+      (row) => {
+        // Once its header is read, a clip's own timecode span (in timecode seconds) helps place logged takes.
+        const parsed = row['meta'] ? (JSON.parse(String(row['meta'])) as MetaResult) : null;
+        const meta = parsed?.ok ? parsed.meta : null;
+        const rate = meta?.rate && meta.rate.den ? meta.rate.num / meta.rate.den : null;
+        const tc = meta?.tc && rate ? { start: meta.tc.frames / meta.tc.base, end: (meta.tc.frames + meta.durationSec * rate) / meta.tc.base } : null;
+        return {
+          card: String(row['card']),
+          path: String(row['path']),
+          fileName: String(row['file_name']),
+          kind: row['kind'] as DayClip['kind'],
+          size: Number(row['size']),
+          mtimeMs: Number(row['mtime_ms']),
+          tc,
+        };
+      },
     );
     const results = matchDay(entries, clips);
     const decisions = new Map(
@@ -936,7 +1006,191 @@ export class ProductionDb {
         }
       : null;
     const view = buildLogView({ scenes: this.scenes(day), entries, matches, sounds, log, frameRate: this.production().frameRate });
-    return { ...view, vfx: this.vfxShots(day, view.vfx).map(({ entry }) => entry) };
+    // A take's sync and sound come from its A camera clip's sync record.
+    const records = new Map(this.syncRecords(day).map((record) => [record.clipKey, record]));
+    const scenes = view.scenes.map((scene) => ({
+      ...scene,
+      setups: scene.setups.map((setup) => ({
+        ...setup,
+        takes: setup.takes.map((take) => {
+          const record = records.get(take.clipA);
+          if (!record) return take;
+          const sync: typeof take.sync = record.method === 'None' ? 'none' : record.method === 'Waveform' ? 'WF' : 'TC';
+          return { ...take, sync, sound: record.soundKey ?? take.sound };
+        }),
+      })),
+    }));
+    return { ...view, scenes, vfx: this.vfxShots(day, view.vfx).map(({ entry }) => entry) };
+  }
+
+  // ------------------------------------------------ sync
+
+  /** Every readable copy of a file of the day: verified destination copies first, then where it came from. */
+  private copiesOf(day: number, card: string, path: string): string[] {
+    const rows = this.rows<Record<string, SqlValue>>(
+      `select td.target_dir, t.source_root, cc.state
+       from clip c
+       join transfer t on t.day = c.day and t.id = c.transfer_id
+       left join clip_copy cc on cc.clip_id = c.id
+       left join transfer_destination td on td.day = c.day and td.transfer_id = c.transfer_id and td.leg_id = cc.leg_id
+       where c.day = ? and c.card = ? and c.path = ?`,
+      [day, card, path],
+    );
+    const parts = path.split('/');
+    const verified = rows.filter((row) => row['state'] && row['state'] !== 'failed' && row['target_dir']).map((row) => join(String(row['target_dir']), ...parts));
+    const sources = rows.map((row) => join(String(row['source_root']), ...parts));
+    return [...new Set([...verified, ...sources])];
+  }
+
+  /** Media files whose header has not been read yet. */
+  pendingMeta(day: number): { card: string; path: string; paths: string[] }[] {
+    const rows = this.rows<Record<string, SqlValue>>('select distinct card, path, file_name from clip where day = ? and meta is null', [day]);
+    return rows
+      .filter((row) => VIDEO_FILE.test(String(row['file_name'])) || AUDIO_FILE.test(String(row['file_name'])))
+      .map((row) => ({ card: String(row['card']), path: String(row['path']), paths: this.copiesOf(day, String(row['card']), String(row['path'])) }));
+  }
+
+  saveMeta(day: number, card: string, path: string, result: MetaResult) {
+    this.transaction(() => this.run('update clip set meta = ? where day = ? and card = ? and path = ?', [JSON.stringify(result), day, card, path]));
+  }
+
+  /** The day's camera clips (one media file each) and sound files, with what their headers said. */
+  syncMedia(day: number): { pictures: (SyncMedia & { hint: { card: string; key: string } | null })[]; sounds: SyncMedia[] } {
+    const rows = this.rows<Record<string, SqlValue>>('select card, path, file_name, kind, mtime_ms, meta from clip where day = ? order by path', [day]);
+    const hints = new Map(
+      this.rows<Record<string, SqlValue>>(
+        `select m.clip_card, m.clip_key, s.clip_card as sound_card, s.clip_key as sound_key
+         from script_match m join script_entry e on e.id = m.entry_id join script_sound s on s.entry_id = e.id
+         where e.day = ? and m.state = 'matched' and m.clip_key is not null`,
+        [day],
+      ).map((row) => [`${String(row['clip_card'])}|${String(row['clip_key'])}`, { card: String(row['sound_card']), key: String(row['sound_key']) }]),
+    );
+    const pictures = new Map<string, SyncMedia & { hint: { card: string; key: string } | null }>();
+    const sounds = new Map<string, SyncMedia>();
+    for (const row of rows) {
+      const name = String(row['file_name']);
+      const card = String(row['card']);
+      const path = String(row['path']);
+      const parsed = row['meta'] ? (JSON.parse(String(row['meta'])) as MetaResult) : null;
+      const media = {
+        card,
+        meta: parsed?.ok ? parsed.meta : null,
+        metaError: parsed && !parsed.ok ? parsed.error : null,
+        mtimeMs: Number(row['mtime_ms']),
+      };
+      if (row['kind'] === 'camera' && VIDEO_FILE.test(name)) {
+        const key = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
+        const id = `${card}|${key}`;
+        // A clip in several files (RED spans): its first file speaks for it.
+        if (!pictures.has(id)) pictures.set(id, { ...media, key, paths: this.copiesOf(day, card, path), hint: hints.get(id) ?? null });
+      } else if (row['kind'] === 'sound' && AUDIO_FILE.test(name)) {
+        const key = name.replace(/\.[^.]+$/, '');
+        const id = `${card}|${key}`;
+        if (!sounds.has(id)) sounds.set(id, { ...media, key, paths: this.copiesOf(day, card, path) });
+      }
+    }
+    return { pictures: [...pictures.values()], sounds: [...sounds.values()] };
+  }
+
+  syncRecords(day: number): SyncRecord[] {
+    return this.rows<Record<string, SqlValue>>('select * from sync_record where day = ?', [day]).map((row) => ({
+      card: String(row['card']),
+      clipKey: String(row['clip_key']),
+      soundCard: (row['sound_card'] as string | null) ?? null,
+      soundKey: (row['sound_key'] as string | null) ?? null,
+      method: row['method'] as SyncRecord['method'],
+      alignFrames: (row['align_frames'] as number | null) ?? null,
+      baseFrames: (row['base_frames'] as number | null) ?? null,
+      fps: (row['fps'] as number | null) ?? null,
+      confidence: Number(row['confidence']),
+      why: String(row['why']),
+      accepted: Number(row['accepted']) === 1,
+      decided: row['decided'] as SyncRecord['decided'],
+      barsPicture: JSON.parse(String(row['bars_picture'])) as number[],
+      barsSound: JSON.parse(String(row['bars_sound'])) as number[],
+    }));
+  }
+
+  saveSync(day: number, record: SyncRecord) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into sync_record (day, card, clip_key, sound_card, sound_key, method, align_frames, base_frames, fps, confidence, why,
+           accepted, decided, bars_picture, bars_sound, made_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          day,
+          record.card,
+          record.clipKey,
+          record.soundCard,
+          record.soundKey,
+          record.method,
+          record.alignFrames,
+          record.baseFrames,
+          record.fps,
+          record.confidence,
+          record.why,
+          record.accepted ? 1 : 0,
+          record.decided,
+          JSON.stringify(record.barsPicture),
+          JSON.stringify(record.barsSound),
+          now(),
+        ],
+      ),
+    );
+  }
+
+  private syncRecord(day: number, id: string): SyncRecord {
+    const record = this.syncRecords(day).find((candidate) => `${candidate.card}|${candidate.clipKey}` === id);
+    if (!record) throw new Error('That clip has no sync yet.');
+    return record;
+  }
+
+  /** The DIT moves the sound by whole frames: the sync becomes manual, and waits to be accepted. */
+  nudgeSync(day: number, id: string, frames: number) {
+    const record = this.syncRecord(day, id);
+    if (record.alignFrames === null) throw new Error('There is no sound to move for this clip.');
+    this.saveSync(day, { ...record, method: 'Manual', alignFrames: record.alignFrames + frames, accepted: false, decided: 'dit' });
+  }
+
+  acceptSync(day: number, ids: string[]) {
+    for (const id of ids) {
+      const record = this.syncRecord(day, id);
+      if (record.method === 'None') continue;
+      this.saveSync(day, { ...record, accepted: true, decided: 'dit' });
+    }
+  }
+
+  /** The day's sync as the Sync screen shows it, in take order. */
+  syncView(day: number): SyncEntry[] {
+    const takes = new Map(
+      this.rows<Record<string, SqlValue>>(
+        `select m.clip_card, m.clip_key, e.scene, e.setup, e.take from script_match m join script_entry e on e.id = m.entry_id
+         where e.day = ? and m.state = 'matched' and m.clip_key is not null`,
+        [day],
+      ).map((row) => [
+        `${String(row['clip_card'])}|${String(row['clip_key'])}`,
+        `${String(row['scene'])}${String(row['setup'])}-${String(row['take']).padStart(2, '0')}`,
+      ]),
+    );
+    return this.syncRecords(day)
+      .map((record) => {
+        const id = `${record.card}|${record.clipKey}`;
+        return {
+          id,
+          take: takes.get(id) ?? record.clipKey,
+          clip: record.clipKey,
+          sound: record.soundKey ?? '—',
+          method: record.method,
+          offsetFrames: record.alignFrames !== null && record.baseFrames !== null ? Math.round(record.alignFrames - record.baseFrames) : 0,
+          confidence: record.confidence,
+          accepted: record.accepted,
+          fps: record.fps,
+          why: record.why,
+          barsPicture: record.barsPicture,
+          barsSound: record.barsSound,
+        };
+      })
+      .sort((a, b) => a.take.localeCompare(b.take, undefined, { numeric: true }));
   }
 
   // ------------------------------------------------ VFX
