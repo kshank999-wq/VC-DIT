@@ -1,5 +1,5 @@
 import type { ChecksumMethod, VolumeRole } from '../../shared/media';
-import type { MatchCandidate, MatchEntry, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry } from '../../shared/project';
+import type { MatchCandidate, MatchEntry, MirrorMethod, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry, VfxLocation } from '../../shared/project';
 
 export type Take = TakeEntry;
 export type Setup = SetupEntry;
@@ -122,7 +122,7 @@ export interface LutRule {
   clips: number;
 }
 
-export type MirrorMethod = 'Hard link' | 'Reference' | 'Physical copy';
+export type { MirrorMethod };
 
 export interface VfxShot {
   scene: string;
@@ -132,6 +132,9 @@ export interface VfxShot {
   note: string;
   flaggedBy: 'Script sup.' | 'DIT tag';
   prep: 'eligible' | 'blocked' | 'sent';
+  /** From the production database: the shot's key, and its editorial copies and mirrors on each destination. */
+  key?: string;
+  locations?: VfxLocation[];
 }
 
 export interface DailiesOptions {

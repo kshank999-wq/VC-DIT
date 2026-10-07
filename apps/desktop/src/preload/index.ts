@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('vcdit', {
     importLog: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-import-log'),
     resolveMatch: (id: string, clip: string | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-resolve-match', id, clip),
     saveLogTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-log-template'),
+    tagVfx: (clip: string, note: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-tag', clip, note),
+    mirrorVfx: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-mirror'),
+    sendVfx: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-vfx-send'),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

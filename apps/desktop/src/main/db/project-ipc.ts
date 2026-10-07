@@ -1,9 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { Worker } from 'node:worker_threads';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
-import { SCENE_STATUSES, type Production, type ProjectResult, type SceneEntry, type ShootDay } from '../../shared/project';
+import { MIRROR_METHODS, SCENE_STATUSES, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import transferWorkerPath from '../media/transfer-worker?modulePath';
+import type { WorkerMessage, WorkerPlan } from '../media/transfer-worker';
+import type { RunCopy } from '../vfx/mirror';
+import { VfxService } from '../vfx/vfx-service';
 import { LOG_TEMPLATE, parseScriptLog } from '../scriptlog/parse';
 import { Library, PRODUCTION_EXTENSION } from './library';
 import type { TransferRecord } from './production-db';
@@ -37,6 +42,7 @@ const productionPatch = (input: unknown): Partial<Production> => {
       return { slot: text(d['slot'], 8) ?? '', name: text(d['name'], 80) ?? '', format: text(d['format'], 120) ?? '' };
     });
   }
+  if (MIRROR_METHODS.includes(value['vfxMethod'] as MirrorMethod)) patch.vfxMethod = value['vfxMethod'] as MirrorMethod;
   if (Array.isArray(value['namingTokens'])) patch.namingTokens = (value['namingTokens'] as unknown[]).slice(0, 40).map((token) => text(token, 40) ?? '');
   return patch;
 };
@@ -72,37 +78,68 @@ export interface ProjectHooks {
 const LOG_EXTENSIONS = ['csv', 'tsv', 'txt', 'tab', 'ale', 'json', 'xml'];
 const MAX_LOG_BYTES = 20 * 1024 * 1024;
 
-export const registerProject = async (hooks: ProjectHooks): Promise<{ library: Library; changed: () => void }> => {
+/** A physical VFX copy, in the transfer worker like an ingest. */
+const runCopy: RunCopy = (plan: WorkerPlan) =>
+  new Promise((resolve, reject) => {
+    const worker = new Worker(transferWorkerPath, { workerData: plan });
+    worker.on('message', (message: WorkerMessage) => {
+      if (message.type === 'done') resolve({ result: message.result, reports: message.reports });
+      else if (message.type === 'error') reject(new Error(message.message));
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => code !== 0 && reject(new Error('The copy stopped unexpectedly.')));
+  });
+
+export interface Project {
+  library: Library;
+  vfx: VfxService;
+  /** Tell the windows the production changed. */
+  changed: () => void;
+  /** A card finished: match the log again, then mirror any VFX shot it completes. */
+  cardIn: (day: number) => void;
+}
+
+export const registerProject = async (hooks: ProjectHooks): Promise<Project> => {
   const library = new Library({ dir: app.getPath('userData'), wasm: sqlWasmPath });
   await library.start();
 
+  let vfx: VfxService | null = null;
+  const stateNow = (): ProjectState => ({ ...library.state(), vfxActivity: vfx?.activity ?? null });
   const broadcast = () => {
-    const state = library.state();
+    const state = stateNow();
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:project', state);
   };
+  vfx = new VfxService({ db: () => library.current, runCopy, tool: { name: 'VC DIT', version: app.getVersion() }, changed: broadcast });
+  const mirrors = vfx;
+  /** Make the quick mirrors (links, references) for anything newly flagged, matched or verified. */
+  const mirrorQuick = () => void mirrors.run({ copies: false, retry: false });
+  const busy = () => hooks.busy() || mirrors.activity !== null;
+
   const openedNow = () => {
     const db = library.current;
     hooks.opened(db.transfers(db.currentDay().number));
     broadcast();
+    mirrorQuick();
   };
   const answer = async (work: () => void | Promise<void>, options: { switching?: boolean } = {}): Promise<ProjectResult> => {
-    if (options.switching && hooks.busy()) return { ok: false, reason: 'A transfer is running. Wait for it to finish first.' };
+    if (options.switching && busy()) return { ok: false, reason: 'A transfer or VFX copy is running. Wait for it to finish first.' };
     try {
       await work();
-      return { ok: true, state: library.state() };
+      return { ok: true, state: stateNow() };
     } catch (cause) {
       return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
     }
   };
 
   ipcMain.on('vcdit:project-now', (e) => {
-    e.returnValue = library.state();
+    e.returnValue = stateNow();
   });
   ipcMain.handle('vcdit:project-update', (_e, patch: unknown) =>
     answer(async () => {
       const clean = productionPatch(patch);
       library.current.updateProduction(clean);
       if (clean.name !== undefined) await library.rememberAndSave();
+      if (clean.vfxMethod !== undefined) mirrorQuick();
     }),
   );
   ipcMain.handle('vcdit:project-update-day', (_e, patch: unknown) =>
@@ -183,10 +220,14 @@ export const registerProject = async (hooks: ProjectHooks): Promise<{ library: L
       const parsed = parseScriptLog(basename(path), await readFile(path));
       const db = library.current;
       db.importLog(db.currentDay().number, basename(path), parsed);
+      mirrorQuick();
     });
   });
   ipcMain.handle('vcdit:project-resolve-match', (_e, id: unknown, clip: unknown) =>
-    answer(() => library.current.resolveMatch(library.current.currentDay().number, String(id), typeof clip === 'string' ? clip : null)),
+    answer(() => {
+      library.current.resolveMatch(library.current.currentDay().number, String(id), typeof clip === 'string' ? clip : null);
+      mirrorQuick();
+    }),
   );
   ipcMain.handle('vcdit:project-save-log-template', async (e) => {
     const window = BrowserWindow.fromWebContents(e.sender);
@@ -196,5 +237,29 @@ export const registerProject = async (hooks: ProjectHooks): Promise<{ library: L
     return answer(() => writeFile(picked.filePath!, LOG_TEMPLATE, 'utf8'));
   });
 
-  return { library, changed: broadcast };
+  // ------------------------------------------------ VFX
+  ipcMain.handle('vcdit:project-vfx-tag', (_e, clip: unknown, note: unknown) =>
+    answer(() => {
+      library.current.tagVfx(library.current.currentDay().number, text(clip, 40) ?? '', text(note, 400) ?? '');
+      mirrorQuick();
+    }),
+  );
+  // Copies can take a while: this starts them, and the windows follow along.
+  ipcMain.handle('vcdit:project-vfx-mirror', () => answer(() => void mirrors.run({ copies: true, retry: true })));
+  ipcMain.handle('vcdit:project-vfx-send', () =>
+    answer(async () => {
+      if ((await mirrors.sendToPrep()) === 0) throw new Error('No shot is ready: each needs its clip matched and mirrored first.');
+    }),
+  );
+
+  return {
+    library,
+    vfx: mirrors,
+    changed: broadcast,
+    cardIn: (day) => {
+      library.current.rematch(day);
+      broadcast();
+      mirrorQuick();
+    },
+  };
 };

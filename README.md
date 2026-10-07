@@ -49,4 +49,5 @@ npm run dev -w @vcdit/web       # the site
 - Media engine, first part: real volume detection, the verified copy to several destinations at once (xxHash64 / MD5 / SHA-1), ASC MHL and transfer logs, behind Intake, Verify and Today in the desktop app (`apps/desktop/src/main/media`).
 - Production database: one SQLite file per production (settings, shoot days, scene lists, transfers, every clip and its checksum), kept across restarts; new, open and save-a-copy in Project setup (`apps/desktop/src/main/db`).
 - Script supervisor log: CSV, tab-separated, Avid ALE, JSON or XML, matched to the day's clips and sound; uncertain matches go to Match review (`apps/desktop/src/main/scriptlog`).
-- Next: VFX mirroring and picture/sound sync.
+- VFX: flagged and tagged shots mirrored into VFX → Scene → Setup → Take (hard link, reference or verified copy), and handed to VC VFX Prep as a package (`apps/desktop/src/main/vfx`).
+- Next: picture/sound sync.

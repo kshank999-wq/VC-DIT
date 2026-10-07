@@ -78,6 +78,8 @@ export interface AppState {
   vfx: VfxShot[];
   selectedVfx: number;
   mirrorMethod: MirrorMethod;
+  /** What the VFX mirroring is doing now, in the desktop app. */
+  vfxActivity: string | null;
   dailies: DailiesOptions;
   packages: DeliveryPackage[];
   deliveryDestinations: DeliveryDestination[];
@@ -116,6 +118,7 @@ export const initialState = (): AppState => ({
   vfx: structuredClone(demo.VFX),
   selectedVfx: 2,
   mirrorMethod: 'Hard link',
+  vfxActivity: null,
   dailies: structuredClone(demo.DAILIES),
   packages: structuredClone(demo.PACKAGES),
   deliveryDestinations: demo.DELIVERY_DESTINATIONS.map((destination) => ({ ...destination })),

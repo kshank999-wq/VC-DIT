@@ -1,4 +1,4 @@
-import type { LogSummary, MatchEntry, SceneEntry, SetupEntry, TakeEntry, VfxEntry } from '../../shared/project';
+import type { LogSummary, MatchEntry, SceneEntry, SetupEntry, TakeEntry } from '../../shared/project';
 import type { Candidate } from './match';
 import type { LogEntry } from './parse';
 
@@ -25,6 +25,19 @@ export interface StoredMatch {
   reason: string;
   /** Who decided: the matcher, the DIT picking a clip, or the DIT saying there is none. */
   decided: 'auto' | 'dit' | 'wild';
+}
+
+/** A VFX-flagged take's clip, from the log: one per camera clip of the take. */
+export interface VfxFlag {
+  scene: string;
+  setup: string;
+  /** Two digits: "04". */
+  take: string;
+  clip: string;
+  /** The card the clip is on, once matched. */
+  card: string | null;
+  note: string;
+  matched: boolean;
 }
 
 export interface StoredImport {
@@ -69,7 +82,7 @@ export const buildLogView = (input: {
   sounds: Map<number, string>;
   log: StoredImport | null;
   frameRate: string;
-}): { scenes: (SceneEntry & { setups: SetupEntry[] })[]; log: LogSummary | null; matches: MatchEntry[]; vfx: VfxEntry[] } => {
+}): { scenes: (SceneEntry & { setups: SetupEntry[] })[]; log: LogSummary | null; matches: MatchEntry[]; vfx: VfxFlag[] } => {
   const fps = Number.parseFloat(input.frameRate) || 24;
   const byEntry = new Map<number, StoredMatch[]>();
   for (const match of input.matches)
@@ -160,19 +173,17 @@ export const buildLogView = (input: {
     });
 
   // ------------------------------------------------ VFX flags
-  const vfx: VfxEntry[] = input.entries
-    .filter((entry) => entry.vfx)
-    .map((entry) => {
-      const matches = matchesOf(entry);
-      return {
-        scene: entry.scene,
-        setup: entry.setup || '—',
-        take: pad2(entry.take),
-        clip: matches.map(clipOf).find(Boolean) ?? entry.clipRefs[0] ?? '—',
-        note: entry.vfxNote || entry.notes,
-        matched: matches.length > 0 && standing(matches) === 'Matched',
-      };
+  const flagged = input.entries.filter((entry) => entry.vfx);
+  // Every camera clip of a VFX take is a plate; a clip not yet known shows as what the log called it.
+  const vfx: VfxFlag[] = flagged.flatMap((entry) => {
+    const base = { scene: entry.scene, setup: entry.setup || '—', take: pad2(entry.take), note: entry.vfxNote || entry.notes };
+    const matches = matchesOf(entry).filter((match) => match.decided !== 'wild');
+    if (matches.length === 0) return [{ ...base, clip: entry.clipRefs[0] ?? '—', card: null, matched: false }];
+    return matches.map((match) => {
+      const clip = clipOf(match);
+      return clip ? { ...base, clip, card: match.clipCard, matched: true } : { ...base, clip: match.ref || '—', card: null, matched: false };
     });
+  });
 
   // ------------------------------------------------ the import's numbers
   const standings = input.entries.map((entry) => standing(matchesOf(entry)));
@@ -182,7 +193,7 @@ export const buildLogView = (input: {
         format: input.log.format,
         importedAt: new Date(input.log.importedAt).toTimeString().slice(0, 5),
         entries: input.entries.length,
-        vfxFlags: vfx.length,
+        vfxFlags: flagged.length,
         matched: standings.filter((value) => value === 'Matched').length,
         review: standings.filter((value) => value === 'Review').length,
         unmatched: standings.filter((value) => value === 'Unmatched').length,

@@ -1,11 +1,26 @@
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import initSqlJs, { type Database, type SqlValue } from 'sql.js';
 import type { ChecksumMethod } from '../../shared/media';
-import { DEFAULT_NAMING, localDate, type Production, type ProjectState, type SceneEntry, type SceneStatus, type ShootDay } from '../../shared/project';
+import {
+  DEFAULT_NAMING,
+  MIRROR_METHODS,
+  localDate,
+  type MirrorMethod,
+  type Production,
+  type ProjectState,
+  type SceneEntry,
+  type SceneStatus,
+  type ShootDay,
+  type VfxEntry,
+  type VfxLocation,
+} from '../../shared/project';
 import type { FileOutcome, SourceFile } from '../media/transfer';
 import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
 import type { LogEntry, ParsedLog } from '../scriptlog/parse';
-import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch } from '../scriptlog/view';
+import { clipKeyOfFile } from '../scriptlog/clip-key';
+import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch, type VfxFlag } from '../scriptlog/view';
+import type { MirrorFile, MirrorOutcome, MirrorPlan } from '../vfx/mirror';
 
 /**
  * One production's database: a single SQLite file on the cart (spec §2
@@ -206,6 +221,61 @@ const MIGRATIONS: string[] = [
   `,
 ];
 
+const MIGRATION_3 = `
+  -- VFX (spec §4.9): how shots are mirrored, shots the DIT tagged, each
+  -- destination's mirror of each shot, and what was handed to VC VFX Prep.
+  alter table production add column vfx_method text not null default 'Hard link';
+
+  create table vfx_tag (
+    day integer not null,
+    scene text not null,
+    setup text not null,
+    take text not null,
+    clip_key text not null,
+    card text not null,
+    note text not null default '',
+    created_at text not null,
+    primary key (day, card, clip_key)
+  );
+
+  create table vfx_mirror (
+    day integer not null,
+    shot_key text not null,
+    leg_id text not null,
+    destination text not null,
+    method text not null,
+    target_dir text not null,
+    state text not null check (state in ('mirrored', 'failed')),
+    error text,
+    made_at text not null,
+    primary key (day, shot_key, leg_id)
+  );
+
+  create table vfx_handoff (
+    day integer not null,
+    shot_key text not null,
+    sent_at text not null,
+    package text not null,
+    primary key (day, shot_key)
+  );
+`;
+// Kept beside the code that reads it; appended, so the order of versions never changes.
+MIGRATIONS.push(MIGRATION_3);
+
+/** A VFX shot's key: the take and the clip on its card. */
+const shotKey = (shot: { scene: string; setup: string; take: string; card: string | null; clip: string }) =>
+  [shot.scene, shot.setup, shot.take, shot.card ?? '-', shot.clip].join('|');
+
+/** One destination's verified copy of a clip. */
+interface ClipLocation {
+  legId: string;
+  name: string;
+  root: string;
+  cardDir: string;
+  files: MirrorFile[];
+  checksum: ChecksumMethod;
+}
+
 /** What a log row says, as a key for the DIT's decision about it. */
 const entryKey = (entry: LogEntry) =>
   [entry.scene, entry.setup, entry.take, entry.cameras.join(','), entry.clipRefs.join(','), entry.roll, entry.tcIn].join('|');
@@ -226,6 +296,7 @@ export const DEFAULT_PRODUCTION: Production = {
   totalDays: 30,
   devices: [],
   namingTokens: DEFAULT_NAMING,
+  vfxMethod: 'Hard link',
 };
 
 export class ProductionDb {
@@ -303,6 +374,7 @@ export class ProductionDb {
           at,
         ],
       );
+      this.run('update production set vfx_method = ? where id = 1', [production.vfxMethod]);
       this.run('insert into shoot_day (number, date, created_at) values (1, ?, ?)', [localDate(), at]);
     });
   }
@@ -383,6 +455,7 @@ export class ProductionDb {
       totalDays: Number(row['total_days']),
       devices: JSON.parse(String(row['devices'])) as Production['devices'],
       namingTokens: JSON.parse(String(row['naming_tokens'])) as string[],
+      vfxMethod: MIRROR_METHODS.includes(row['vfx_method'] as MirrorMethod) ? (row['vfx_method'] as MirrorMethod) : 'Hard link',
     };
   }
 
@@ -390,8 +463,18 @@ export class ProductionDb {
     const next = { ...this.production(), ...patch };
     this.transaction(() =>
       this.run(
-        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, updated_at = ? where id = 1',
-        [next.name, next.code, next.frameRate, next.checksum, next.totalDays, JSON.stringify(next.devices), JSON.stringify(next.namingTokens), now()],
+        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, vfx_method = ?, updated_at = ? where id = 1',
+        [
+          next.name,
+          next.code,
+          next.frameRate,
+          next.checksum,
+          next.totalDays,
+          JSON.stringify(next.devices),
+          JSON.stringify(next.namingTokens),
+          next.vfxMethod,
+          now(),
+        ],
       ),
     );
   }
@@ -852,7 +935,196 @@ export class ProductionDb {
           warnings: JSON.parse(String(imported['warnings'])) as string[],
         }
       : null;
-    return buildLogView({ scenes: this.scenes(day), entries, matches, sounds, log, frameRate: this.production().frameRate });
+    const view = buildLogView({ scenes: this.scenes(day), entries, matches, sounds, log, frameRate: this.production().frameRate });
+    return { ...view, vfx: this.vfxShots(day, view.vfx).map(({ entry }) => entry) };
+  }
+
+  // ------------------------------------------------ VFX
+
+  /** Where a clip's verified copies are: each destination that has every one of its files verified. */
+  private clipLocations(day: number, card: string, clip: string): ClipLocation[] {
+    const rows = this.rows<Record<string, SqlValue>>(
+      'select id, path, file_name, size, mtime_ms, checksum, checksum_method from clip where day = ? and card = ? order by id',
+      [day, card],
+    ).filter((row) => {
+      const name = String(row['file_name']);
+      return (clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '')) === clip;
+    });
+    if (rows.length === 0) return [];
+    const files = new Map<string, MirrorFile>();
+    for (const row of rows) {
+      const path = String(row['path']);
+      if (!files.has(path)) {
+        files.set(path, { path, size: Number(row['size']), mtimeMs: Number(row['mtime_ms']), hash: (row['checksum'] as string | null) ?? null });
+      }
+    }
+    const ids = rows.map((row) => Number(row['id']));
+    const copies = this.rows<Record<string, SqlValue>>(
+      `select c.path, cc.leg_id, td.name, td.root, td.target_dir
+       from clip_copy cc
+       join clip c on c.id = cc.clip_id
+       join transfer_destination td on td.day = c.day and td.transfer_id = c.transfer_id and td.leg_id = cc.leg_id
+       where cc.state != 'failed' and c.id in (${ids.map(() => '?').join(', ')})`,
+      ids,
+    );
+    const legs = new Map<string, { name: string; root: string; cardDir: string; verified: Set<string> }>();
+    for (const copy of copies) {
+      const id = String(copy['leg_id']);
+      const leg = legs.get(id) ?? { name: String(copy['name']), root: String(copy['root']), cardDir: String(copy['target_dir']), verified: new Set<string>() };
+      leg.verified.add(String(copy['path']));
+      legs.set(id, leg);
+    }
+    const checksum = rows[0]!['checksum_method'] as ChecksumMethod;
+    return [...legs]
+      .filter(([, leg]) => [...files.keys()].every((path) => leg.verified.has(path)))
+      .map(([legId, leg]) => ({ legId, name: leg.name, root: leg.root, cardDir: leg.cardDir, files: [...files.values()], checksum }));
+  }
+
+  /** The day's VFX shots: the log's flags and the DIT's tags, each with where it is and how it is mirrored. */
+  private vfxShots(day: number, flags: VfxFlag[]): { entry: VfxEntry; flag: VfxFlag; locations: ClipLocation[] }[] {
+    const tags = this.rows<Record<string, SqlValue>>('select * from vfx_tag where day = ? order by created_at', [day]).map<VfxFlag & { tagged: true }>((row) => ({
+      scene: String(row['scene']),
+      setup: String(row['setup']),
+      take: String(row['take']),
+      clip: String(row['clip_key']),
+      card: String(row['card']),
+      note: String(row['note']),
+      matched: true,
+      tagged: true,
+    }));
+    const mirrors = new Map(
+      this.rows<Record<string, SqlValue>>('select * from vfx_mirror where day = ?', [day]).map((row) => [`${String(row['shot_key'])}#${String(row['leg_id'])}`, row]),
+    );
+    const sent = new Map(this.rows<Record<string, SqlValue>>('select shot_key, sent_at from vfx_handoff where day = ?', [day]).map((row) => [String(row['shot_key']), String(row['sent_at'])]));
+    const all: (VfxFlag & { tagged?: true })[] = [...flags, ...tags.filter((tag) => !flags.some((flag) => flag.card === tag.card && flag.clip === tag.clip))];
+    return all.map((flag) => {
+      const key = shotKey(flag);
+      const locations = flag.card ? this.clipLocations(day, flag.card, flag.clip) : [];
+      const media = (location: ClipLocation) => location.files.find((file) => !/\.(xml|txt|ale|csv|json)$/i.test(file.path)) ?? location.files[0]!;
+      const placed: VfxLocation[] = locations.map((location) => {
+        const mirror = mirrors.get(`${key}#${location.legId}`);
+        return {
+          destination: location.name,
+          editorial: join(location.cardDir, ...media(location).path.split('/').slice(0, -1)),
+          mirror: mirror ? String(mirror['target_dir']) : null,
+          method: mirror ? (String(mirror['method']) as MirrorMethod) : null,
+          state: mirror ? (String(mirror['state']) as 'mirrored' | 'failed') : 'pending',
+          error: mirror ? ((mirror['error'] as string | null) ?? null) : null,
+        };
+      });
+      return {
+        flag,
+        locations,
+        entry: {
+          key,
+          scene: flag.scene,
+          setup: flag.setup,
+          take: flag.take,
+          clip: flag.clip,
+          note: flag.note,
+          flaggedBy: flag.tagged ? 'DIT tag' : 'Script sup.',
+          matched: flag.matched,
+          locations: placed,
+          sentAt: sent.get(key) ?? null,
+        },
+      };
+    });
+  }
+
+  /** Mirrors still to make on the day, by the production's method: those never made, and (when asked) those that failed. */
+  mirrorPlans(day: number, retryFailed: boolean): MirrorPlan[] {
+    const production = this.production();
+    const date = this.days().find((candidate) => candidate.number === day)?.date ?? localDate();
+    return this.vfxShots(day, this.vfxFlags(day)).flatMap(({ entry, locations }) =>
+      locations
+        .filter((location, index) => entry.locations[index]!.state === 'pending' || (retryFailed && entry.locations[index]!.state === 'failed'))
+        .map((location) => ({
+          key: entry.key,
+          scene: entry.scene,
+          setup: entry.setup,
+          take: entry.take,
+          clip: entry.clip,
+          method: production.vfxMethod,
+          checksum: location.checksum,
+          production: { name: production.name, code: production.code },
+          day: { number: day, date },
+          location: { legId: location.legId, name: location.name, root: location.root, cardDir: location.cardDir, files: location.files },
+        })),
+    );
+  }
+
+  saveMirror(day: number, key: string, outcome: MirrorOutcome) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into vfx_mirror (day, shot_key, leg_id, destination, method, target_dir, state, error, made_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [day, key, outcome.legId, outcome.destination, outcome.method, outcome.targetDir, outcome.state, outcome.error, now()],
+      ),
+    );
+  }
+
+  /** Tag a clip of the day as a VFX shot (spec §4.9 "tag additional candidates"). */
+  tagVfx(day: number, clip: string, note: string) {
+    const key = clip.trim().toUpperCase();
+    const matched = this.rows<Record<string, SqlValue>>(
+      `select e.scene, e.setup, e.take, m.clip_card from script_match m join script_entry e on e.id = m.entry_id
+       where e.day = ? and m.clip_key = ? and m.state = 'matched' and m.decided != 'wild' limit 1`,
+      [day, key],
+    )[0];
+    const card = matched
+      ? String(matched['clip_card'])
+      : this.rows<Record<string, SqlValue>>('select card, file_name from clip where day = ?', [day]).find(
+          (row) => (clipKeyOfFile(String(row['file_name'])) ?? String(row['file_name']).replace(/\.[^.]+$/, '')) === key,
+        )?.['card'];
+    if (!card) throw new Error(`No clip named ${key} was ingested today.`);
+    if (this.logView(day).vfx.some((shot) => shot.clip === key)) throw new Error(`${key} is already on the VFX list.`);
+    this.transaction(() =>
+      this.run('insert into vfx_tag (day, scene, setup, take, clip_key, card, note, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)', [
+        day,
+        matched ? String(matched['scene']) : '—',
+        matched ? String(matched['setup']) || '—' : '—',
+        matched ? String(matched['take']).padStart(2, '0') : '—',
+        key,
+        String(card),
+        note.trim(),
+        now(),
+      ]),
+    );
+  }
+
+  /** Shots ready for VC VFX Prep: known clip, mirrored somewhere, not sent yet. */
+  handoffShots(day: number): { entry: VfxEntry; locations: ClipLocation[] }[] {
+    return this.vfxShots(day, this.vfxFlags(day)).filter(
+      ({ entry }) => entry.matched && !entry.sentAt && entry.locations.some((location) => location.state === 'mirrored'),
+    );
+  }
+
+  markSent(day: number, keys: string[], packages: string[]) {
+    const at = now();
+    this.transaction(() => {
+      for (const key of keys) this.run('insert or replace into vfx_handoff (day, shot_key, sent_at, package) values (?, ?, ?, ?)', [day, key, at, JSON.stringify(packages)]);
+    });
+  }
+
+  /** The log's VFX flags for the day (no tags), for the VFX methods above. */
+  vfxFlags(day: number): VfxFlag[] {
+    const entries = this.logEntries(day);
+    const matches = this.rows<Record<string, SqlValue>>(
+      'select m.* from script_match m join script_entry e on e.id = m.entry_id where e.day = ? order by e.position, m.ref_index',
+      [day],
+    ).map<StoredMatch>((row) => ({
+      entryId: Number(row['entry_id']),
+      refIndex: Number(row['ref_index']),
+      ref: String(row['ref']),
+      camera: String(row['camera']),
+      state: row['state'] as StoredMatch['state'],
+      clipKey: (row['clip_key'] as string | null) ?? null,
+      clipCard: (row['clip_card'] as string | null) ?? null,
+      candidates: [],
+      reason: '',
+      decided: row['decided'] as StoredMatch['decided'],
+    }));
+    return buildLogView({ scenes: [], entries, matches, sounds: new Map(), log: null, frameRate: '24' }).vfx;
   }
 
   /** Clips found by name across the whole production, newest day first: the start of the media index. */

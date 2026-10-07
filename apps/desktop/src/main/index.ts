@@ -4,6 +4,7 @@ import { registerLicensing } from './licensing-ipc';
 import type { Library } from './db/library';
 import { registerProject } from './db/project-ipc';
 import type { MediaService } from './media/media-service';
+import type { VfxService } from './vfx/vfx-service';
 import { registerMedia } from './media/media-ipc';
 
 /**
@@ -45,6 +46,7 @@ const createMainWindow = (): BrowserWindow => {
 
 let library: Library | null = null;
 let media: MediaService | null = null;
+let vfx: VfxService | null = null;
 
 void app.whenReady().then(async () => {
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
@@ -54,14 +56,12 @@ void app.whenReady().then(async () => {
     opened: (transfers) => media?.load(transfers),
   });
   library = project.library;
+  vfx = project.vfx;
   const open = library;
   media = await registerMedia((transfer) => {
     open.current.saveTransfer(transfer);
     // A card that just finished may hold clips the script log is waiting for.
-    if (transfer.finishedAt) {
-      open.current.rematch(transfer.day);
-      project.changed();
-    }
+    if (transfer.finishedAt) project.cardIn(transfer.day);
   });
   media.load(open.current.transfers(open.current.currentDay().number));
   createMainWindow();
@@ -96,6 +96,7 @@ app.on('before-quit', (event) => {
       media.stop();
       await media.idle(15_000);
     }
+    await vfx?.idle();
     await library?.close().catch(() => undefined);
     app.quit();
   })();

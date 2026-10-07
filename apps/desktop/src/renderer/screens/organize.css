@@ -148,3 +148,7 @@
 .org-hint { margin: 0; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .vfx-blocked { display: grid; gap: 6px; padding: 10px 12px; border-radius: 6px; font-size: 12.5px; background: color-mix(in oklch, var(--s-needs) 12%, transparent); }
 .vfx-blocked .link { justify-self: start; color: var(--text); font-weight: 600; }
+
+.vfx-activity { margin: -6px 0 0; font-size: 12.5px; }
+.vfx-notice { margin: -6px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 12.5px; background: color-mix(in oklch, var(--tone) 12%, transparent); }
+.vfx-error { font-size: 11.5px; color: var(--s-problem); }

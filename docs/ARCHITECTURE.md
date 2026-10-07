@@ -105,6 +105,24 @@ the DIT's decisions. Decisions are keyed by what the row says, so they
 survive importing an updated log. Every finished card re-runs the match, so
 takes logged before their card came in are matched when it does.
 
+## VFX mirroring (`src/main/vfx`)
+
+A VFX shot (a camera clip of a take the log flags, or one the DIT tags) is
+mirrored into `VFX/SCENE_###/SETUP_X/T##_<clip>/` on every destination that
+holds a verified copy of it, beside `CAMERA_ORIGINALS`, which is only read.
+
+| Method | What lands in the VFX folder | When |
+| --- | --- | --- |
+| Hard link (default) | The same data on disk as the editorial file: no extra space. Where the drive cannot hold links (exFAT, FAT32, some network shares) the shot is referenced instead, and the screen says so | As soon as the shot is flagged, matched and verified |
+| Reference | `VFX_REFERENCE.json` / `.txt`: where the media is, with sizes and checksums | Same |
+| Physical copy | A separate copy made by the transfer engine, read back, and checked against the checksum the card was ingested with, with its own ASC MHL | When the DIT presses "Mirror now" (copies share the drives with ingest) |
+
+A file already in a VFX folder is never replaced. "Send to VC VFX Prep" writes
+`VC_VFX_PREP_<code>_D###_<time>.json` (schema `vcdit.vfx-handoff/1`: production,
+day, scene/setup/take, clip, notes, who flagged it, mirror folder, editorial
+folder, files and checksums) and a CSV of the same into each destination's
+`VFX/` folder, and marks those shots sent.
+
 ## Media integrity rules (spec §8), as engineering constraints
 
 - **Originals are read-only.** The copy engine opens sources read-only; no
@@ -181,6 +199,8 @@ because the media is there and must not pass through vc-dit.com.
    screens not yet on real data say so ("Sample data").
 3. Done: script supervisor import and Match review; the Scene Organizer and
    Match review run on the real log and clips.
+   Done: VFX mirroring (hard link, reference or verified copy) and the
+   VC VFX Prep handoff package.
 4. Sync, LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats
    need them), VFX mirroring, delivery packages and manifests.
 5. Frame.io, then Google Drive, as destination adapters.

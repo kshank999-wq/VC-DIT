@@ -20,7 +20,18 @@ export const projectApi = (): ProjectApi | null => (typeof window !== 'undefined
 
 type FromProject = Pick<
   AppState,
-  'production' | 'day' | 'scenes' | 'project' | 'checksum' | 'matches' | 'vfx' | 'scriptLog' | 'selectedSetup' | 'selectedMatch'
+  | 'production'
+  | 'day'
+  | 'scenes'
+  | 'project'
+  | 'checksum'
+  | 'matches'
+  | 'vfx'
+  | 'scriptLog'
+  | 'selectedSetup'
+  | 'selectedMatch'
+  | 'mirrorMethod'
+  | 'vfxActivity'
 >;
 
 /** The production as the database has it, into the UI's state. */
@@ -29,18 +40,17 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
   const [sceneId, setupId] = state.selectedSetup.split('|');
   const selectedStillThere = scenes.some((scene) => scene.id === sceneId && scene.setups.some((setup) => setup.id === setupId));
   const firstSetup = scenes.find((scene) => scene.setups.length > 0);
-  // VFX shots sent to prep, and those the DIT tagged, are the screen's own until the handoff is built.
-  const sent = new Set(state.vfx.filter((shot) => shot.prep === 'sent').map((shot) => shot.clip));
   const vfx = project.vfx.map((shot) => ({
+    key: shot.key,
     scene: shot.scene,
     setup: shot.setup,
     take: shot.take,
     clip: shot.clip,
     note: shot.note,
-    flaggedBy: 'Script sup.' as const,
-    prep: sent.has(shot.clip) ? ('sent' as const) : shot.matched ? ('eligible' as const) : ('blocked' as const),
+    flaggedBy: shot.flaggedBy,
+    prep: shot.sentAt ? ('sent' as const) : shot.matched ? ('eligible' as const) : ('blocked' as const),
+    locations: shot.locations,
   }));
-  const tagged = state.project ? state.vfx.filter((shot) => shot.flaggedBy === 'DIT tag' && !vfx.some((other) => other.clip === shot.clip)) : [];
   return {
     production: project.production,
     day: project.day,
@@ -52,7 +62,9 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     selectedMatch: project.matches.some((match) => match.id === state.selectedMatch)
       ? state.selectedMatch
       : (project.matches.find((match) => !match.resolution)?.id ?? project.matches[0]?.id ?? ''),
-    vfx: [...vfx, ...tagged],
+    vfx,
+    mirrorMethod: project.production.vfxMethod,
+    vfxActivity: project.vfxActivity,
     scriptLog: project.log
       ? {
           file: project.log.file,
@@ -90,6 +102,9 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
       return;
     case 'setProduction':
       void api.update(action.patch);
+      return;
+    case 'setMirrorMethod':
+      void api.update({ vfxMethod: action.method });
       return;
     case 'setDay':
       void api.updateDay(action.patch);

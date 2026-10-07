@@ -39,6 +39,7 @@ export const PRODUCTION: Production = {
     { slot: 'S', name: 'Sound Devices 888', format: 'BWF 24-bit / 48 kHz · 8 trk' },
   ],
   namingTokens: ['{PROD}', '_', 'D{DAY}', '_', 'SC{SCENE}', '{SETUP}', '_', 'T{TAKE}', '_', '{CAM}{REEL}'],
+  vfxMethod: 'Hard link',
 };
 
 export const DAY: ShootDay = {

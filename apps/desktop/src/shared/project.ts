@@ -14,7 +14,18 @@ export interface Production {
   devices: { slot: string; name: string; format: string }[];
   /** Naming template tokens, in order, e.g. {PROD}, _, D{DAY}. */
   namingTokens: string[];
+  /** How VFX shots are mirrored into the VFX folders (spec §4.9). */
+  vfxMethod: MirrorMethod;
 }
+
+/**
+ * Hard link: the VFX folder's file is the same data as the editorial one, no
+ * extra space (same drive, and a filesystem that has links). Reference: a
+ * file in the VFX folder saying where the clip is; no media. Physical copy:
+ * a separate, verified copy, for a deliverable that must stand alone.
+ */
+export type MirrorMethod = 'Hard link' | 'Reference' | 'Physical copy';
+export const MIRROR_METHODS: MirrorMethod[] = ['Hard link', 'Reference', 'Physical copy'];
 
 export interface ShootDay {
   number: number;
@@ -80,14 +91,34 @@ export interface MatchEntry {
   resolution: null | { kind: 'matched'; clip: string } | { kind: 'wild' };
 }
 
+/** One destination's copy of a VFX shot: the editorial clip and its mirror. */
+export interface VfxLocation {
+  destination: string;
+  /** The clip's folder in CAMERA_ORIGINALS. */
+  editorial: string;
+  /** The take's folder under VFX, once mirrored. */
+  mirror: string | null;
+  method: MirrorMethod | null;
+  state: 'mirrored' | 'failed' | 'pending';
+  error: string | null;
+}
+
+/** A VFX shot: one camera clip of a take the script supervisor flagged, or the DIT tagged. */
 export interface VfxEntry {
+  key: string;
   scene: string;
   setup: string;
+  /** Two digits: "04". */
   take: string;
   clip: string;
   note: string;
-  /** Its clip is known, so it can be handed on. */
+  flaggedBy: 'Script sup.' | 'DIT tag';
+  /** Its clip is known (matched in the log). */
   matched: boolean;
+  /** Every destination holding a verified copy of the clip. */
+  locations: VfxLocation[];
+  /** When it was handed to VC VFX Prep. */
+  sentAt: string | null;
 }
 
 /** The day's script supervisor log, as last imported. */
@@ -117,6 +148,8 @@ export interface ProjectState {
   /** Log entries waiting on (or decided by) the DIT. */
   matches: MatchEntry[];
   vfx: VfxEntry[];
+  /** What the VFX mirroring is doing now ("Copying A015C002 to RAID…"), or null. */
+  vfxActivity: string | null;
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }

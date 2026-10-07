@@ -7,6 +7,7 @@ import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
 import { ProjectSetup } from '../screens/ProjectSetup';
 import { SceneOrganizer } from '../screens/SceneOrganizer';
+import { VfxHandoff } from '../screens/VfxHandoff';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -19,13 +20,14 @@ const LICENSED = { plan: 'dit', state: 'licensed', email: null, serial: null, pa
 
 const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   file: '/data/productions/nightjar.vcdit',
-  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'] },
+  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link' },
   day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
   days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
   scenes: [],
   log: null,
   matches: [],
   vfx: [],
+  vfxActivity: null,
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
 });
@@ -98,6 +100,9 @@ beforeEach(() => {
     importLog: vi.fn(async () => ok(logged)),
     resolveMatch: vi.fn(async () => ok(logged)),
     saveLogTemplate: vi.fn(async () => ok(current)),
+    tagVfx: vi.fn(async () => ok(current)),
+    mirrorVfx: vi.fn(async () => ok(current)),
+    sendVfx: vi.fn(async () => ok(current)),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -221,5 +226,49 @@ describe('a production from the database', () => {
     expect(screen.getAllByText('A001C001').length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole('button', { name: 'Confirm match' }));
     expect(api.resolveMatch).toHaveBeenCalledWith('7:0', 'A001C002');
+  });
+
+  it('shows each VFX shot where it really is, and mirrors, sends and switches method through the database', async () => {
+    const location = (destination: string, state: 'mirrored' | 'pending' | 'failed', error: string | null = null) => ({
+      destination,
+      editorial: `/Volumes/${destination}/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/A001/A001R1`,
+      mirror: state === 'pending' ? null : `/Volumes/${destination}/NIGHTJAR/SHOOT_DAY_001_2026-10-06/VFX/SCENE_004/SETUP_A/T01_A001C001`,
+      method: state === 'pending' ? null : ('Hard link' as const),
+      state,
+      error,
+    });
+    current = fresh({
+      vfx: [
+        {
+          key: '4|A|01|A001|A001C001',
+          scene: '4',
+          setup: 'A',
+          take: '01',
+          clip: 'A001C001',
+          note: 'Window comp',
+          flaggedBy: 'Script sup.',
+          matched: true,
+          locations: [location('RAID', 'mirrored'), location('SHUTTLE', 'failed', 'SHUTTLE is not available, or its copy of the clip has gone.')],
+          sentAt: null,
+        },
+        { key: '4|A|02|-|A001C009', scene: '4', setup: 'A', take: '02', clip: 'A001C009', note: '', flaggedBy: 'Script sup.', matched: false, locations: [], sentAt: null },
+      ],
+    });
+    render(
+      <StoreProvider>
+        <VfxHandoff />
+      </StoreProvider>,
+    );
+    expect(screen.getByText('Mirror failed')).toBeTruthy();
+    expect(screen.getByText('Blocked · match')).toBeTruthy();
+    expect(screen.getByText('SHUTTLE is not available, or its copy of the clip has gone.')).toBeTruthy();
+    expect(screen.getByText(/RAID · VFX mirror · Hard link/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mirror 1 now' }));
+    expect(api.mirrorVfx).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /Send 1 to VC VFX Prep/ }));
+    expect(api.sendVfx).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Physical copy' }));
+    expect(api.update).toHaveBeenCalledWith({ vfxMethod: 'Physical copy' });
   });
 });

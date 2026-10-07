@@ -215,7 +215,20 @@ describe("the day's script supervisor log", () => {
       ['Sc 14 / B / T01 · A cam', 'No card A016 has been ingested today yet.'],
       ['Sc 21 / A / T01', 'The log gives no clip name, roll or timecode for this take.'],
     ]);
-    expect(view.vfx).toEqual([{ scene: '14', setup: 'B', take: '01', clip: 'A016C001', note: 'Sky replacement', matched: false }]);
+    expect(view.vfx).toEqual([
+      {
+        key: '14|B|01|-|A016C001',
+        scene: '14',
+        setup: 'B',
+        take: '01',
+        clip: 'A016C001',
+        note: 'Sky replacement',
+        flaggedBy: 'Script sup.',
+        matched: false,
+        locations: [],
+        sentAt: null,
+      },
+    ]);
     await db.close();
   });
 

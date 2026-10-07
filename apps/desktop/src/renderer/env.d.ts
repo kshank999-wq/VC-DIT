@@ -66,4 +66,7 @@ interface ProjectApi {
   importLog: () => Promise<ProjectResult>;
   resolveMatch: (id: string, clip: string | null) => Promise<ProjectResult>;
   saveLogTemplate: () => Promise<ProjectResult>;
+  tagVfx: (clip: string, note: string) => Promise<ProjectResult>;
+  mirrorVfx: () => Promise<ProjectResult>;
+  sendVfx: () => Promise<ProjectResult>;
 }

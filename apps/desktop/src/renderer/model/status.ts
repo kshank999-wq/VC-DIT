@@ -126,7 +126,7 @@ export const summarize = (state: AppState): Record<StepId, StepSummary> => {
   const vfx: StepSummary = {
     id: 'vfx',
     status: sent === state.vfx.length ? 'done' : 'idle',
-    metric: `${state.vfx.length} shots mirrored`,
+    metric: `${state.vfx.filter((shot) => !shot.locations || (shot.locations.length > 0 && shot.locations.every((location) => location.state === 'mirrored'))).length} shots mirrored`,
     detail: sent === state.vfx.length ? 'Sent to VC VFX Prep' : blocked > 0 ? `Ready to send · ${blocked} waiting on a match` : 'Ready to send to prep',
     word: sent === state.vfx.length ? 'Sent' : 'Ready',
   };
