@@ -80,5 +80,14 @@ interface ProjectApi {
   saveDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
   startDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
   stopDailies: () => Promise<ProjectResult>;
+  saveDelivery: (settings: Partial<import('../shared/project').DeliverySettings>) => Promise<ProjectResult>;
+  refreshDelivery: () => Promise<ProjectResult>;
+  startDelivery: () => Promise<ProjectResult>;
+  stopDelivery: () => Promise<ProjectResult>;
+  retryDelivery: (pkg: string, destination: string) => Promise<ProjectResult>;
+  addDeliveryFolder: () => Promise<ProjectResult>;
+  removeDeliveryFolder: (id: string) => Promise<ProjectResult>;
+  saveManifest: () => Promise<ProjectResult>;
+  showManifest: (path: string) => Promise<void>;
   showDaily: (path: string) => Promise<void>;
 }

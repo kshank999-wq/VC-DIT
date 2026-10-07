@@ -11,7 +11,6 @@ import { useAccess } from './ui/kit';
 
 /** Screens still on the HALCYON sample day in the desktop app, and what they wait for. */
 const SAMPLE: Partial<Record<ScreenId, string>> = {
-  delivery: 'This screen shows the HALCYON demo day until the delivery engine is built.',
   reports: 'This screen shows the HALCYON demo day until the reports list is built.',
 };
 

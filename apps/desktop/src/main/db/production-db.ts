@@ -33,6 +33,14 @@ import {
   type SyncEntry,
 } from '../../shared/project';
 import { parseLut } from '../looks/lut-file';
+import { segment } from '../media/rules';
+import {
+  DEFAULT_DELIVERY,
+  DELIVERY_PACKAGES,
+  type DeliveryPackageId,
+  type DeliveryRecord,
+  type DeliverySettings,
+} from '../../shared/project';
 
 /**
  * One production's database: a single SQLite file on the cart (spec §2
@@ -346,6 +354,69 @@ const MIGRATION_5 = `
   );
 `;
 MIGRATIONS.push(MIGRATION_5);
+
+const MIGRATION_6 = `
+  -- Delivery (spec §4.10): the choices and presets, and each package's
+  -- delivery to each destination, with the files that did not verify so
+  -- they alone can be tried again.
+  alter table production add column delivery text;
+
+  create table delivery_record (
+    day integer not null,
+    package text not null,
+    leg_id text not null,
+    destination text not null,
+    root text not null,
+    source text not null,
+    files integer not null,
+    bytes integer not null,
+    verified integer not null,
+    already_there integer not null,
+    failed integer not null,
+    retries integer not null default 0,
+    started_at text not null,
+    finished_at text not null,
+    problems text not null default '[]',
+    failed_files text not null default '[]',
+    mhl text,
+    primary key (day, package, leg_id)
+  );
+`;
+MIGRATIONS.push(MIGRATION_6);
+
+/** A file a delivery could not verify: enough to try it alone again. */
+export interface DeliveryFile {
+  /** The day folder it was read from. */
+  root: string;
+  path: string;
+  size: number;
+  mtimeMs: number;
+  expected: string | null;
+}
+
+export type StoredDelivery = DeliveryRecord & { root: string; failedFiles: DeliveryFile[] };
+
+/** One camera clip as editorial gets it in the ALE. */
+export interface EditorialRow {
+  clip: string;
+  card: string;
+  file: string;
+  tc: { frames: number; base: number } | null;
+  rate: { num: number; den: number } | null;
+  durationSec: number | null;
+  scene: string;
+  setup: string;
+  take: string;
+  circle: boolean;
+  notes: string;
+  roll: string;
+  soundRoll: string;
+  soundFile: string;
+  sync: string;
+  /** Where the sound starts relative to the clip's first frame, in frames. */
+  syncFrames: number | null;
+  look: string;
+}
 
 /** What a daily needs to know about one take's clip. */
 export interface DailyPlan {
@@ -1712,6 +1783,147 @@ export class ProductionDb {
       checksum: (row['checksum'] as string | null) ?? null,
       warnings: JSON.parse(String(row['warnings'])) as string[],
     }));
+  }
+
+  // ------------------------------------------------ delivery
+
+  deliverySettings(): DeliverySettings {
+    const raw = this.value<string>('select delivery from production where id = 1');
+    return raw ? { ...DEFAULT_DELIVERY, ...(JSON.parse(raw) as Partial<DeliverySettings>) } : { ...DEFAULT_DELIVERY };
+  }
+
+  saveDeliverySettings(settings: DeliverySettings) {
+    this.transaction(() => this.run('update production set delivery = ? where id = 1', [JSON.stringify(settings)]));
+  }
+
+  saveDelivery(day: number, record: StoredDelivery) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into delivery_record (day, package, leg_id, destination, root, source, files, bytes, verified, already_there, failed,
+           retries, started_at, finished_at, problems, failed_files, mhl)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          day,
+          record.package,
+          record.destinationId,
+          record.destination,
+          record.root,
+          record.source,
+          record.files,
+          record.bytes,
+          record.verified,
+          record.alreadyThere,
+          record.failed,
+          record.retries,
+          record.startedAt,
+          record.finishedAt,
+          JSON.stringify(record.problems),
+          JSON.stringify(record.failedFiles),
+          record.mhl,
+        ],
+      ),
+    );
+  }
+
+  deliveries(day: number): StoredDelivery[] {
+    const order = DELIVERY_PACKAGES.map((pkg) => pkg.id);
+    return this.rows<Record<string, SqlValue>>('select * from delivery_record where day = ? order by finished_at', [day])
+      .map((row) => {
+        const id = row['package'] as DeliveryPackageId;
+        return {
+          package: id,
+          packageName: DELIVERY_PACKAGES.find((pkg) => pkg.id === id)?.name ?? id,
+          destinationId: String(row['leg_id']),
+          destination: String(row['destination']),
+          root: String(row['root']),
+          source: String(row['source']),
+          files: Number(row['files']),
+          bytes: Number(row['bytes']),
+          verified: Number(row['verified']),
+          alreadyThere: Number(row['already_there']),
+          failed: Number(row['failed']),
+          retries: Number(row['retries']),
+          startedAt: String(row['started_at']),
+          finishedAt: String(row['finished_at']),
+          problems: JSON.parse(String(row['problems'])) as DeliveryRecord['problems'],
+          failedFiles: JSON.parse(String(row['failed_files'])) as DeliveryFile[],
+          mhl: (row['mhl'] as string | null) ?? null,
+        };
+      })
+      .sort((a, b) => order.indexOf(a.package) - order.indexOf(b.package) || a.destination.localeCompare(b.destination));
+  }
+
+  /**
+   * The checksum each of the day's originals was ingested with, by its path
+   * in the day folder (CAMERA_ORIGINALS/A015/…), for the method given: a
+   * delivery checks the copy it reads against it.
+   */
+  ingestHashes(day: number, method: ChecksumMethod): Map<string, string> {
+    const hashes = new Map<string, string>();
+    for (const row of this.rows<Record<string, SqlValue>>(
+      'select card, path, kind, checksum from clip where day = ? and checksum is not null and checksum_method = ?',
+      [day, method],
+    )) {
+      const folder = row['kind'] === 'sound' ? 'SOUND_ORIGINALS' : 'CAMERA_ORIGINALS';
+      hashes.set(`${folder}/${segment(String(row['card']))}/${String(row['path'])}`, String(row['checksum']));
+    }
+    return hashes;
+  }
+
+  /** Every camera clip of the day with its take, timecode, sync and look: what the ALE and sync list say. */
+  editorialRows(day: number): EditorialRow[] {
+    const entries = new Map(this.logEntries(day).map((entry) => [entry.id, entry]));
+    const takes = new Map<string, StoredEntry>();
+    for (const row of this.rows<Record<string, SqlValue>>(
+      `select m.entry_id, m.clip_card, m.clip_key from script_match m join script_entry e on e.id = m.entry_id
+       where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild' order by e.position`,
+      [day],
+    )) {
+      const entry = entries.get(Number(row['entry_id']));
+      const id = `${String(row['clip_card'])}|${String(row['clip_key'])}`;
+      if (entry && !takes.has(id)) takes.set(id, entry);
+    }
+    const syncs = new Map(this.syncRecords(day).map((record) => [`${record.card}|${record.clipKey}`, record]));
+    const files = new Map<string, string>();
+    const sounds = new Map<string, string>();
+    for (const row of this.rows<Record<string, SqlValue>>('select card, file_name, kind from clip where day = ? order by path', [day])) {
+      const name = String(row['file_name']);
+      if (row['kind'] === 'camera' && VIDEO_FILE.test(name)) {
+        const id = `${String(row['card'])}|${clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '')}`;
+        if (!files.has(id)) files.set(id, name);
+      } else if (row['kind'] === 'sound' && AUDIO_FILE.test(name)) {
+        sounds.set(`${String(row['card'])}|${name.replace(/\.[^.]+$/, '')}`, name);
+      }
+    }
+    const rules = this.rules();
+    return this.syncMedia(day)
+      .pictures.map((picture) => {
+        const id = `${picture.card}|${picture.key}`;
+        const entry = takes.get(id);
+        const sync = syncs.get(id);
+        const synced = sync && sync.method !== 'None' && sync.soundKey;
+        const rule = this.ruleFor(rules, day, { scene: entry?.scene ?? '', setup: entry?.setup ?? '', clip: picture.key });
+        return {
+          clip: picture.key,
+          card: picture.card,
+          file: files.get(id) ?? picture.key,
+          tc: picture.meta?.tc ? { frames: picture.meta.tc.frames, base: picture.meta.tc.base } : null,
+          rate: picture.meta?.rate ?? null,
+          durationSec: picture.meta?.durationSec ?? null,
+          scene: entry?.scene ?? '',
+          setup: entry?.setup ?? '',
+          take: entry?.take ?? '',
+          circle: Boolean(entry && (entry.circle || entry.print)),
+          notes: entry?.notes ?? '',
+          roll: entry?.roll || picture.card,
+          soundRoll: synced ? (entry?.soundRoll || sync.soundCard || '') : '',
+          soundFile: synced ? (sounds.get(`${sync.soundCard}|${sync.soundKey}`) ?? sync.soundKey!) : '',
+          sync: synced ? `${sync.method}${sync.accepted ? '' : ' (not reviewed)'}` : 'None',
+          syncFrames: synced ? sync.alignFrames : null,
+          look: rule?.lut ?? '',
+        };
+      })
+      .sort((a, b) => a.card.localeCompare(b.card) || a.clip.localeCompare(b.clip));
   }
 
   /** Clips found by name across the whole production, newest day first: the start of the media index. */

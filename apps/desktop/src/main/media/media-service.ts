@@ -232,10 +232,14 @@ export class MediaService {
   }
 
   /** Where copies may go now: volumes marked to receive them, and reachable destination folders. */
-  destinations(): { id: string; name: string; root: string }[] {
+  destinations(): { id: string; name: string; kind: string; root: string }[] {
     return [
-      ...[...this.volumes.values()].filter((entry) => DESTINATION_ROLES.includes(entry.volume.role)).map(({ volume }) => ({ id: volume.id, name: volume.name, root: volume.mountPath })),
-      ...this.folders().filter((folder) => folder.online).map((folder) => ({ id: folder.id, name: folder.name, root: folder.path })),
+      ...[...this.volumes.values()]
+        .filter((entry) => DESTINATION_ROLES.includes(entry.volume.role))
+        .map(({ volume }) => ({ id: volume.id, name: volume.name, kind: volume.role, root: volume.mountPath })),
+      ...this.folders()
+        .filter((folder) => folder.online)
+        .map((folder) => ({ id: folder.id, name: folder.name, kind: 'Folder', root: folder.path })),
     ];
   }
 

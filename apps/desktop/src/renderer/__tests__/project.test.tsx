@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_DAILIES, type ProjectResult, type ProjectState } from '../../shared/project';
+import { DEFAULT_DAILIES, DEFAULT_DELIVERY, type DeliveryState, type ProjectResult, type ProjectState } from '../../shared/project';
 import { App } from '../App';
 import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
@@ -11,6 +11,7 @@ import { SyncWorkspace } from '../screens/SyncWorkspace';
 import { VfxHandoff } from '../screens/VfxHandoff';
 import { Looks } from '../screens/Looks';
 import { Dailies } from '../screens/Dailies';
+import { Delivery } from '../screens/Delivery';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -40,6 +41,7 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   renders: [],
   dailiesActivity: null,
   ffmpeg: null,
+  delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
 });
@@ -127,6 +129,15 @@ beforeEach(() => {
     startDailies: vi.fn(async () => ok(current)),
     stopDailies: vi.fn(async () => ok(current)),
     showDaily: vi.fn(async () => undefined),
+    saveDelivery: vi.fn(async () => ok(current)),
+    refreshDelivery: vi.fn(async () => ok(current)),
+    startDelivery: vi.fn(async () => ok(current)),
+    stopDelivery: vi.fn(async () => ok(current)),
+    retryDelivery: vi.fn(async () => ok(current)),
+    addDeliveryFolder: vi.fn(async () => ok(current)),
+    removeDeliveryFolder: vi.fn(async () => ok(current)),
+    saveManifest: vi.fn(async () => ok(current)),
+    showManifest: vi.fn(async () => undefined),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -390,5 +401,73 @@ describe('a production from the database', () => {
     expect(api.saveDailies).toHaveBeenLastCalledWith(expect.objectContaining({ codec: 'DNxHR LB' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show' }));
     expect(api.showDaily).toHaveBeenCalledWith('/RAID/x.mov');
+  });
+
+  it('preflights the real drives, delivers through the database, and retries what did not verify', async () => {
+    const GB = 1e9;
+    const delivery: DeliveryState = {
+      settings: { ...DEFAULT_DELIVERY, packages: ['edit', 'dailies', 'reports'], destinations: ['/Volumes/SHTL_03'] },
+      places: [
+        { id: '/Volumes/RAID', name: 'RAID', kind: 'Destination', root: '/Volumes/RAID', freeBytes: 8000 * GB, totalBytes: 16000 * GB },
+        { id: '/Volumes/SHTL_03', name: 'SHTL_03', kind: 'Shuttle', root: '/Volumes/SHTL_03', freeBytes: 500 * GB, totalBytes: 2000 * GB },
+        { id: '/Volumes/ARCHIVE', name: 'ARCHIVE', kind: 'Archive', root: '/Volumes/ARCHIVE', freeBytes: 300 * GB, totalBytes: 4000 * GB },
+      ],
+      parts: [
+        { id: 'camera', sourceId: '/Volumes/RAID', source: 'RAID', files: 400, bytes: 600 * GB, present: { '/Volumes/SHTL_03': 600 * GB, '/Volumes/ARCHIVE': 0 } },
+        { id: 'sound', sourceId: '/Volumes/RAID', source: 'RAID', files: 40, bytes: 2 * GB, present: {} },
+        { id: 'dailies', sourceId: '/Volumes/RAID', source: 'RAID', files: 20, bytes: 40 * GB, present: {} },
+        { id: 'reports', sourceId: '/Volumes/RAID', source: 'RAID', files: 6, bytes: 0.001 * GB, present: {} },
+      ],
+      scanning: false,
+      scannedAt: '2026-10-06T21:00:00Z',
+      records: [
+        {
+          package: 'dailies',
+          packageName: 'Synced dailies',
+          destinationId: '/Volumes/SHTL_03',
+          destination: 'SHTL_03',
+          source: 'RAID',
+          files: 20,
+          bytes: 40 * GB,
+          verified: 19,
+          alreadyThere: 0,
+          failed: 1,
+          retries: 0,
+          startedAt: '2026-10-06T21:00:00Z',
+          finishedAt: '2026-10-06T21:10:00Z',
+          problems: [{ path: 'SYNCED_DAILIES/4A-02.mov', error: 'Checksum mismatch' }],
+          mhl: null,
+        },
+      ],
+      activity: null,
+      error: null,
+    };
+    current = fresh({ delivery });
+    render(
+      <StoreProvider>
+        <Delivery />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(api.refreshDelivery).toHaveBeenCalled());
+    // The shuttle already holds the originals: it needs only the sound, dailies and reports.
+    expect(screen.getByText(/✓ 458 GB left/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: /Deliver & verify/ }) as HTMLButtonElement).disabled).toBe(false);
+
+    // The archive has the room for none of it.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ARCHIVE' }));
+    expect(api.saveDelivery).toHaveBeenLastCalledWith({ destinations: ['/Volumes/SHTL_03', '/Volumes/ARCHIVE'] });
+    expect(screen.getAllByText(/Not enough space on ARCHIVE/).length).toBeGreaterThan(0);
+    expect((screen.getByRole('button', { name: /Deliver & verify/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'ARCHIVE' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Deliver & verify/ }));
+    expect(api.startDelivery).toHaveBeenCalled();
+
+    expect(screen.getByText(/1 not verified/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry file' }));
+    expect(api.retryDelivery).toHaveBeenCalledWith('dailies', '/Volumes/SHTL_03');
+
+    fireEvent.change(screen.getByLabelText('Delivery preset'), { target: { value: 'Archive' } });
+    expect(api.saveDelivery).toHaveBeenLastCalledWith({ packages: ['ocf', 'reports'], destinations: ['/Volumes/SHTL_03'] });
   });
 });

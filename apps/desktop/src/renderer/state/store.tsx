@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { DailyRender, ProjectState } from '../../shared/project';
+import type { DailyRender, DeliveryPackageId, DeliveryState, ProjectState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -92,6 +92,8 @@ export interface AppState {
   deliveryDestinations: DeliveryDestination[];
   deliveryPreset: string;
   delivered: string[];
+  /** The desktop app's delivery: choices, drives, manifest and progress. */
+  delivery: DeliveryState | null;
   reportFilter: ReportFilter;
 }
 
@@ -136,6 +138,7 @@ export const initialState = (): AppState => ({
   deliveryDestinations: demo.DELIVERY_DESTINATIONS.map((destination) => ({ ...destination })),
   deliveryPreset: 'Daily handoff — Editorial + Archive',
   delivered: [],
+  delivery: null,
   reportFilter: 'all',
 });
 
@@ -193,6 +196,7 @@ export type Action =
   | { type: 'togglePackage'; id: string }
   | { type: 'toggleDeliveryDestination'; id: string }
   | { type: 'deliver' }
+  | { type: 'setDeliveryChoice'; packages: DeliveryPackageId[]; destinations: string[] }
   // Reports
   | { type: 'setReportFilter'; filter: ReportFilter };
 
@@ -432,12 +436,30 @@ export const reducer = (state: AppState, action: Action): AppState => {
       if (state.project) return state;
       return { ...state, dailies: { ...state.dailies, built: true } };
 
-    case 'togglePackage':
-      return { ...state, packages: state.packages.map((pkg) => (pkg.id === action.id ? { ...pkg, selected: !pkg.selected } : pkg)) };
-    case 'toggleDeliveryDestination':
-      return {
+    case 'togglePackage': {
+      const next = { ...state, packages: state.packages.map((pkg) => (pkg.id === action.id ? { ...pkg, selected: !pkg.selected } : pkg)) };
+      if (!state.delivery) return next;
+      const chosen = state.delivery.settings.packages;
+      const id = action.id as DeliveryPackageId;
+      const packages = chosen.includes(id) ? chosen.filter((pkg) => pkg !== id) : [...chosen, id];
+      return { ...next, delivery: { ...state.delivery, settings: { ...state.delivery.settings, packages } } };
+    }
+    case 'toggleDeliveryDestination': {
+      const next = {
         ...state,
         deliveryDestinations: state.deliveryDestinations.map((destination) => (destination.id === action.id ? { ...destination, selected: !destination.selected } : destination)),
+      };
+      if (!state.delivery) return next;
+      const chosen = state.delivery.settings.destinations;
+      const destinations = chosen.includes(action.id) ? chosen.filter((id) => id !== action.id) : [...chosen, action.id];
+      return { ...next, delivery: { ...state.delivery, settings: { ...state.delivery.settings, destinations } } };
+    }
+    case 'setDeliveryChoice':
+      if (!state.delivery) return state;
+      return {
+        ...state,
+        packages: state.packages.map((pkg) => ({ ...pkg, selected: action.packages.includes(pkg.id as DeliveryPackageId) })),
+        delivery: { ...state.delivery, settings: { ...state.delivery.settings, packages: action.packages, destinations: action.destinations } },
       };
     case 'deliver':
       return { ...state, delivered: state.packages.filter((pkg) => pkg.selected).map((pkg) => pkg.id) };

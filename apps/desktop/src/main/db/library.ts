@@ -119,6 +119,16 @@ export class Library {
       renders: db.renders(day.number).map(({ checksum: _checksum, ...render }) => render),
       dailiesActivity: null,
       ffmpeg: null,
+      delivery: {
+        settings: db.deliverySettings(),
+        places: [],
+        parts: [],
+        scanning: false,
+        scannedAt: null,
+        records: db.deliveries(day.number).map(({ root: _root, failedFiles: _files, ...record }) => record),
+        activity: null,
+        error: null,
+      },
       recent: this.index.recent,
     };
   }

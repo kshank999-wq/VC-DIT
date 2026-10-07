@@ -1,5 +1,5 @@
 import { DESTINATION_ROLES, SOURCE_ROLES, formatBytes, type IngestRequest, type MediaState } from '../../shared/media';
-import type { DailiesSettings, ProjectState } from '../../shared/project';
+import { DELIVERY_PACKAGES, packageBytes, type DailiesSettings, type DeliveryState, type ProjectState } from '../../shared/project';
 import type { IngestDestination, TransferJob, Volume } from '../model/types';
 import type { Dispatch } from 'react';
 import type { Action, AppState } from './store';
@@ -43,7 +43,18 @@ type FromProject = Pick<
   | 'renders'
   | 'dailiesActivity'
   | 'ffmpeg'
+  | 'delivery'
+  | 'packages'
+  | 'deliveryDestinations'
+  | 'delivered'
 >;
+
+/** Packages with a record today and nothing left unverified: what the Output step counts as delivered. */
+const deliveredPackages = (delivery: DeliveryState): string[] =>
+  DELIVERY_PACKAGES.filter((pkg) => {
+    const mine = delivery.records.filter((record) => record.package === pkg.id);
+    return mine.length > 0 && mine.every((record) => record.failed === 0);
+  }).map((pkg) => pkg.id);
 
 /** The production as the database has it, into the UI's state. */
 export const fromProject = (state: AppState, project: ProjectState): FromProject => {
@@ -93,6 +104,22 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     renders: project.renders,
     dailiesActivity: project.dailiesActivity,
     ffmpeg: project.ffmpeg,
+    delivery: project.delivery,
+    packages: DELIVERY_PACKAGES.map((pkg) => ({
+      id: pkg.id,
+      name: pkg.name,
+      description: pkg.description,
+      gb: packageBytes(project.delivery, pkg.id).bytes / 1e9,
+      selected: project.delivery.settings.packages.includes(pkg.id),
+    })),
+    deliveryDestinations: project.delivery.places.map((place) => ({
+      id: place.id,
+      name: place.name,
+      kind: place.kind,
+      freeGb: (place.freeBytes ?? 0) / 1e9,
+      selected: project.delivery.settings.destinations.includes(place.id),
+    })),
+    delivered: deliveredPackages(project.delivery),
     scriptLog: project.log
       ? {
           file: project.log.file,
@@ -152,6 +179,18 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
     case 'toggleBurnIn':
       void api.saveDailies(dailiesSettings({ ...before.dailies, burnIns: { ...before.dailies.burnIns, [action.key]: !before.dailies.burnIns[action.key] } }));
       return;
+    case 'togglePackage':
+    case 'toggleDeliveryDestination':
+    case 'setDeliveryChoice': {
+      if (!before.delivery) return;
+      const { packages, destinations } = before.delivery.settings;
+      if (action.type === 'setDeliveryChoice') void api.saveDelivery({ packages: action.packages, destinations: action.destinations });
+      else if (action.type === 'togglePackage') {
+        const id = action.id as (typeof packages)[number];
+        void api.saveDelivery({ packages: packages.includes(id) ? packages.filter((pkg) => pkg !== id) : [...packages, id] });
+      } else void api.saveDelivery({ destinations: destinations.includes(action.id) ? destinations.filter((id) => id !== action.id) : [...destinations, action.id] });
+      return;
+    }
     case 'setProduction':
       void api.update(action.patch);
       return;

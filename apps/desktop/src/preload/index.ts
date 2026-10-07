@@ -54,6 +54,15 @@ contextBridge.exposeInMainWorld('vcdit', {
     startDailies: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-start', settings),
     stopDailies: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-stop'),
     showDaily: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-dailies-show', path),
+    saveDelivery: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-settings', settings),
+    refreshDelivery: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-refresh'),
+    startDelivery: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-start'),
+    stopDelivery: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-stop'),
+    retryDelivery: (pkg: string, destination: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-retry', pkg, destination),
+    addDeliveryFolder: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-add-folder'),
+    removeDeliveryFolder: (id: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-remove-folder', id),
+    saveManifest: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-save-manifest'),
+    showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

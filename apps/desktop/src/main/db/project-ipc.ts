@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { randomUUID } from 'node:crypto';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
-import { DEFAULT_DAILIES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
+import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
 import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
@@ -98,23 +100,58 @@ export interface ProjectHooks {
   /** Another production or day is open: show its transfers. */
   opened: (transfers: TransferRecord[]) => void;
   /** Where copies may go now: destination volumes and folders, by id. */
-  destinations: () => { id: string; name: string; root: string }[];
+  destinations: () => { id: string; name: string; kind: string; root: string }[];
 }
 
 const LOG_EXTENSIONS = ['csv', 'tsv', 'txt', 'tab', 'ale', 'json', 'xml'];
 const MAX_LOG_BYTES = 20 * 1024 * 1024;
 
-/** A physical VFX copy, in the transfer worker like an ingest. */
-const runCopy: RunCopy = (plan: WorkerPlan) =>
+/** A verified copy in the transfer worker, like an ingest: VFX physical copies and deliveries. */
+const runTransferJob: RunTransfer = (plan: WorkerPlan, options = {}) =>
   new Promise((resolve, reject) => {
     const worker = new Worker(transferWorkerPath, { workerData: plan });
+    const stop = () => worker.postMessage('stop');
+    options.signal?.addEventListener('abort', stop, { once: true });
+    const settle = () => options.signal?.removeEventListener('abort', stop);
     worker.on('message', (message: WorkerMessage) => {
-      if (message.type === 'done') resolve({ result: message.result, reports: message.reports });
-      else if (message.type === 'error') reject(new Error(message.message));
+      if (message.type === 'progress') options.onProgress?.(message.progress);
+      else if (message.type === 'done') {
+        settle();
+        resolve({ result: message.result, reports: message.reports });
+      } else {
+        settle();
+        reject(new Error(message.message));
+      }
     });
-    worker.on('error', reject);
-    worker.on('exit', (code) => code !== 0 && reject(new Error('The copy stopped unexpectedly.')));
+    worker.on('error', (cause) => {
+      settle();
+      reject(cause);
+    });
+    worker.on('exit', (code) => {
+      settle();
+      if (code !== 0) reject(new Error('The copy stopped unexpectedly.'));
+    });
   });
+const runCopy: RunCopy = (plan) => runTransferJob(plan);
+
+/** Only the delivery choices there are; the folders change only through their own calls. */
+const deliverySettings = (input: unknown, current: DeliverySettings): DeliverySettings => {
+  const value = (input ?? {}) as Record<string, unknown>;
+  const ids = DELIVERY_PACKAGES.map((pkg) => pkg.id);
+  const packages = (given: unknown): DeliveryPackageId[] => (Array.isArray(given) ? ids.filter((id) => given.includes(id)) : []);
+  const places = (given: unknown): string[] => (Array.isArray(given) ? [...new Set(given.filter((id): id is string => typeof id === 'string').map((id) => id.slice(0, 4096)))].slice(0, 50) : []);
+  return {
+    packages: 'packages' in value ? packages(value['packages']) : current.packages,
+    destinations: 'destinations' in value ? places(value['destinations']) : current.destinations,
+    folders: current.folders,
+    presets: Array.isArray(value['presets'])
+      ? (value['presets'] as unknown[]).slice(0, 30).map((preset) => {
+          const p = (preset ?? {}) as Record<string, unknown>;
+          return { name: text(p['name'], 60) ?? 'Preset', packages: packages(p['packages']), destinations: places(p['destinations']) };
+        })
+      : current.presets,
+  };
+};
 
 /** Sync's reading and comparing, in its own worker: one per batch of jobs. */
 const runAnalysis: RunAnalysis = (jobs) =>
@@ -135,6 +172,7 @@ export interface Project {
   vfx: VfxService;
   sync: SyncService;
   dailies: DailiesService;
+  delivery: DeliveryService;
   /** Tell the windows the production changed. */
   changed: () => void;
   /** A card finished: match the log again, then mirror any VFX shot it completes. */
@@ -148,17 +186,22 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   let vfx: VfxService | null = null;
   let sync: SyncService | null = null;
   let dailies: DailiesService | null = null;
+  let delivery: DeliveryService | null = null;
   // FFmpeg and the burn-in font ship as resources; in development they are in build/ (or FFmpeg on the PATH).
   const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build');
   let ffmpegFound: Ffmpeg | null = null;
   const ffmpegReady = locateFfmpeg(resources).then((found) => (ffmpegFound = found));
-  const stateNow = (): ProjectState => ({
+  const baseState = (): ProjectState => ({
     ...library.state(),
     vfxActivity: vfx?.activity ?? null,
     syncActivity: sync?.activity ?? null,
     dailiesActivity: dailies?.activity ?? null,
     ffmpeg: ffmpegFound ? { version: ffmpegFound.version } : null,
   });
+  const stateNow = (): ProjectState => {
+    const state = baseState();
+    return delivery ? { ...state, delivery: { ...state.delivery, ...delivery.view() } } : state;
+  };
   const broadcast = () => {
     const state = stateNow();
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:project', state);
@@ -180,7 +223,15 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   });
   const rendering = dailies;
   void ffmpegReady.then(broadcast);
-  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null || rendering.busy();
+  delivery = new DeliveryService({
+    db: () => library.current,
+    places: () => hooks.destinations(),
+    runTransfer: runTransferJob,
+    tool: { name: 'VC DIT', version: app.getVersion() },
+    changed: broadcast,
+  });
+  const delivering = delivery;
+  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null || rendering.busy() || delivering.busy();
 
   const openedNow = () => {
     const db = library.current;
@@ -380,11 +431,77 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     if (db.renders(db.currentDay().number).some((render) => render.output === path)) shell.showItemInFolder(String(path));
   });
 
+  // ------------------------------------------------ delivery
+  const settingsNow = () => library.current.deliverySettings();
+  ipcMain.handle('vcdit:project-delivery-settings', (_e, settings: unknown) =>
+    answer(() => library.current.saveDeliverySettings(deliverySettings(settings, settingsNow()))),
+  );
+  ipcMain.handle('vcdit:project-delivery-refresh', () => answer(() => void delivering.refresh()));
+  ipcMain.handle('vcdit:project-delivery-start', () =>
+    answer(async () => {
+      if (hooks.busy()) throw new Error('A card is still being copied. Deliver when it has finished, so the delivery is complete.');
+      if (rendering.busy()) throw new Error('Dailies are rendering. Deliver when they have finished.');
+      if (mirrors.activity !== null) throw new Error('VFX shots are being mirrored. Deliver when that has finished.');
+      await delivering.start();
+    }),
+  );
+  ipcMain.handle('vcdit:project-delivery-stop', () => answer(() => delivering.stop()));
+  ipcMain.handle('vcdit:project-delivery-retry', (_e, pkg: unknown, destination: unknown) =>
+    answer(async () => {
+      if (!DELIVERY_PACKAGES.some((candidate) => candidate.id === pkg)) throw new Error('Unknown package.');
+      await delivering.retry(pkg as DeliveryPackageId, String(destination));
+    }),
+  );
+  ipcMain.handle('vcdit:project-delivery-add-folder', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = { title: 'Deliver to a folder', properties: ['openDirectory', 'createDirectory'] as ('openDirectory' | 'createDirectory')[] };
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, reason: '' };
+    const path = picked.filePaths[0];
+    return answer(() => {
+      const current = settingsNow();
+      if (current.folders.some((folder) => folder.path === path)) return;
+      const folder = { id: `delivery-folder:${randomUUID()}`, name: basename(path) || path, path };
+      library.current.saveDeliverySettings({ ...current, folders: [...current.folders, folder], destinations: [...current.destinations, folder.id] });
+      void delivering.refresh();
+    });
+  });
+  ipcMain.handle('vcdit:project-delivery-remove-folder', (_e, id: unknown) =>
+    answer(() => {
+      const current = settingsNow();
+      library.current.saveDeliverySettings({
+        ...current,
+        folders: current.folders.filter((folder) => folder.id !== id),
+        destinations: current.destinations.filter((destination) => destination !== id),
+      });
+      void delivering.refresh();
+    }),
+  );
+  ipcMain.handle('vcdit:project-delivery-save-manifest', async (e) => {
+    const db = library.current;
+    const day = db.currentDay();
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      title: 'Save the delivery manifest',
+      defaultPath: `${db.production().code || 'VC DIT'} Day ${String(day.number).padStart(3, '0')} delivery manifest.csv`,
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    };
+    const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
+    return answer(() => writeFile(picked.filePath!, manifestCsv(db.deliveries(day.number)), 'utf8'));
+  });
+  ipcMain.handle('vcdit:project-delivery-show', (_e, path: unknown) => {
+    // Only manifests VC DIT wrote.
+    const db = library.current;
+    if (db.deliveries(db.currentDay().number).some((record) => record.mhl === path)) shell.showItemInFolder(String(path));
+  });
+
   return {
     library,
     vfx: mirrors,
     sync: syncing,
     dailies: rendering,
+    delivery: delivering,
     changed: broadcast,
     cardIn: (day) => {
       library.current.rematch(day);

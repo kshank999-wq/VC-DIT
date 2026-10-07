@@ -32,6 +32,12 @@ export interface SourceFile {
   path: string;
   size: number;
   mtimeMs: number;
+  /**
+   * The checksum this file must have, when it is already known (a delivery
+   * re-copying originals checks them against ingest). A file that reads
+   * differently is not copied anywhere.
+   */
+  expected?: string | null;
 }
 
 /** One destination: the folder this card's files go into. */
@@ -314,6 +320,7 @@ export const runTransfer = async (
     const hasher = createHasher(method);
     let source: FileHandle | null = null;
     let readError: unknown = null;
+    let refused: string | null = null;
     try {
       source = await open(join(sourceRoot, ...splitPath(file.path)), 'r');
       let which = 0;
@@ -343,6 +350,9 @@ export const runTransfer = async (
       if (!stopped()) {
         record.sourceHash = hasher.digest();
         record.hashedAt = new Date().toISOString();
+        if (file.expected && file.expected !== record.sourceHash) {
+          refused = 'This copy no longer matches the checksum it was ingested with, so it was not delivered. Check the drive it came from.';
+        }
       }
     } catch (cause) {
       readError = cause;
@@ -350,8 +360,8 @@ export const runTransfer = async (
       await source?.close().catch(() => undefined);
     }
 
-    if (readError || stopped()) {
-      const reason = stopped() ? STOPPED : `Could not read this file from the card: ${describe(readError)}`;
+    if (readError || refused || stopped()) {
+      const reason = stopped() ? STOPPED : (refused ?? `Could not read this file from the card: ${describe(readError)}`);
       for (const writer of [...writers]) {
         await writer.handle.close().catch(() => undefined);
         await removePart(writer.part);

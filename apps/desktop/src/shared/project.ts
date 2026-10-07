@@ -241,6 +241,7 @@ export interface ProjectState {
   dailiesActivity: string | null;
   /** The FFmpeg this app renders with, or null when there is none. */
   ffmpeg: { version: string } | null;
+  delivery: DeliveryState;
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }
@@ -271,3 +272,147 @@ export const DAILIES_RESOLUTIONS = ['1920 × 1080 · letterbox 2.39', '1920 × 1
 export const DAILIES_AUDIO = ['Synced · all tracks mixed', 'Synced · track 1 only', 'Camera scratch only', 'No audio'];
 export const DAILIES_LOOKS: DailiesSettings['look'][] = ['Per assignment rules', 'Project default only', 'None · LOG original'];
 export const DAILIES_GROUPING: DailiesSettings['grouping'][] = ['Scene → Setup → Take', 'Camera roll', 'Shoot order'];
+
+// ------------------------------------------------ delivery (spec §4.10)
+
+/**
+ * What a delivery is made of. Each package is a set of the day folder's
+ * parts; a part is found on whichever drive holds the most of it (originals
+ * on the RAID, dailies wherever they were rendered), and a part two chosen
+ * packages share is copied once.
+ */
+export type DeliveryPartId = 'camera' | 'sound' | 'looks' | 'dailies' | 'vfx' | 'editorial' | 'reports-ingest' | 'reports-dailies' | 'reports';
+
+export const DELIVERY_PARTS: { id: DeliveryPartId; folder: string; exclude?: string[] }[] = [
+  { id: 'camera', folder: 'CAMERA_ORIGINALS' },
+  { id: 'sound', folder: 'SOUND_ORIGINALS' },
+  { id: 'looks', folder: 'LUTS_LOOKS' },
+  { id: 'dailies', folder: 'SYNCED_DAILIES' },
+  { id: 'vfx', folder: 'VFX' },
+  // The ALE and sync list, written fresh for each delivery.
+  { id: 'editorial', folder: 'EDITORIAL' },
+  { id: 'reports-ingest', folder: 'REPORTS/ingest_verification' },
+  { id: 'reports-dailies', folder: 'REPORTS/dailies' },
+  { id: 'reports', folder: 'REPORTS', exclude: ['ingest_verification', 'dailies'] },
+];
+
+export type DeliveryPackageId = 'ocf' | 'edit' | 'dailies' | 'vfx' | 'reports';
+
+export const DELIVERY_PACKAGES: { id: DeliveryPackageId; name: string; description: string; parts: DeliveryPartId[] }[] = [
+  { id: 'ocf', name: 'Camera originals archive', description: 'All camera and sound originals, ingest MHL and logs', parts: ['camera', 'sound', 'reports-ingest'] },
+  { id: 'edit', name: 'Editorial handoff', description: 'Originals, looks, and an ALE and sync list for the edit', parts: ['camera', 'sound', 'looks', 'editorial'] },
+  { id: 'dailies', name: 'Synced dailies', description: 'The rendered dailies, their looks and manifest', parts: ['dailies', 'looks', 'reports-dailies'] },
+  { id: 'vfx', name: 'VFX package', description: 'Mirrored plates and the VC VFX Prep handoff', parts: ['vfx'] },
+  { id: 'reports', name: 'Reports & logs', description: 'Ingest, dailies, VFX and delivery reports', parts: ['reports-ingest', 'reports-dailies', 'reports'] },
+];
+
+export interface DeliveryPreset {
+  name: string;
+  packages: DeliveryPackageId[];
+  /** Places by id; empty keeps the destinations chosen now. */
+  destinations: string[];
+}
+
+export const DEFAULT_DELIVERY_PRESETS: DeliveryPreset[] = [
+  { name: 'Editorial handoff', packages: ['edit', 'dailies', 'reports'], destinations: [] },
+  { name: 'Archive', packages: ['ocf', 'reports'], destinations: [] },
+  { name: 'Everything', packages: ['ocf', 'edit', 'dailies', 'vfx', 'reports'], destinations: [] },
+];
+
+export interface DeliverySettings {
+  packages: DeliveryPackageId[];
+  /** The places chosen to deliver to, by id. */
+  destinations: string[];
+  /** Folders added on this screen only (a NAS share, a vendor's upload folder). */
+  folders: { id: string; name: string; path: string }[];
+  presets: DeliveryPreset[];
+}
+
+export const DEFAULT_DELIVERY: DeliverySettings = { packages: ['edit', 'dailies', 'reports'], destinations: [], folders: [], presets: DEFAULT_DELIVERY_PRESETS };
+
+/** A drive or folder the day's material can come from or go to. */
+export interface DeliveryPlace {
+  id: string;
+  name: string;
+  /** "Shuttle", "Archive", "Folder"… */
+  kind: string;
+  root: string;
+  freeBytes: number | null;
+  totalBytes: number | null;
+}
+
+/** One part of the day folder as found on the drives. */
+export interface DeliveryPart {
+  id: DeliveryPartId;
+  /** The place holding the most of it, or null when no drive has it. */
+  sourceId: string | null;
+  source: string | null;
+  files: number;
+  bytes: number;
+  /** Bytes of it each other place already holds (same name, same size). */
+  present: Record<string, number>;
+}
+
+/** One package to one destination: what the manifest says (spec "Delivery Record"). */
+export interface DeliveryRecord {
+  package: DeliveryPackageId;
+  packageName: string;
+  destinationId: string;
+  destination: string;
+  source: string;
+  files: number;
+  bytes: number;
+  verified: number;
+  alreadyThere: number;
+  failed: number;
+  retries: number;
+  startedAt: string;
+  finishedAt: string;
+  /** The first few files that did not verify, and why. */
+  problems: { path: string; error: string }[];
+  /** The ASC MHL written on the destination, if any. */
+  mhl: string | null;
+}
+
+export interface DeliveryState {
+  settings: DeliverySettings;
+  places: DeliveryPlace[];
+  parts: DeliveryPart[];
+  /** The drives are being looked through. */
+  scanning: boolean;
+  scannedAt: string | null;
+  records: DeliveryRecord[];
+  activity: { label: string; totalBytes: number; doneBytes: number; bytesPerSecond: number } | null;
+  /** Why the last delivery stopped short, if it did. */
+  error: string | null;
+}
+
+/** Free space a destination should keep after a copy: 1%, at least 1 GB (as ingest). */
+export const deliveryHeadroom = (totalBytes: number): number => Math.max(1e9, totalBytes * 0.01);
+
+/** The parts the chosen packages need, each once. */
+export const deliveryParts = (packages: DeliveryPackageId[]): DeliveryPartId[] => {
+  const parts = new Set<DeliveryPartId>();
+  for (const pkg of DELIVERY_PACKAGES) if (packages.includes(pkg.id)) for (const part of pkg.parts) parts.add(part);
+  return DELIVERY_PARTS.map((part) => part.id).filter((id) => parts.has(id));
+};
+
+/** Bytes a place still needs for these packages: what it does not already hold, and nothing it is itself the source of. */
+export const deliveryNeed = (state: Pick<DeliveryState, 'parts'>, packages: DeliveryPackageId[], placeId: string): number =>
+  deliveryParts(packages).reduce((sum, id) => {
+    const part = state.parts.find((candidate) => candidate.id === id);
+    if (!part || part.sourceId === placeId) return sum;
+    return sum + Math.max(0, part.bytes - (part.present[placeId] ?? 0));
+  }, 0);
+
+/** A package's size: its parts as found. */
+export const packageBytes = (state: Pick<DeliveryState, 'parts'>, id: DeliveryPackageId): { files: number; bytes: number } => {
+  const pkg = DELIVERY_PACKAGES.find((candidate) => candidate.id === id)!;
+  return pkg.parts.reduce(
+    (sum, partId) => {
+      const part = state.parts.find((candidate) => candidate.id === partId);
+      return { files: sum.files + (part?.files ?? 0), bytes: sum.bytes + (part?.bytes ?? 0) };
+    },
+    { files: 0, bytes: 0 },
+  );
+};

@@ -227,6 +227,39 @@ connection.
   destinations, files, sizes, checksums, method, times, retries) to the
   production's `REPORTS/ingest_verification/` and to the local database.
 
+## Delivery (`src/main/delivery`)
+
+A delivery copies chosen **packages** of the open day to chosen
+**destinations** (destination volumes, the intake's folders, or folders added
+on the Delivery screen). Each package is a set of parts of the day folder:
+
+| Package | Parts |
+| --- | --- |
+| Camera originals archive | `CAMERA_ORIGINALS`, `SOUND_ORIGINALS`, `REPORTS/ingest_verification` |
+| Editorial handoff | originals, `LUTS_LOOKS`, `EDITORIAL` (an ALE and a sync CSV written for this delivery) |
+| Synced dailies | `SYNCED_DAILIES`, `LUTS_LOOKS`, `REPORTS/dailies` |
+| VFX package | `VFX` (mirrors and the VC VFX Prep handoff) |
+| Reports & logs | `REPORTS` |
+
+- **Where from.** Each part is looked for on every known drive; the one
+  holding most of it is the source. A part two packages share is copied once.
+- **Preflight.** For each destination, the bytes it still needs: the parts it
+  is not the source of, less the files it already holds under the same name
+  and size. It must keep 1% (at least 1 GB) free, as ingest does. Unreachable
+  or short destinations block the start, and the screen says which.
+- **Copy and verify.** The transfer engine and worker, as for ingest: one
+  read, every destination written at once, each copy read back before it is
+  named, nothing overwritten (an identical file counts as already there).
+  Originals are also checked against the checksum they were ingested with; a
+  copy that reads differently is not delivered anywhere.
+- **Records.** Each destination gets an ASC MHL of what arrived (in the day
+  folder's `ascmhl/`), CSV/JSON logs and a day manifest in
+  `REPORTS/delivery/`. The database keeps one record per package per
+  destination, with every file that did not verify, so **Retry** copies just
+  those. The manifest can also be saved as a CSV.
+- Not started while a card is being copied, dailies are rendering or VFX
+  copies are running, so a delivery is never of half a day.
+
 ## Destinations
 
 Ingest (§4.3) and delivery (§4.10) both write to a list of destinations at
@@ -279,6 +312,8 @@ because the media is there and must not pass through vc-dit.com.
    Done: picture/sound sync by timecode, checked by waveform, with a waveform
    pass and manual nudges.
 4. Done: the LUT library, assignment rules, look preview and dailies
-   rendering with FFmpeg. Next: delivery packages and manifests; raw camera
-   formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
+   rendering with FFmpeg.
+   Done: the delivery manager to drives and folders: packages, preflight,
+   verified copies, manifests and retries. Next: the Reports screen on real
+   data; raw camera formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.
