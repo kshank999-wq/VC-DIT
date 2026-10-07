@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ProjectResult, ProjectState } from '../../shared/project';
+import { DEFAULT_DAILIES, type ProjectResult, type ProjectState } from '../../shared/project';
 import { App } from '../App';
 import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
@@ -9,6 +9,8 @@ import { ProjectSetup } from '../screens/ProjectSetup';
 import { SceneOrganizer } from '../screens/SceneOrganizer';
 import { SyncWorkspace } from '../screens/SyncWorkspace';
 import { VfxHandoff } from '../screens/VfxHandoff';
+import { Looks } from '../screens/Looks';
+import { Dailies } from '../screens/Dailies';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -31,6 +33,13 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   vfxActivity: null,
   sync: [],
   syncActivity: null,
+  luts: [],
+  lutRules: [],
+  previewClips: [],
+  dailies: DEFAULT_DAILIES,
+  renders: [],
+  dailiesActivity: null,
+  ffmpeg: null,
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
 });
@@ -109,6 +118,15 @@ beforeEach(() => {
     syncWaveform: vi.fn(async () => ok(current)),
     syncNudge: vi.fn(async () => ok(current)),
     syncAccept: vi.fn(async () => ok(current)),
+    importLuts: vi.fn(async () => ok(current)),
+    removeLut: vi.fn(async () => ok(current)),
+    setLutRule: vi.fn(async () => ok(current)),
+    removeLutRule: vi.fn(async () => ok(current)),
+    previewLook: vi.fn(async () => ({ ok: true, original: 'data:image/jpeg;base64,AA', graded: 'data:image/jpeg;base64,BB' })),
+    saveDailies: vi.fn(async () => ok(current)),
+    startDailies: vi.fn(async () => ok(current)),
+    stopDailies: vi.fn(async () => ok(current)),
+    showDaily: vi.fn(async () => undefined),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -316,5 +334,61 @@ describe('a production from the database', () => {
     expect(api.syncWaveform).toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Accept 1 at 90%+' }));
     expect(api.syncAccept).toHaveBeenCalledWith(['A001|A001C003']);
+  });
+
+  it('shows the LUT library, previews the real frame through the look, and edits rules through the database', async () => {
+    current = fresh({
+      luts: [
+        { id: 1, name: 'NJR_Show_v3.cube', title: 'Show LUT', kind: '3D', size: 33, format: 'cube', importedAt: 'x', isDefault: true },
+        { id: 2, name: 'NJR_Night_v1.cube', title: '', kind: '3D', size: 33, format: 'cube', importedAt: 'x', isDefault: false },
+      ],
+      lutRules: [{ id: 5, scope: 'Project', target: 'Default', lut: 'NJR_Show_v3.cube', lutId: 1, clips: 4 }],
+      previewClips: [{ id: 'A001|A001C001', label: 'A001C001 · Sc 4 / A / T01' }],
+      ffmpeg: { version: '6.0' },
+    });
+    render(
+      <StoreProvider>
+        <Looks />
+      </StoreProvider>,
+    );
+    expect(screen.getByRole('option', { name: /NJR_Show_v3\.cube\s*Project default/ })).toBeTruthy();
+    await waitFor(() => expect(api.previewLook).toHaveBeenCalledWith('A001|A001C001', 1));
+    expect(((await screen.findByAltText('The clip through the look')) as HTMLImageElement).src).toBe('data:image/jpeg;base64,BB');
+
+    fireEvent.click(screen.getByRole('option', { name: /NJR_Night_v1/ }));
+    await waitFor(() => expect(api.previewLook).toHaveBeenLastCalledWith('A001|A001C001', 2));
+    fireEvent.change(screen.getByLabelText('Rule applies to'), { target: { value: 'Scene' } });
+    fireEvent.change(screen.getByLabelText('Rule target'), { target: { value: '21' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Use NJR_Night_v1' }));
+    expect(api.setLutRule).toHaveBeenCalledWith('Scene', '21', 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Make project default' }));
+    expect(api.setLutRule).toHaveBeenLastCalledWith('Project', 'Default', 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove the Project rule for Default' }));
+    expect(api.removeLutRule).toHaveBeenCalledWith(5);
+  });
+
+  it('renders dailies to a chosen destination and lists what was rendered', async () => {
+    current = fresh({
+      ...logged,
+      ffmpeg: { version: '6.0' },
+      renders: [
+        { takeId: '4|A|2', label: '4A-02', clip: 'A001C002', output: '/RAID/x.mov', state: 'done', error: null, lut: 'NJR_Show_v3.cube', codec: 'ProRes 422 Proxy', bytes: 52_000_000, warnings: [] },
+        { takeId: '4|A|1', label: '4A-01', clip: 'A001C001', output: '', state: 'failed', error: 'No copy of this clip can be read right now.', lut: null, codec: 'ProRes 422 Proxy', bytes: null, warnings: [] },
+      ],
+    });
+    render(
+      <StoreProvider>
+        <Dailies />
+      </StoreProvider>,
+    );
+    expect(screen.getByText('No copy of this clip can be read right now.')).toBeTruthy();
+    expect(screen.getByText(/NJR_Show_v3\.cube · 52\.0 MB/)).toBeTruthy();
+    // No destination chosen yet: the button says so.
+    expect((screen.getByRole('button', { name: /Build dailies again/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Pick where the dailies go.')).toBeTruthy();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Codec' }), { target: { value: 'DNxHR LB' } });
+    expect(api.saveDailies).toHaveBeenLastCalledWith(expect.objectContaining({ codec: 'DNxHR LB' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show' }));
+    expect(api.showDaily).toHaveBeenCalledWith('/RAID/x.mov');
   });
 });

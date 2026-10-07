@@ -1,13 +1,18 @@
+import { useState } from 'react';
+import { DAILIES_AUDIO, DAILIES_CODECS, DAILIES_GROUPING, DAILIES_LOOKS, DAILIES_RESOLUTIONS, type ProjectResult } from '../../shared/project';
 import type { DailiesOptions, Scene } from '../model/types';
-import { useStore } from '../state/store';
-import { ScreenHeader, StartButton, StatusText } from '../ui/kit';
+import { dailiesSettings, projectApi } from '../state/engine';
+import { DESTINATION_ROLES, useStore } from '../state/store';
+import { Chip, ScreenHeader, StartButton, StatusText, statusVar, tone } from '../ui/kit';
 import './output.css';
 
 /**
  * Dailies: review copies grouped by scene, setup and take, synced, with the
  * viewing look and slate metadata (spec §4.8). Circle takes from the script
  * log are tagged as selects. Originals are never touched; the look applied is
- * recorded in metadata and in the report (spec §4.7).
+ * recorded in metadata and in the report (spec §4.7). In the desktop app
+ * they are rendered with FFmpeg (src/main/dailies) into SYNCED_DAILIES on the
+ * chosen destination, with a manifest in REPORTS/dailies.
  */
 
 const INCLUDE: { value: DailiesOptions['include']; title: string }[] = [
@@ -20,8 +25,11 @@ const INCLUDE: { value: DailiesOptions['include']; title: string }[] = [
 const GB_PER_MINUTE = 1.7;
 
 /** Takes, minutes and size for an include choice, counted from the day's takes. */
-export const dailiesFigures = (scenes: Scene[], include: DailiesOptions['include']) => {
-  const takes = scenes.flatMap((scene) => scene.setups.flatMap((setup) => setup.takes)).filter((take) => include === 'all' || take.circle);
+export const dailiesFigures = (scenes: Scene[], include: DailiesOptions['include'], chosen?: string[]) => {
+  const takes = scenes
+    .filter((scene) => include !== 'scene' || !chosen || chosen.includes(scene.id))
+    .flatMap((scene) => scene.setups.flatMap((setup) => setup.takes))
+    .filter((take) => include === 'all' || (include === 'scene' && chosen) || take.circle);
   const seconds = takes.reduce((sum, take) => {
     const [minutes = 0, secs = 0] = take.duration.split(':').map(Number);
     return sum + minutes * 60 + secs;
@@ -70,14 +78,51 @@ export const publishTree = (production: string, day: number, date: string, scene
 export function Dailies() {
   const { state, dispatch } = useStore();
   const { dailies } = state;
+  const api = state.project ? projectApi() : null;
+  const [notice, setNotice] = useState<string | null>(null);
+  const act = (call: Promise<ProjectResult>) =>
+    void call.then((result) => {
+      if (result.ok) {
+        setNotice(null);
+        dispatch({ type: 'projectState', project: result.state });
+      } else if (result.reason) setNotice(result.reason);
+    });
+  // Where dailies can go: the destination drives and folders the media engine knows.
+  const destinations = [
+    ...state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role)).map((volume) => ({ id: volume.id, name: volume.name })),
+    ...state.destinations.map((destination) => ({ id: destination.id, name: destination.name })),
+  ];
+  const fields = api
+    ? [
+        { key: 'codec' as const, label: 'Codec', options: DAILIES_CODECS },
+        { key: 'resolution' as const, label: 'Resolution', options: DAILIES_RESOLUTIONS },
+        { key: 'audio' as const, label: 'Audio', options: DAILIES_AUDIO },
+        { key: 'look' as const, label: 'Look', options: DAILIES_LOOKS },
+        { key: 'grouping' as const, label: 'Grouping', options: DAILIES_GROUPING },
+      ]
+    : FIELDS;
+  const chosenScenes = dailies.scenes ?? [];
   const tree = publishTree(state.production.name, state.day.number, state.day.date, state.scenes);
   const detail = (include: DailiesOptions['include']) => {
-    if (include === 'scene') return 'choose scenes';
-    const figures = dailiesFigures(state.scenes, include);
+    if (include === 'scene' && !(api && chosenScenes.length)) return 'choose scenes';
+    const figures = dailiesFigures(state.scenes, include, api ? chosenScenes : undefined);
     return `${figures.takes} takes · ${figures.minutes} min`;
   };
   // "By scene" has no scene picker yet, so it counts the circle takes like the default.
-  const chosen = dailiesFigures(state.scenes, dailies.include === 'all' ? 'all' : 'circle');
+  const chosen = api
+    ? dailiesFigures(state.scenes, dailies.include, chosenScenes)
+    : dailiesFigures(state.scenes, dailies.include === 'all' ? 'all' : 'circle');
+  const destinationReason = api && !destinations.some((destination) => destination.id === dailies.destination) ? 'Pick where the dailies go.' : null;
+  const buildReason = !api
+    ? null
+    : !state.ffmpeg
+      ? 'FFmpeg is not available on this computer.'
+      : state.dailiesActivity
+        ? 'Dailies are rendering.'
+        : chosen.takes === 0
+          ? 'No takes for this choice yet.'
+          : destinationReason;
+  const done = state.renders.filter((render) => render.state === 'done').length;
 
   return (
     <div className="screen out">
@@ -108,10 +153,32 @@ export function Dailies() {
                 </button>
               ))}
             </div>
+            {api && dailies.include === 'scene' ? (
+              <div className="row wrap gap-6" role="group" aria-label="Scenes">
+                {state.scenes
+                  .filter((scene) => scene.setups.length > 0)
+                  .map((scene) => {
+                    const on = chosenScenes.includes(scene.id);
+                    return (
+                      <button
+                        key={scene.id}
+                        type="button"
+                        className="burn-chip"
+                        aria-pressed={on}
+                        onClick={() =>
+                          dispatch({ type: 'setDailies', patch: { scenes: on ? chosenScenes.filter((id) => id !== scene.id) : [...chosenScenes, scene.id] } })
+                        }
+                      >
+                        {on ? '✓ ' : ''}Sc {scene.id}
+                      </button>
+                    );
+                  })}
+              </div>
+            ) : null}
           </div>
 
           <div className="field-grid">
-            {FIELDS.map((field) => {
+            {fields.map((field) => {
               const value = dailies[field.key];
               const options = field.options.includes(value) ? field.options : [value, ...field.options];
               return (
@@ -125,6 +192,23 @@ export function Dailies() {
                 </label>
               );
             })}
+            {api ? (
+              <label className="field">
+                <span className="label">Destination</span>
+                <select
+                  className="select"
+                  value={dailies.destination}
+                  onChange={(event) => dispatch({ type: 'setDailies', patch: { destination: event.target.value } })}
+                >
+                  <option value="">{destinations.length ? 'Choose…' : 'No destinations: set one up on Intake'}</option>
+                  {destinations.map((destination) => (
+                    <option key={destination.id} value={destination.id}>
+                      {destination.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
 
           <div className="stack gap-8">
@@ -141,10 +225,23 @@ export function Dailies() {
 
           <div className="row summary-row">
             <div className="grow stack gap-3">
-              <span className="mono strong summary-title">{`${chosen.takes} clips · ~${chosen.minutes} min · ≈ ${chosen.gb} GB`}</span>
+              <span className="mono strong summary-title">{`${chosen.takes} clip${chosen.takes === 1 ? '' : 's'} · ~${chosen.minutes} min · ≈ ${chosen.gb} GB`}</span>
               <span className="muted small">Originals untouched. Look recorded in metadata and report.</span>
             </div>
-            {dailies.built ? (
+            {api ? (
+              state.dailiesActivity ? (
+                <div className="row">
+                  <StatusText status="working" word={state.dailiesActivity} />
+                  <button type="button" className="btn" onClick={() => act(api.stopDailies())}>
+                    Stop
+                  </button>
+                </div>
+              ) : (
+                <StartButton big disabledReason={buildReason} onClick={() => act(api.startDailies(dailiesSettings(dailies)))}>
+                  {done ? 'Build dailies again' : 'Build dailies'}
+                </StartButton>
+              )
+            ) : dailies.built ? (
               <div className="row">
                 <StatusText status="done" word="Built · ready to deliver" />
                 <button type="button" className="btn primary big" onClick={() => dispatch({ type: 'go', screen: 'delivery' })}>
@@ -159,6 +256,48 @@ export function Dailies() {
           </div>
         </section>
 
+        {api ? (
+          <section className="card">
+            <div className="card-head">
+              <h3>Rendered today</h3>
+              <span className="muted small">{state.ffmpeg ? `FFmpeg ${state.ffmpeg.version}` : 'FFmpeg not available'}</span>
+            </div>
+            {notice ? (
+              <p className="dailies-notice" role="alert" style={tone(statusVar('problem'))}>
+                {notice}
+              </p>
+            ) : null}
+            {state.renders.length === 0 ? (
+              <p className="muted small dailies-empty">
+                Nothing yet. Dailies go to SYNCED_DAILIES / scene / setup on the destination, with the looks in LUTS_LOOKS and a manifest in
+                REPORTS/dailies.
+              </p>
+            ) : (
+              <ul className="dailies-renders">
+                {state.renders.map((render) => (
+                  <li key={`${render.takeId}-${render.clip}`}>
+                    <div className="row">
+                      <span className="mono strong">{render.label}</span>
+                      <span className="mono muted">{render.clip}</span>
+                      <span className="grow" />
+                      <Chip color={statusVar(render.state === 'done' ? (render.warnings.length ? 'needs' : 'done') : 'problem')}>{render.state === 'done' ? 'Rendered' : 'Failed'}</Chip>
+                      {render.state === 'done' ? (
+                        <button type="button" className="btn ghost small" onClick={() => void api.showDaily(render.output)}>
+                          Show
+                        </button>
+                      ) : null}
+                    </div>
+                    <span className="muted small">
+                      {render.error ??
+                        [render.codec, render.lut ?? 'no look', render.bytes ? `${(render.bytes / 1e6).toFixed(1)} MB` : null, ...render.warnings].filter(Boolean).join(' · ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="muted small fio-note">Publishing to Frame.io comes with the Frame.io connection.</p>
+          </section>
+        ) : (
         <section className="card">
           <div className="card-head">
             <h3>Frame.io publish target</h3>
@@ -171,6 +310,7 @@ export function Dailies() {
           </pre>
           <p className="muted small fio-note">Circle takes are tagged "Select". Look name and script notes travel as comments/metadata.</p>
         </section>
+        )}
       </div>
     </div>
   );

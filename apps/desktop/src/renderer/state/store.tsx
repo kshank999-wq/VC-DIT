@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { ProjectState } from '../../shared/project';
+import type { DailyRender, ProjectState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -82,6 +82,11 @@ export interface AppState {
   vfxActivity: string | null;
   /** What sync is doing now, in the desktop app. */
   syncActivity: string | null;
+  /** The desktop app's dailies: clips a look can be previewed on, what was rendered, what is rendering, and the FFmpeg doing it. */
+  previewClips: { id: string; label: string }[];
+  renders: DailyRender[];
+  dailiesActivity: string | null;
+  ffmpeg: { version: string } | null;
   dailies: DailiesOptions;
   packages: DeliveryPackage[];
   deliveryDestinations: DeliveryDestination[];
@@ -122,6 +127,10 @@ export const initialState = (): AppState => ({
   mirrorMethod: 'Hard link',
   vfxActivity: null,
   syncActivity: null,
+  previewClips: [],
+  renders: [],
+  dailiesActivity: null,
+  ffmpeg: null,
   dailies: structuredClone(demo.DAILIES),
   packages: structuredClone(demo.PACKAGES),
   deliveryDestinations: demo.DELIVERY_DESTINATIONS.map((destination) => ({ ...destination })),
@@ -419,6 +428,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
     case 'toggleBurnIn':
       return { ...state, dailies: { ...state.dailies, burnIns: { ...state.dailies.burnIns, [action.key]: !state.dailies.burnIns[action.key] }, built: false } };
     case 'buildDailies':
+      // In the desktop app the Dailies screen starts the real render.
+      if (state.project) return state;
       return { ...state, dailies: { ...state.dailies, built: true } };
 
     case 'togglePackage':

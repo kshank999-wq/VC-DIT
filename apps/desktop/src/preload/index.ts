@@ -45,6 +45,15 @@ contextBridge.exposeInMainWorld('vcdit', {
     syncWaveform: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-waveform'),
     syncNudge: (id: string, frames: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-nudge', id, frames),
     syncAccept: (ids: string[]): Promise<unknown> => ipcRenderer.invoke('vcdit:project-sync-accept', ids),
+    importLuts: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-import'),
+    removeLut: (id: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-remove', id),
+    setLutRule: (scope: string, target: string, lutId: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-rule', scope, target, lutId),
+    removeLutRule: (id: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-rule-remove', id),
+    previewLook: (clipId: string, lutId: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-look-preview', clipId, lutId),
+    saveDailies: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-settings', settings),
+    startDailies: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-start', settings),
+    stopDailies: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-stop'),
+    showDaily: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-dailies-show', path),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

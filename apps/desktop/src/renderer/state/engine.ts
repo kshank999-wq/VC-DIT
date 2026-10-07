@@ -1,5 +1,5 @@
 import { DESTINATION_ROLES, SOURCE_ROLES, formatBytes, type IngestRequest, type MediaState } from '../../shared/media';
-import type { ProjectState } from '../../shared/project';
+import type { DailiesSettings, ProjectState } from '../../shared/project';
 import type { IngestDestination, TransferJob, Volume } from '../model/types';
 import type { Dispatch } from 'react';
 import type { Action, AppState } from './store';
@@ -35,6 +35,14 @@ type FromProject = Pick<
   | 'sync'
   | 'selectedSync'
   | 'syncActivity'
+  | 'luts'
+  | 'lutRules'
+  | 'selectedLut'
+  | 'dailies'
+  | 'previewClips'
+  | 'renders'
+  | 'dailiesActivity'
+  | 'ffmpeg'
 >;
 
 /** The production as the database has it, into the UI's state. */
@@ -72,6 +80,19 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     // Stay on the clip being looked at, wherever it moves in the list.
     selectedSync: Math.max(0, project.sync.findIndex((item) => item.id === state.sync[state.selectedSync]?.id)),
     syncActivity: project.syncActivity,
+    luts: project.luts.map((lut) => ({
+      id: lut.id,
+      name: lut.name,
+      description: [lut.title, `${lut.kind} · ${lut.size}-point ${lut.format}`].filter(Boolean).join(' · '),
+      isDefault: lut.isDefault,
+    })),
+    lutRules: project.lutRules,
+    selectedLut: Math.max(0, Math.min(state.selectedLut, project.luts.length - 1)),
+    dailies: { ...project.dailies, built: project.renders.some((render) => render.state === 'done') },
+    previewClips: project.previewClips,
+    renders: project.renders,
+    dailiesActivity: project.dailiesActivity,
+    ffmpeg: project.ffmpeg,
     scriptLog: project.log
       ? {
           file: project.log.file,
@@ -125,6 +146,12 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
     case 'waveformPass':
       apply(api.syncWaveform());
       return;
+    case 'setDailies':
+      void api.saveDailies(dailiesSettings({ ...before.dailies, ...action.patch }));
+      return;
+    case 'toggleBurnIn':
+      void api.saveDailies(dailiesSettings({ ...before.dailies, burnIns: { ...before.dailies.burnIns, [action.key]: !before.dailies.burnIns[action.key] } }));
+      return;
     case 'setProduction':
       void api.update(action.patch);
       return;
@@ -147,6 +174,19 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
       return;
   }
 };
+
+/** The screen's dailies choices as the settings the database keeps. */
+export const dailiesSettings = (options: AppState['dailies']): DailiesSettings => ({
+  include: options.include,
+  scenes: options.scenes ?? [],
+  codec: options.codec,
+  resolution: options.resolution,
+  audio: options.audio,
+  look: options.look as DailiesSettings['look'],
+  grouping: options.grouping as DailiesSettings['grouping'],
+  destination: options.destination,
+  burnIns: options.burnIns,
+});
 
 const pct = (used: number, total: number) => (total > 0 ? Math.round((used / total) * 100) : 0);
 

@@ -22,7 +22,16 @@ files:
 # and are handed out as short-lived signed URLs; electron-builder publishes nothing.
 publish: null
 
+# FFmpeg (scripts/fetch-ffmpeg.mjs puts it in build/ffmpeg) and the burn-in
+# font travel as resources beside the app, outside the asar archive, so they
+# can be run and read as plain files.
 win:
+  extraResources:
+    - from: build/ffmpeg/win32-x64
+      to: ffmpeg/win32-x64
+      filter: ['**/*', '!.sha256']
+    - from: build/fonts
+      to: fonts
   target:
     - target: nsis
       arch: [x64]
@@ -37,6 +46,17 @@ nsis:
 
 mac:
   icon: build/icon-mac.png
+  # Both FFmpeg builds ship in the universal app; the running Mac picks its own.
+  extraResources:
+    - from: build/ffmpeg/darwin-arm64
+      to: ffmpeg/darwin-arm64
+      filter: ['**/*', '!.sha256']
+    - from: build/ffmpeg/darwin-x64
+      to: ffmpeg/darwin-x64
+      filter: ['**/*', '!.sha256']
+    - from: build/fonts
+      to: fonts
+  x64ArchFiles: Contents/Resources/ffmpeg/**
   category: public.app-category.video
   target:
     - target: dmg

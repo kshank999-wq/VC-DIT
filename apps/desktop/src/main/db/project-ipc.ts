@@ -1,10 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { readFile, stat, writeFile } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
-import { MIRROR_METHODS, SCENE_STATUSES, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DEFAULT_DAILIES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DailiesService } from '../dailies/dailies-service';
+import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
+import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
 import transferWorkerPath from '../media/transfer-worker?modulePath';
 import type { WorkerMessage, WorkerPlan } from '../media/transfer-worker';
 import analysisWorkerPath from '../sync/analysis-worker?modulePath';
@@ -71,11 +74,31 @@ const scenePatch = (input: unknown): Partial<Omit<SceneEntry, 'id'>> => {
   return patch;
 };
 
+/** Only the settings a dailies run has, each of the right kind. */
+const dailiesSettings = (input: unknown): DailiesSettings => {
+  const value = (input ?? {}) as Record<string, unknown>;
+  const pick = <T extends string>(options: readonly T[], given: unknown, fallback: T): T => (options.includes(given as T) ? (given as T) : fallback);
+  const burnIns = (value['burnIns'] ?? {}) as Record<string, unknown>;
+  return {
+    include: pick(['circle', 'all', 'scene'] as const, value['include'], DEFAULT_DAILIES.include),
+    scenes: Array.isArray(value['scenes']) ? value['scenes'].map((scene) => String(scene).slice(0, 12)).slice(0, 500) : [],
+    codec: pick(CODECS, value['codec'], DEFAULT_DAILIES.codec),
+    resolution: pick(RESOLUTIONS, value['resolution'], DEFAULT_DAILIES.resolution),
+    audio: pick(AUDIO, value['audio'], DEFAULT_DAILIES.audio),
+    look: pick(['Per assignment rules', 'Project default only', 'None · LOG original'] as const, value['look'], DEFAULT_DAILIES.look),
+    grouping: pick(['Scene → Setup → Take', 'Camera roll', 'Shoot order'] as const, value['grouping'], DEFAULT_DAILIES.grouping),
+    destination: typeof value['destination'] === 'string' ? value['destination'].slice(0, 4096) : '',
+    burnIns: Object.fromEntries(Object.keys(DEFAULT_DAILIES.burnIns).map((key) => [key, burnIns[key] === true])),
+  };
+};
+
 export interface ProjectHooks {
   /** A transfer is running: no switching productions or days. */
   busy: () => boolean;
   /** Another production or day is open: show its transfers. */
   opened: (transfers: TransferRecord[]) => void;
+  /** Where copies may go now: destination volumes and folders, by id. */
+  destinations: () => { id: string; name: string; root: string }[];
 }
 
 const LOG_EXTENSIONS = ['csv', 'tsv', 'txt', 'tab', 'ale', 'json', 'xml'];
@@ -111,6 +134,7 @@ export interface Project {
   library: Library;
   vfx: VfxService;
   sync: SyncService;
+  dailies: DailiesService;
   /** Tell the windows the production changed. */
   changed: () => void;
   /** A card finished: match the log again, then mirror any VFX shot it completes. */
@@ -123,7 +147,18 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
 
   let vfx: VfxService | null = null;
   let sync: SyncService | null = null;
-  const stateNow = (): ProjectState => ({ ...library.state(), vfxActivity: vfx?.activity ?? null, syncActivity: sync?.activity ?? null });
+  let dailies: DailiesService | null = null;
+  // FFmpeg and the burn-in font ship as resources; in development they are in build/ (or FFmpeg on the PATH).
+  const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build');
+  let ffmpegFound: Ffmpeg | null = null;
+  const ffmpegReady = locateFfmpeg(resources).then((found) => (ffmpegFound = found));
+  const stateNow = (): ProjectState => ({
+    ...library.state(),
+    vfxActivity: vfx?.activity ?? null,
+    syncActivity: sync?.activity ?? null,
+    dailiesActivity: dailies?.activity ?? null,
+    ffmpeg: ffmpegFound ? { version: ffmpegFound.version } : null,
+  });
   const broadcast = () => {
     const state = stateNow();
     for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:project', state);
@@ -136,7 +171,16 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   const syncQuick = () => void syncing.run({ waveform: false });
   /** Make the quick mirrors (links, references) for anything newly flagged, matched or verified. */
   const mirrorQuick = () => void mirrors.run({ copies: false, retry: false });
-  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null;
+  dailies = new DailiesService({
+    db: () => library.current,
+    ffmpeg: () => ffmpegReady,
+    font: join(resources, 'fonts', 'IBMPlexMono-Medium.ttf'),
+    destination: (id) => hooks.destinations().find((destination) => destination.id === id) ?? null,
+    changed: broadcast,
+  });
+  const rendering = dailies;
+  void ffmpegReady.then(broadcast);
+  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null || rendering.busy();
 
   const openedNow = () => {
     const db = library.current;
@@ -287,10 +331,60 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     answer(() => library.current.acceptSync(day(), Array.isArray(ids) ? ids.map(String).slice(0, 5000) : [])),
   );
 
+  // ------------------------------------------------ looks
+  ipcMain.handle('vcdit:project-lut-import', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      title: 'Import LUTs',
+      properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
+      filters: [{ name: 'LUT', extensions: ['cube', '3dl'] }],
+    };
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || picked.filePaths.length === 0) return { ok: false, reason: '' };
+    return answer(async () => {
+      const problems: string[] = [];
+      for (const path of picked.filePaths.slice(0, 50)) {
+        try {
+          if ((await stat(path)).size > 64 * 1024 * 1024) throw new Error('too large to be a LUT');
+          library.current.importLut(basename(path), await readFile(path, 'utf8'));
+        } catch (cause) {
+          problems.push(`${basename(path)}: ${(cause as Error).message}`);
+        }
+      }
+      if (problems.length) throw new Error(problems.join(' '));
+    });
+  });
+  ipcMain.handle('vcdit:project-lut-remove', (_e, id: unknown) => answer(() => library.current.removeLut(Number(id))));
+  ipcMain.handle('vcdit:project-lut-rule', (_e, scope: unknown, target: unknown, lutId: unknown) =>
+    answer(() => {
+      if (!LUT_SCOPES.includes(scope as LutScope)) throw new Error('Unknown rule scope.');
+      library.current.setLutRule(scope as LutScope, text(target, 40) ?? '', Number(lutId));
+    }),
+  );
+  ipcMain.handle('vcdit:project-lut-rule-remove', (_e, id: unknown) => answer(() => library.current.removeLutRule(Number(id))));
+  ipcMain.handle('vcdit:project-look-preview', async (_e, clipId: unknown, lutId: unknown) => {
+    try {
+      return { ok: true, ...(await rendering.preview(String(clipId), lutId === null ? null : Number(lutId))) };
+    } catch (cause) {
+      return { ok: false, reason: (cause as Error).message };
+    }
+  });
+
+  // ------------------------------------------------ dailies
+  ipcMain.handle('vcdit:project-dailies-settings', (_e, settings: unknown) => answer(() => library.current.saveDailiesSettings(dailiesSettings(settings))));
+  ipcMain.handle('vcdit:project-dailies-start', (_e, settings: unknown) => answer(async () => void (await rendering.start(dailiesSettings(settings)))));
+  ipcMain.handle('vcdit:project-dailies-stop', () => answer(() => rendering.stop()));
+  ipcMain.handle('vcdit:project-dailies-show', (_e, path: unknown) => {
+    // Only files VC DIT rendered.
+    const db = library.current;
+    if (db.renders(db.currentDay().number).some((render) => render.output === path)) shell.showItemInFolder(String(path));
+  });
+
   return {
     library,
     vfx: mirrors,
     sync: syncing,
+    dailies: rendering,
     changed: broadcast,
     cardIn: (day) => {
       library.current.rematch(day);

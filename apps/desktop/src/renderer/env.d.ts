@@ -72,4 +72,13 @@ interface ProjectApi {
   syncWaveform: () => Promise<ProjectResult>;
   syncNudge: (id: string, frames: number) => Promise<ProjectResult>;
   syncAccept: (ids: string[]) => Promise<ProjectResult>;
+  importLuts: () => Promise<ProjectResult>;
+  removeLut: (id: number) => Promise<ProjectResult>;
+  setLutRule: (scope: import('../shared/project').LutScope, target: string, lutId: number) => Promise<ProjectResult>;
+  removeLutRule: (id: number) => Promise<ProjectResult>;
+  previewLook: (clipId: string, lutId: number | null) => Promise<{ ok: true; original: string; graded: string | null } | { ok: false; reason: string }>;
+  saveDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
+  startDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
+  stopDailies: () => Promise<ProjectResult>;
+  showDaily: (path: string) => Promise<void>;
 }

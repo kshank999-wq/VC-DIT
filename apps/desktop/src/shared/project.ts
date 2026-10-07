@@ -143,6 +143,61 @@ export interface SyncEntry {
   barsSound: number[];
 }
 
+/** A LUT in the production's library (spec §4.7). */
+export interface LutEntry {
+  id: number;
+  name: string;
+  title: string;
+  kind: '1D' | '3D';
+  size: number;
+  format: 'cube' | '3dl';
+  importedAt: string;
+  /** The project-wide rule uses it. */
+  isDefault: boolean;
+}
+
+export type LutScope = 'Project' | 'Camera' | 'Day' | 'Scene' | 'Setup' | 'Clip';
+/** Most specific first: a clip's own rule beats its setup's, and so on down to the project default. */
+export const LUT_SCOPES: LutScope[] = ['Clip', 'Setup', 'Scene', 'Day', 'Camera', 'Project'];
+
+export interface LutRuleEntry {
+  id: number;
+  scope: LutScope;
+  /** "Default", a camera letter, a day number, a scene, "14/B", a clip. */
+  target: string;
+  lut: string;
+  lutId: number;
+  /** Today's clips this rule decides. */
+  clips: number;
+}
+
+export interface DailiesSettings {
+  include: 'circle' | 'all' | 'scene';
+  scenes: string[];
+  codec: string;
+  resolution: string;
+  audio: string;
+  look: 'Per assignment rules' | 'Project default only' | 'None · LOG original';
+  grouping: 'Scene → Setup → Take' | 'Camera roll' | 'Shoot order';
+  /** A destination's id (a volume or a folder), or "" for none chosen. */
+  destination: string;
+  burnIns: Record<string, boolean>;
+}
+
+/** One rendered daily (spec §4.8). */
+export interface DailyRender {
+  takeId: string;
+  label: string;
+  clip: string;
+  output: string;
+  state: 'done' | 'failed';
+  error: string | null;
+  lut: string | null;
+  codec: string;
+  bytes: number | null;
+  warnings: string[];
+}
+
 /** The day's script supervisor log, as last imported. */
 export interface LogSummary {
   file: string;
@@ -176,6 +231,16 @@ export interface ProjectState {
   sync: SyncEntry[];
   /** What sync is doing now ("Reading timecode…"), or null. */
   syncActivity: string | null;
+  luts: LutEntry[];
+  lutRules: LutRuleEntry[];
+  /** Camera clips of the day a look can be previewed on. */
+  previewClips: { id: string; label: string }[];
+  dailies: DailiesSettings;
+  renders: DailyRender[];
+  /** What dailies rendering is doing now, or null. */
+  dailiesActivity: string | null;
+  /** The FFmpeg this app renders with, or null when there is none. */
+  ffmpeg: { version: string } | null;
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }
@@ -187,3 +252,22 @@ export const DEFAULT_NAMING = ['{PROD}', '_', 'D{DAY}', '_', 'SC{SCENE}', '{SETU
 /** Today in the computer's own time zone, as YYYY-MM-DD. */
 export const localDate = (date = new Date()): string =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+export const DEFAULT_DAILIES: DailiesSettings = {
+  include: 'circle',
+  scenes: [],
+  codec: 'ProRes 422 Proxy',
+  resolution: '1920 × 1080 · full frame',
+  audio: 'Synced · all tracks mixed',
+  look: 'Per assignment rules',
+  grouping: 'Scene → Setup → Take',
+  destination: '',
+  burnIns: { TC: true, 'Scene/Take': true, Look: true, Circle: true, Notes: false, 'Clip name': true, Watermark: false },
+};
+
+/** What dailies can be made as (src/main/dailies/render-args.ts). */
+export const DAILIES_CODECS = ['ProRes 422 Proxy', 'ProRes 422 LT', 'DNxHR LB', 'H.264 · 10 Mb/s'];
+export const DAILIES_RESOLUTIONS = ['1920 × 1080 · letterbox 2.39', '1920 × 1080 · full frame', '1280 × 720 · letterbox 2.39', '1280 × 720 · full frame'];
+export const DAILIES_AUDIO = ['Synced · all tracks mixed', 'Synced · track 1 only', 'Camera scratch only', 'No audio'];
+export const DAILIES_LOOKS: DailiesSettings['look'][] = ['Per assignment rules', 'Project default only', 'None · LOG original'];
+export const DAILIES_GROUPING: DailiesSettings['grouping'][] = ['Scene → Setup → Take', 'Camera roll', 'Shoot order'];

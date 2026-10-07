@@ -231,7 +231,15 @@ export class MediaService {
     });
   }
 
-  /** Volumes a queued or running transfer reads from or writes to. */
+  /** Where copies may go now: volumes marked to receive them, and reachable destination folders. */
+  destinations(): { id: string; name: string; root: string }[] {
+    return [
+      ...[...this.volumes.values()].filter((entry) => DESTINATION_ROLES.includes(entry.volume.role)).map(({ volume }) => ({ id: volume.id, name: volume.name, root: volume.mountPath })),
+      ...this.folders().filter((folder) => folder.online).map((folder) => ({ id: folder.id, name: folder.name, root: folder.path })),
+    ];
+  }
+
+    /** Volumes a queued or running transfer reads from or writes to. */
   private inUse(volumeId: string): boolean {
     const active = [...(this.current ? [this.current.work] : []), ...this.queue];
     return active.some(({ job }) => job.sourceId === volumeId || job.legs.some((leg) => leg.plan.root === volumeId));

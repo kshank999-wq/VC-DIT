@@ -22,7 +22,17 @@ import { clipKeyOfFile } from '../scriptlog/clip-key';
 import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch, type VfxFlag } from '../scriptlog/view';
 import type { MirrorFile, MirrorOutcome, MirrorPlan } from '../vfx/mirror';
 import type { MediaMeta, MetaResult } from '../media/metadata';
-import type { SyncEntry } from '../../shared/project';
+import {
+  DEFAULT_DAILIES,
+  LUT_SCOPES,
+  type DailiesSettings,
+  type DailyRender,
+  type LutEntry,
+  type LutRuleEntry,
+  type LutScope,
+  type SyncEntry,
+} from '../../shared/project';
+import { parseLut } from '../looks/lut-file';
 
 /**
  * One production's database: a single SQLite file on the cart (spec §2
@@ -291,6 +301,69 @@ const MIGRATION_4 = `
   );
 `;
 MIGRATIONS.push(MIGRATION_4);
+
+const MIGRATION_5 = `
+  -- Looks (spec §4.7): the production's LUTs, kept whole in the database so
+  -- the production file carries them, and the rules that assign them.
+  create table lut (
+    id integer primary key,
+    name text not null unique,
+    format text not null,
+    kind text not null,
+    size integer not null,
+    title text not null default '',
+    content text not null,
+    imported_at text not null
+  );
+
+  create table lut_rule (
+    id integer primary key,
+    scope text not null check (scope in ('Project', 'Camera', 'Day', 'Scene', 'Setup', 'Clip')),
+    target text not null,
+    lut_id integer not null,
+    unique (scope, target)
+  );
+
+  -- Dailies (spec §4.8): the settings last used, and every daily rendered.
+  alter table production add column dailies text;
+
+  create table dailies_render (
+    day integer not null,
+    take_id text not null,
+    clip_key text not null,
+    card text not null,
+    label text not null,
+    output text not null,
+    state text not null check (state in ('done', 'failed')),
+    error text,
+    lut text,
+    codec text not null,
+    bytes integer,
+    checksum text,
+    warnings text not null default '[]',
+    made_at text not null,
+    primary key (day, take_id, clip_key)
+  );
+`;
+MIGRATIONS.push(MIGRATION_5);
+
+/** What a daily needs to know about one take's clip. */
+export interface DailyPlan {
+  takeId: string;
+  label: string;
+  scene: string;
+  setup: string;
+  take: string;
+  clip: string;
+  card: string;
+  circle: boolean;
+  notes: string;
+  clipPaths: string[];
+  meta: MediaMeta | null;
+  metaError: string | null;
+  sound: { key: string; paths: string[]; alignFrames: number; channels: number; accepted: boolean } | null;
+  lut: { name: string; format: 'cube' | '3dl'; content: string } | null;
+}
 
 const VIDEO_FILE = /\.(mxf|mov|mp4|m4v|ari|arx|r3d|braw|crm|mts|m2ts|avi)$/i;
 const AUDIO_FILE = /\.(wav|bwf)$/i;
@@ -1379,6 +1452,266 @@ export class ProductionDb {
       decided: row['decided'] as StoredMatch['decided'],
     }));
     return buildLogView({ scenes: [], entries, matches, sounds: new Map(), log: null, frameRate: '24' }).vfx;
+  }
+
+  // ------------------------------------------------ looks
+
+  luts(): LutEntry[] {
+    const fallback = this.rows<Record<string, SqlValue>>("select lut_id from lut_rule where scope = 'Project'")[0]?.['lut_id'];
+    return this.rows<Record<string, SqlValue>>('select id, name, format, kind, size, title, imported_at from lut order by name').map((row) => ({
+      id: Number(row['id']),
+      name: String(row['name']),
+      title: String(row['title']),
+      kind: row['kind'] as LutEntry['kind'],
+      size: Number(row['size']),
+      format: row['format'] as LutEntry['format'],
+      importedAt: String(row['imported_at']),
+      isDefault: Number(row['id']) === Number(fallback),
+    }));
+  }
+
+  /** Add a LUT to the library: checked first; the same name with different contents is refused, not replaced. */
+  importLut(fileName: string, content: string): number {
+    const info = parseLut(fileName, content);
+    const existing = this.rows<Record<string, SqlValue>>('select id, content from lut where name = ?', [fileName])[0];
+    if (existing) {
+      if (String(existing['content']) === content) return Number(existing['id']);
+      throw new Error(`A different ${fileName} is already in the library. Rename the new one (e.g. _v2) to keep both.`);
+    }
+    this.transaction(() =>
+      this.run('insert into lut (name, format, kind, size, title, content, imported_at) values (?, ?, ?, ?, ?, ?, ?)', [
+        fileName,
+        info.format,
+        info.kind,
+        info.size,
+        info.title,
+        content,
+        now(),
+      ]),
+    );
+    const id = Number(this.value<number>('select id from lut where name = ?', [fileName]));
+    // The first LUT of a production becomes its default.
+    if (!this.rows("select 1 from lut_rule where scope = 'Project'").length) this.setLutRule('Project', 'Default', id);
+    return id;
+  }
+
+  removeLut(id: number) {
+    this.transaction(() => {
+      this.run('delete from lut_rule where lut_id = ?', [id]);
+      this.run('delete from lut where id = ?', [id]);
+    });
+  }
+
+  setLutRule(scope: LutScope, target: string, lutId: number) {
+    if (!this.rows('select 1 from lut where id = ?', [lutId]).length) throw new Error('That LUT is not in the library.');
+    const clean = scope === 'Project' ? 'Default' : target.trim().toUpperCase();
+    if (!clean) throw new Error('Say what the rule is for.');
+    this.transaction(() => this.run('insert or replace into lut_rule (scope, target, lut_id) values (?, ?, ?)', [scope, clean, lutId]));
+  }
+
+  removeLutRule(id: number) {
+    this.transaction(() => this.run('delete from lut_rule where id = ?', [id]));
+  }
+
+  private rules(): { id: number; scope: LutScope; target: string; lutId: number; lut: string }[] {
+    return this.rows<Record<string, SqlValue>>('select r.id, r.scope, r.target, r.lut_id, l.name from lut_rule r join lut l on l.id = r.lut_id').map((row) => ({
+      id: Number(row['id']),
+      scope: row['scope'] as LutScope,
+      target: String(row['target']),
+      lutId: Number(row['lut_id']),
+      lut: String(row['name']),
+    }));
+  }
+
+  /** The rule that decides a clip's look: the most specific that applies. */
+  private ruleFor(rules: ReturnType<ProductionDb['rules']>, day: number, shot: { scene: string; setup: string; clip: string }) {
+    const targets: Record<LutScope, string> = {
+      Clip: shot.clip,
+      Setup: `${shot.scene}/${shot.setup}`,
+      Scene: shot.scene,
+      Day: String(day),
+      Camera: shot.clip[0] ?? '',
+      Project: 'Default',
+    };
+    for (const scope of LUT_SCOPES) {
+      const rule = rules.find((candidate) => candidate.scope === scope && candidate.target.toUpperCase() === targets[scope].toUpperCase());
+      if (rule) return rule;
+    }
+    return null;
+  }
+
+  /** Where each of the day's camera clips sits in the log: scene and setup. */
+  private clipShots(day: number): Map<string, { scene: string; setup: string; take: string }> {
+    return new Map(
+      this.rows<Record<string, SqlValue>>(
+        `select m.clip_card, m.clip_key, e.scene, e.setup, e.take from script_match m join script_entry e on e.id = m.entry_id
+         where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild'`,
+        [day],
+      ).map((row) => [
+        `${String(row['clip_card'])}|${String(row['clip_key'])}`,
+        { scene: String(row['scene']), setup: String(row['setup']), take: String(row['take']) },
+      ]),
+    );
+  }
+
+  lutRules(day: number): LutRuleEntry[] {
+    const rules = this.rules();
+    const shots = this.clipShots(day);
+    const counts = new Map<number, number>();
+    for (const picture of this.syncMedia(day).pictures) {
+      const shot = shots.get(`${picture.card}|${picture.key}`);
+      const rule = this.ruleFor(rules, day, { scene: shot?.scene ?? '', setup: shot?.setup ?? '', clip: picture.key });
+      if (rule) counts.set(rule.id, (counts.get(rule.id) ?? 0) + 1);
+    }
+    return rules
+      .sort((a, b) => LUT_SCOPES.indexOf(b.scope) - LUT_SCOPES.indexOf(a.scope) || a.target.localeCompare(b.target))
+      .map((rule) => ({ ...rule, clips: counts.get(rule.id) ?? 0 }));
+  }
+
+  /** A LUT's file, for FFmpeg. */
+  lutFile(id: number): { name: string; format: 'cube' | '3dl'; content: string } | null {
+    const row = this.rows<Record<string, SqlValue>>('select name, format, content from lut where id = ?', [id])[0];
+    return row ? { name: String(row['name']), format: row['format'] as 'cube' | '3dl', content: String(row['content']) } : null;
+  }
+
+  /** The day's camera clips with something to preview, labelled by their take where the log has one. */
+  previewClips(day: number): { id: string; label: string; paths: string[]; meta: MediaMeta | null; lutId: number | null }[] {
+    const shots = this.clipShots(day);
+    const rules = this.rules();
+    return this.syncMedia(day)
+      .pictures.filter((picture) => picture.meta?.kind === 'picture')
+      .map((picture) => {
+        const shot = shots.get(`${picture.card}|${picture.key}`);
+        return {
+          id: `${picture.card}|${picture.key}`,
+          label: shot ? `${picture.key} · Sc ${shot.scene} / ${shot.setup || '—'} / T${shot.take.padStart(2, '0')}` : picture.key,
+          paths: picture.paths,
+          meta: picture.meta,
+          lutId: this.ruleFor(rules, day, { scene: shot?.scene ?? '', setup: shot?.setup ?? '', clip: picture.key })?.lutId ?? null,
+        };
+      });
+  }
+
+  // ------------------------------------------------ dailies
+
+  dailiesSettings(): DailiesSettings {
+    const raw = this.value<string>('select dailies from production where id = 1');
+    const saved = raw ? (JSON.parse(raw) as Partial<DailiesSettings>) : {};
+    return { ...DEFAULT_DAILIES, ...saved, burnIns: { ...DEFAULT_DAILIES.burnIns, ...saved.burnIns } };
+  }
+
+  saveDailiesSettings(settings: DailiesSettings) {
+    this.transaction(() => this.run('update production set dailies = ? where id = 1', [JSON.stringify(settings)]));
+  }
+
+  /** The takes the settings ask for, each camera clip with its media, synced sound and look. */
+  dailiesPlan(day: number, settings: DailiesSettings): DailyPlan[] {
+    const entries = this.logEntries(day);
+    const matches = this.rows<Record<string, SqlValue>>(
+      `select m.entry_id, m.clip_key, m.clip_card from script_match m join script_entry e on e.id = m.entry_id
+       where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild' order by e.position, m.ref_index`,
+      [day],
+    );
+    const pictures = new Map(this.syncMedia(day).pictures.map((picture) => [`${picture.card}|${picture.key}`, picture]));
+    const syncs = new Map(this.syncRecords(day).map((record) => [`${record.card}|${record.clipKey}`, record]));
+    const rules = this.rules();
+    const projectRule = rules.find((rule) => rule.scope === 'Project') ?? null;
+    const plans: DailyPlan[] = [];
+    const seen = new Set<string>();
+    for (const match of matches) {
+      const entry = entries.find((candidate) => candidate.id === Number(match['entry_id']));
+      if (!entry) continue;
+      const wanted = settings.include === 'all' || (settings.include === 'circle' ? entry.circle || entry.print : settings.scenes.includes(entry.scene));
+      if (!wanted) continue;
+      const card = String(match['clip_card']);
+      const clip = String(match['clip_key']);
+      const id = `${card}|${clip}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const picture = pictures.get(id);
+      const record = syncs.get(id);
+      let sound: DailyPlan['sound'] = null;
+      if (record && record.method !== 'None' && record.soundKey && record.soundCard && record.alignFrames !== null) {
+        const file = this.rows<Record<string, SqlValue>>("select path, meta from clip where day = ? and card = ? and kind = 'sound' order by path", [day, record.soundCard]).find(
+          (row) => String(row['path']).split('/').pop()!.replace(/\.[^.]+$/, '') === record.soundKey,
+        );
+        if (file) {
+          const parsed = file['meta'] ? (JSON.parse(String(file['meta'])) as MetaResult) : null;
+          sound = {
+            key: record.soundKey,
+            paths: this.copiesOf(day, record.soundCard, String(file['path'])),
+            alignFrames: record.alignFrames,
+            channels: parsed?.ok ? (parsed.meta.channels ?? 1) : 1,
+            accepted: record.accepted,
+          };
+        }
+      }
+      const rule =
+        settings.look === 'None · LOG original'
+          ? null
+          : settings.look === 'Project default only'
+            ? projectRule
+            : this.ruleFor(rules, day, { scene: entry.scene, setup: entry.setup, clip });
+      const take = entry.take.padStart(2, '0');
+      plans.push({
+        takeId: `${entry.scene}|${entry.setup || '—'}|${entry.take}`,
+        label: `${entry.scene}${entry.setup}-${take}`,
+        scene: entry.scene,
+        setup: entry.setup,
+        take,
+        clip,
+        card,
+        circle: entry.circle || entry.print,
+        notes: entry.notes,
+        clipPaths: picture?.paths ?? [],
+        meta: picture?.meta ?? null,
+        metaError: picture?.metaError ?? null,
+        sound,
+        lut: rule ? this.lutFile(rule.lutId) : null,
+      });
+    }
+    return plans;
+  }
+
+  saveRender(day: number, plan: Pick<DailyPlan, 'takeId' | 'clip' | 'card'>, render: DailyRender & { checksum: string | null }) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into dailies_render (day, take_id, clip_key, card, label, output, state, error, lut, codec, bytes, checksum, warnings, made_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          day,
+          plan.takeId,
+          plan.clip,
+          plan.card,
+          render.label,
+          render.output,
+          render.state,
+          render.error,
+          render.lut,
+          render.codec,
+          render.bytes,
+          render.checksum,
+          JSON.stringify(render.warnings),
+          now(),
+        ],
+      ),
+    );
+  }
+
+  renders(day: number): (DailyRender & { checksum: string | null })[] {
+    return this.rows<Record<string, SqlValue>>('select * from dailies_render where day = ? order by label, clip_key', [day]).map((row) => ({
+      takeId: String(row['take_id']),
+      label: String(row['label']),
+      clip: String(row['clip_key']),
+      output: String(row['output']),
+      state: row['state'] as DailyRender['state'],
+      error: (row['error'] as string | null) ?? null,
+      lut: (row['lut'] as string | null) ?? null,
+      codec: String(row['codec']),
+      bytes: (row['bytes'] as number | null) ?? null,
+      checksum: (row['checksum'] as string | null) ?? null,
+      warnings: JSON.parse(String(row['warnings'])) as string[],
+    }));
   }
 
   /** Clips found by name across the whole production, newest day first: the start of the media index. */

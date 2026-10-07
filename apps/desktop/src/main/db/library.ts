@@ -112,6 +112,13 @@ export class Library {
       vfxActivity: null,
       sync: db.syncView(day.number),
       syncActivity: null,
+      luts: db.luts(),
+      lutRules: db.lutRules(day.number),
+      previewClips: db.previewClips(day.number).map(({ id, label }) => ({ id, label })),
+      dailies: db.dailiesSettings(),
+      renders: db.renders(day.number).map(({ checksum: _checksum, ...render }) => render),
+      dailiesActivity: null,
+      ffmpeg: null,
       recent: this.index.recent,
     };
   }

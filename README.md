@@ -51,4 +51,5 @@ npm run dev -w @vcdit/web       # the site
 - Script supervisor log: CSV, tab-separated, Avid ALE, JSON or XML, matched to the day's clips and sound; uncertain matches go to Match review (`apps/desktop/src/main/scriptlog`).
 - VFX: flagged and tagged shots mirrored into VFX → Scene → Setup → Take (hard link, reference or verified copy), and handed to VC VFX Prep as a package (`apps/desktop/src/main/vfx`).
 - Sync: timecode read from MOV/MP4, MXF and Broadcast WAV headers; picture paired with sound by timecode, checked against the scratch audio's waveform, with a waveform pass for clips without timecode (`apps/desktop/src/main/sync`).
-- Next: LUTs and dailies rendering.
+- Looks and dailies: LUT library with assignment rules and a real look preview; dailies rendered with FFmpeg (look, burn-ins, synced sound, ProRes/DNxHR/H.264) into SYNCED_DAILIES with a checksummed manifest (`apps/desktop/src/main/dailies`). Packaging fetches a pinned FFmpeg (`apps/desktop/scripts/fetch-ffmpeg.mjs`).
+- Next: the delivery manager (packages to several destinations, verified, with a delivery manifest).

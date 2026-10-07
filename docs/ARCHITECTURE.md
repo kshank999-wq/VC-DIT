@@ -159,6 +159,45 @@ the logged timecode inside exactly one clip's own timecode is a match.
 Test media: `src/main/__tests__/fixtures/` holds a short MOV and MXF made by
 ffmpeg (`make-sync-fixtures.mjs`), with matching timecode and scratch audio.
 
+## Looks and dailies (`src/main/looks`, `src/main/dailies`, `src/main/ffmpeg`)
+
+**LUT library.** `.cube` (1D or 3D) and `.3dl` LUTs are checked on import
+(row counts, sizes, numbers) and kept whole in the production database, so the
+production file carries its looks. The first becomes the project default.
+Rules assign looks by clip, setup (`14/B`), scene, day, camera letter, or the
+project default; the most specific wins, and the Looks screen counts the clips
+each rule decides. The preview is a real middle frame of a day's clip, as shot
+and through the LUT, side by side under a split.
+
+**Dailies** (per take: circle takes, all, or chosen scenes), each an FFmpeg run:
+
+- the clip through its look (`lut3d`, tetrahedral), scaled to 1080 or 720,
+  optionally letterboxed to 2.39;
+- burn-ins: slate and circle, clip name, the clip's own running timecode, look,
+  notes, watermark (IBM Plex Mono, shipped in `build/fonts`, SIL OFL). Text
+  reaches FFmpeg as files in the job's folder, never escaped into the filter;
+- the production sound laid in by its sync (skipped into or delayed by the
+  sync offset), all tracks mixed or track 1, or the camera scratch;
+- ProRes 422 Proxy/LT, DNxHR LB, or H.264 (libx264, else VideoToolbox / Media
+  Foundation); the clip's timecode and the look's name go into the file.
+
+Each daily is written as `.vcdit-part` and named when FFmpeg finishes;
+a file VC DIT did not make is never replaced. Output goes to
+`SYNCED_DAILIES/SCENE_###/SETUP_X/` (or by camera roll, or flat) on the
+chosen destination, the looks to `LUTS_LOOKS/`, and a manifest with every
+daily's xxHash64 to `REPORTS/dailies/`.
+
+**FFmpeg** is a separate program the app runs, not linked into it. Packaging
+fetches FFmpeg 6.0 static builds (ffmpeg-static project; macOS arm64 and
+x64, both in the universal app; Windows x64), pinned by SHA-256
+(`scripts/fetch-ffmpeg.mjs`), into `Resources/ffmpeg/<platform>-<arch>/` with
+its licence and README. These builds are GPL (they include x264): distributing
+them means offering FFmpeg's source and its licence with the app, which the
+README and LICENSE beside the binary do; VC DIT's own code is not affected
+because it only runs FFmpeg as a program. In development, `VCDIT_FFMPEG` or an
+`ffmpeg` on the PATH is used. Frame.io publishing comes with the Frame.io
+connection.
+
 ## Media integrity rules (spec §8), as engineering constraints
 
 - **Originals are read-only.** The copy engine opens sources read-only; no
@@ -239,6 +278,7 @@ because the media is there and must not pass through vc-dit.com.
    VC VFX Prep handoff package.
    Done: picture/sound sync by timecode, checked by waveform, with a waveform
    pass and manual nudges.
-4. LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats
-   need them), VFX mirroring, delivery packages and manifests.
+4. Done: the LUT library, assignment rules, look preview and dailies
+   rendering with FFmpeg. Next: delivery packages and manifests; raw camera
+   formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.

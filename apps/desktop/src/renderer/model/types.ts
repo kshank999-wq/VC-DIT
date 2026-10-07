@@ -1,5 +1,5 @@
 import type { ChecksumMethod, VolumeRole } from '../../shared/media';
-import type { MatchCandidate, MatchEntry, MirrorMethod, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry, VfxLocation } from '../../shared/project';
+import type { LutScope, MatchCandidate, MatchEntry, MirrorMethod, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry, VfxLocation } from '../../shared/project';
 
 export type Take = TakeEntry;
 export type Setup = SetupEntry;
@@ -119,13 +119,19 @@ export interface SyncItem {
 export interface Lut {
   name: string;
   description: string;
+  /** From the production database. */
+  id?: number;
+  isDefault?: boolean;
 }
 
 export interface LutRule {
-  scope: 'Project' | 'Camera' | 'Scene' | 'Clip';
+  scope: LutScope;
   target: string;
   lut: string;
   clips: number;
+  /** From the production database. */
+  id?: number;
+  lutId?: number;
 }
 
 export type { MirrorMethod };
@@ -153,6 +159,8 @@ export interface DailiesOptions {
   destination: string;
   burnIns: Record<string, boolean>;
   built: boolean;
+  /** "By scene": which scenes. */
+  scenes?: string[];
 }
 
 export interface DeliveryPackage {
