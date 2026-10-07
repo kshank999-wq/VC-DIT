@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('vcdit', {
     open: (file?: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-open', file),
     saveCopy: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-copy'),
     reveal: (): Promise<void> => ipcRenderer.invoke('vcdit:project-reveal'),
+    importLog: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-import-log'),
+    resolveMatch: (id: string, clip: string | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-resolve-match', id, clip),
+    saveLogTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-log-template'),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

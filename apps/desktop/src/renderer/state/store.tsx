@@ -454,11 +454,12 @@ export function StoreProvider({ children, initial, simulate = true }: { children
   });
 
   // Edits the database keeps are written through as they are made.
-  const hasProject = useRef(state.project !== null);
-  hasProject.current = state.project !== null;
+  const current = useRef(state);
+  current.current = state;
   const send = useCallback<Dispatch<Action>>((action) => {
+    const before = current.current;
     dispatch(action);
-    if (hasProject.current) persist(action);
+    if (before.project !== null) persist(action, before, dispatch);
   }, []);
 
   // Another production or day opened (here or from another window).

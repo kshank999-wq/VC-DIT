@@ -63,4 +63,7 @@ interface ProjectApi {
   open: (file?: string) => Promise<ProjectResult>;
   saveCopy: () => Promise<ProjectResult>;
   reveal: () => Promise<void>;
+  importLog: () => Promise<ProjectResult>;
+  resolveMatch: (id: string, clip: string | null) => Promise<ProjectResult>;
+  saveLogTemplate: () => Promise<ProjectResult>;
 }

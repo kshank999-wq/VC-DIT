@@ -90,6 +90,21 @@ newer app is refused rather than damaged.
 and again when they end, so after a restart Verify shows the day as it was,
 and a transfer cut off by a crash shows as failed, never as safe.
 
+## The script supervisor's log (`src/main/scriptlog`)
+
+| File | Does |
+| --- | --- |
+| `parse.ts` | Reads a log into neutral entries (spec §4.5): CSV or tab-separated text (columns recognised by name, title rows skipped), Avid ALE, JSON, XML. Scene, setup, take, camera, clip, roll, sound, TC in/out, circle, print, VFX and its note, notes, lens. A row it cannot read is skipped and reported, never guessed |
+| `xml.ts` | A small XML reader: no DTDs or external entities |
+| `clip-key.ts` | Clip names made comparable: "A015C002", "A15C2", A015C002_261005_R1AB.mxf, A015_C002_…R3D and A015_…_C002.braw are all `A015C002` |
+| `match.ts` | Each take to its camera clips and sound file. A clip name on exactly one card matches; anything weaker (roll and time, a name on two cards, one clip claimed by two takes) goes to Match review with ranked candidates; nothing to go on is unmatched |
+| `view.ts` | Scenes → setups → takes, the review list and the VFX flags, as the screens show them |
+
+The database keeps each day's import, its rows, how each row matched, and
+the DIT's decisions. Decisions are keyed by what the row says, so they
+survive importing an updated log. Every finished card re-runs the match, so
+takes logged before their card came in are matched when it does.
+
 ## Media integrity rules (spec §8), as engineering constraints
 
 - **Originals are read-only.** The copy engine opens sources read-only; no
@@ -164,8 +179,8 @@ because the media is there and must not pass through vc-dit.com.
    Done: the production database: productions, shoot days, scene lists,
    transfers and every clip with its checksum, kept across restarts. The
    screens not yet on real data say so ("Sample data").
-3. Script-supervisor import (CSV / JSON / XML neutral schema) and the match
-   review screen.
+3. Done: script supervisor import and Match review; the Scene Organizer and
+   Match review run on the real log and clips.
 4. Sync, LUT / dailies rendering (FFmpeg plus camera SDKs where raw formats
    need them), VFX mirroring, delivery packages and manifests.
 5. Frame.io, then Google Drive, as destination adapters.

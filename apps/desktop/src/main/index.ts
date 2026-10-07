@@ -49,12 +49,20 @@ let media: MediaService | null = null;
 void app.whenReady().then(async () => {
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
   await registerLicensing();
-  library = await registerProject({
+  const project = await registerProject({
     busy: () => media?.busy() ?? false,
     opened: (transfers) => media?.load(transfers),
   });
+  library = project.library;
   const open = library;
-  media = await registerMedia((transfer) => open.current.saveTransfer(transfer));
+  media = await registerMedia((transfer) => {
+    open.current.saveTransfer(transfer);
+    // A card that just finished may hold clips the script log is waiting for.
+    if (transfer.finishedAt) {
+      open.current.rematch(transfer.day);
+      project.changed();
+    }
+  });
   media.load(open.current.transfers(open.current.currentDay().number));
   createMainWindow();
   app.on('activate', () => {

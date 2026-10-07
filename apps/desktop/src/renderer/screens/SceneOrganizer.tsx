@@ -26,6 +26,7 @@ const SYNC: Record<Take['sync'], [string, Status]> = {
   TC: ['Synced · timecode', 'done'],
   WF: ['Check · waveform', 'needs'],
   none: ['Missing', 'problem'],
+  pending: ['Not synced yet', 'idle'],
 };
 
 const MATCH: Record<Take['match'], [string, Status]> = {
@@ -154,7 +155,7 @@ export function SceneOrganizer() {
               <span className="muted ellipsis">{scene?.description}</span>
               <span className="grow" />
               <button type="button" className={`org-look mono${state.lookOn ? ' is-on' : ''}`} aria-pressed={state.lookOn} onClick={() => dispatch({ type: 'toggleLook' })}>
-                {state.lookOn ? `LOOK ON · ${look}` : 'LOOK OFF · LOG'}
+                {state.lookOn ? `LOOK ON · ${look || 'none set'}` : 'LOOK OFF · LOG'}
               </button>
             </div>
             <div className="org-stage">
@@ -222,9 +223,11 @@ export function SceneOrganizer() {
           {shown.length === 0 ? (
             <div className="org-pool-empty">
               <p>
-                {takes.length === 0
-                  ? `Setup ${setupId} has no takes yet.`
-                  : `No ${bin.label.toLowerCase()} in Scene ${sceneId} / Setup ${setupId}. All ${takes.length} takes are still kept.`}
+                {!setup
+                  ? "No takes yet. Import the script supervisor's log in Project setup: its takes are laid out here by scene and setup."
+                  : takes.length === 0
+                    ? `Setup ${setupId} has no takes yet.`
+                    : `No ${bin.label.toLowerCase()} in Scene ${sceneId} / Setup ${setupId}. All ${takes.length} takes are still kept.`}
               </p>
               {takes.length > 0 ? (
                 <button type="button" className="btn small" onClick={() => dispatch({ type: 'setPoolFilter', filter: 'all' })}>

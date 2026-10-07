@@ -108,7 +108,7 @@ export class Library {
       production: db.production(),
       day,
       days: db.days(),
-      scenes: db.scenes(day.number),
+      ...db.logView(day.number),
       recent: this.index.recent,
     };
   }

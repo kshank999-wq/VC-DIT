@@ -9,16 +9,16 @@ import type { ScreenId } from './model/types';
 import { useStore } from './state/store';
 import { useAccess } from './ui/kit';
 
-/** Screens still on the HALCYON sample day in the desktop app, and what brings them real data. */
+/** Screens still (wholly or partly) on the HALCYON sample day in the desktop app, and what they wait for. */
 const SAMPLE: Partial<Record<ScreenId, string>> = {
-  scenes: 'the script supervisor import (it places clips in scenes and takes)',
-  match: 'the script supervisor import',
-  vfx: 'the script supervisor import (it brings the VFX flags)',
-  sync: 'picture and sound sync',
-  looks: 'the LUT library',
-  dailies: 'dailies rendering',
-  delivery: 'the delivery engine',
-  reports: 'the reports list',
+  sync: 'This screen shows the HALCYON demo day until picture and sound sync is built.',
+  looks: 'This screen shows the HALCYON demo day until the LUT library is built.',
+  dailies: 'This screen shows the HALCYON demo day until dailies rendering is built.',
+  delivery: 'This screen shows the HALCYON demo day until the delivery engine is built.',
+  reports: 'This screen shows the HALCYON demo day until the reports list is built.',
+};
+const PARTLY: Partial<Record<ScreenId, string>> = {
+  vfx: "The VFX flags are your script supervisor's. Mirroring them into VFX folders and the VC VFX Prep handoff are not built yet.",
 };
 
 /** Light, dark, or the system's, on the document so every token switches at once. */
@@ -64,8 +64,7 @@ export function App() {
   // Development only: lets a screenshot script open any screen.
   useEffect(() => {
     if (!import.meta.env.DEV) return undefined;
-    (window as unknown as { __vcditGo?: (screen: string) => void }).__vcditGo = (screen) =>
-      dispatch({ type: 'go', screen: screen as keyof typeof SCREENS });
+    (window as unknown as { __vcditGo?: (screen: string) => void }).__vcditGo = (screen) => dispatch({ type: 'go', screen: screen as keyof typeof SCREENS });
     return undefined;
   }, [dispatch]);
 
@@ -78,8 +77,12 @@ export function App() {
         <SubTabs />
         {state.project && SAMPLE[state.screen] ? (
           <p className="sample-note" role="note">
-            <strong>Sample data.</strong> This screen shows the HALCYON demo day until {SAMPLE[state.screen]} is built. Your cards and
-            transfers are on Intake and Verify.
+            <strong>Sample data.</strong> {SAMPLE[state.screen]}
+          </p>
+        ) : null}
+        {state.project && PARTLY[state.screen] ? (
+          <p className="sample-note" role="note">
+            <strong>Partly built.</strong> {PARTLY[state.screen]}
           </p>
         ) : null}
         <Screen />

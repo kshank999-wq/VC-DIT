@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProjectResult, ProjectState } from '../../shared/project';
 import { App } from '../App';
 import type { ScreenId } from '../model/types';
+import { MatchReview } from '../screens/MatchReview';
 import { ProjectSetup } from '../screens/ProjectSetup';
+import { SceneOrganizer } from '../screens/SceneOrganizer';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -21,8 +23,46 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
   days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
   scenes: [],
+  log: null,
+  matches: [],
+  vfx: [],
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
+});
+
+const take = (n: number, patch: Partial<ProjectState['scenes'][number]['setups'][number]['takes'][number]> = {}) => ({
+  id: `4|A|${n}`,
+  take: `T0${n}`,
+  clipA: `A001C00${n}`,
+  clipB: null,
+  sound: `4A-T0${n}`,
+  tc: '10:00:00:00',
+  duration: '0:40',
+  circle: n === 2,
+  vfx: false,
+  match: 'Matched' as const,
+  sync: 'pending' as const,
+  ...patch,
+});
+
+/** The production after importing a log: one scene, two takes, one entry to review. */
+const logged = fresh({
+  scenes: [{ id: '4', description: 'INT. KITCHEN – NIGHT', status: 'Shot', notes: '', look: '', setups: [{ id: 'A', lens: '35mm', takes: [take(1), take(2, { match: 'Review', clipA: '—' })] }] }],
+  log: { file: 'day1.csv', format: 'CSV', importedAt: '18:40', entries: 2, vfxFlags: 0, matched: 1, review: 1, unmatched: 0, warnings: ['Line 9: no take number — skipped.'] },
+  matches: [
+    {
+      id: '7:0',
+      log: 'Sc 4 / A / T02',
+      reason: 'No clip name in the log: matched by roll and time only. Confirm the right one.',
+      fields: [['Scene', '4']],
+      candidates: [
+        { clip: 'A001C002', tc: '10:01:02', confidence: 74, why: 'File time 3s from the logged end TC' },
+        { clip: 'A001C003', tc: '10:04:40', confidence: 31, why: 'File time 4 min from the logged end TC' },
+      ],
+      picked: 0,
+      resolution: null,
+    },
+  ],
 });
 
 let current: ProjectState;
@@ -55,6 +95,9 @@ beforeEach(() => {
     open: vi.fn(async () => ({ ok: false, reason: 'A transfer is running. Wait for it to finish first.' })),
     saveCopy: vi.fn(async () => ok(current)),
     reveal: vi.fn(async () => undefined),
+    importLog: vi.fn(async () => ok(logged)),
+    resolveMatch: vi.fn(async () => ok(logged)),
+    saveLogTemplate: vi.fn(async () => ok(current)),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -151,5 +194,32 @@ describe('a production from the database', () => {
       // A render error would throw here; each screen shows its content.
       expect(document.body.textContent!.length, id).toBeGreaterThan(100);
     }
+  });
+
+  it("imports the day's log from Project setup and shows how it matched", async () => {
+    render(
+      <StoreProvider>
+        <ProjectSetup />
+      </StoreProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save a template CSV…' }));
+    expect(api.saveLogTemplate).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Import log…' }));
+    expect(await screen.findByText('day1.csv')).toBeTruthy();
+    expect(screen.getByText('1 needs a decision in Match review')).toBeTruthy();
+    expect(screen.getByText('1 row not fully read (CSV)')).toBeTruthy();
+  });
+
+  it('lays the takes out in the Scene Organizer and sends a match decision to the database', async () => {
+    current = logged;
+    render(
+      <StoreProvider>
+        <SceneOrganizer />
+        <MatchReview />
+      </StoreProvider>,
+    );
+    expect(screen.getAllByText('A001C001').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm match' }));
+    expect(api.resolveMatch).toHaveBeenCalledWith('7:0', 'A001C002');
   });
 });

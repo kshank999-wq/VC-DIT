@@ -1,7 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { readFile, stat, writeFile } from 'node:fs/promises';
+import { basename } from 'node:path';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
 import { SCENE_STATUSES, type Production, type ProjectResult, type SceneEntry, type ShootDay } from '../../shared/project';
+import { LOG_TEMPLATE, parseScriptLog } from '../scriptlog/parse';
 import { Library, PRODUCTION_EXTENSION } from './library';
 import type { TransferRecord } from './production-db';
 
@@ -66,7 +69,10 @@ export interface ProjectHooks {
   opened: (transfers: TransferRecord[]) => void;
 }
 
-export const registerProject = async (hooks: ProjectHooks): Promise<Library> => {
+const LOG_EXTENSIONS = ['csv', 'tsv', 'txt', 'tab', 'ale', 'json', 'xml'];
+const MAX_LOG_BYTES = 20 * 1024 * 1024;
+
+export const registerProject = async (hooks: ProjectHooks): Promise<{ library: Library; changed: () => void }> => {
   const library = new Library({ dir: app.getPath('userData'), wasm: sqlWasmPath });
   await library.start();
 
@@ -161,5 +167,34 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Library> => 
   });
   ipcMain.handle('vcdit:project-reveal', () => shell.showItemInFolder(library.current.file));
 
-  return library;
+  // ------------------------------------------------ the script supervisor's log
+  ipcMain.handle('vcdit:project-import-log', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      title: "Import the script supervisor's log",
+      properties: ['openFile'] as 'openFile'[],
+      filters: [{ name: 'Script supervisor log', extensions: LOG_EXTENSIONS }],
+    };
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, reason: '' };
+    const path = picked.filePaths[0];
+    return answer(async () => {
+      if ((await stat(path)).size > MAX_LOG_BYTES) throw new Error('That file is too large to be a script supervisor log.');
+      const parsed = parseScriptLog(basename(path), await readFile(path));
+      const db = library.current;
+      db.importLog(db.currentDay().number, basename(path), parsed);
+    });
+  });
+  ipcMain.handle('vcdit:project-resolve-match', (_e, id: unknown, clip: unknown) =>
+    answer(() => library.current.resolveMatch(library.current.currentDay().number, String(id), typeof clip === 'string' ? clip : null)),
+  );
+  ipcMain.handle('vcdit:project-save-log-template', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = { title: 'Save the log template', defaultPath: 'VC DIT script log template.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] };
+    const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
+    return answer(() => writeFile(picked.filePath!, LOG_TEMPLATE, 'utf8'));
+  });
+
+  return { library, changed: broadcast };
 };

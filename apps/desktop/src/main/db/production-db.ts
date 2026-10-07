@@ -1,8 +1,11 @@
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises';
 import initSqlJs, { type Database, type SqlValue } from 'sql.js';
 import type { ChecksumMethod } from '../../shared/media';
-import { DEFAULT_NAMING, localDate, type Production, type SceneEntry, type SceneStatus, type ShootDay } from '../../shared/project';
+import { DEFAULT_NAMING, localDate, type Production, type ProjectState, type SceneEntry, type SceneStatus, type ShootDay } from '../../shared/project';
 import type { FileOutcome, SourceFile } from '../media/transfer';
+import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
+import type { LogEntry, ParsedLog } from '../scriptlog/parse';
+import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch } from '../scriptlog/view';
 
 /**
  * One production's database: a single SQLite file on the cart (spec §2
@@ -133,10 +136,85 @@ const MIGRATIONS: string[] = [
   create index clip_card_idx on clip (day, card);
   create index clip_name_idx on clip (file_name);
   `,
+  `
+  -- The day's script supervisor log (spec §4.5): the last file imported,
+  -- its rows, and how each row's clips were matched.
+  create table script_import (
+    day integer primary key,
+    file_name text not null,
+    format text not null,
+    imported_at text not null,
+    warnings text not null default '[]'
+  );
+
+  create table script_entry (
+    id integer primary key,
+    day integer not null,
+    position integer not null,
+    scene text not null,
+    setup text not null,
+    take text not null,
+    slate text not null,
+    cameras text not null,
+    clip_refs text not null,
+    roll text not null,
+    sound_roll text not null,
+    sound_ref text not null,
+    tc_in text not null,
+    tc_out text not null,
+    circle integer not null,
+    print integer not null,
+    vfx integer not null,
+    vfx_note text not null,
+    notes text not null,
+    lens text not null,
+    description text not null
+  );
+  create index script_entry_day_idx on script_entry (day, position);
+
+  -- One row per camera clip a log row names (or per camera, when it names none).
+  create table script_match (
+    entry_id integer not null,
+    ref_index integer not null,
+    ref text not null,
+    camera text not null,
+    state text not null check (state in ('matched', 'review', 'unmatched')),
+    clip_key text,
+    clip_card text,
+    candidates text not null default '[]',
+    reason text not null default '',
+    decided text not null default 'auto' check (decided in ('auto', 'dit', 'wild')),
+    primary key (entry_id, ref_index)
+  );
+
+  create table script_sound (
+    entry_id integer primary key,
+    clip_key text not null,
+    clip_card text not null
+  );
+
+  -- The DIT's decisions, kept by what the row says rather than by row, so
+  -- they survive importing an updated log; a corrected row is decided afresh.
+  create table script_decision (
+    day integer not null,
+    entry_key text not null,
+    ref_index integer not null,
+    clip_key text,
+    clip_card text,
+    primary key (day, entry_key, ref_index)
+  );
+  `,
 ];
 
+/** What a log row says, as a key for the DIT's decision about it. */
+const entryKey = (entry: LogEntry) =>
+  [entry.scene, entry.setup, entry.take, entry.cameras.join(','), entry.clipRefs.join(','), entry.roll, entry.tcIn].join('|');
+
 let sql: Promise<Awaited<ReturnType<typeof initSqlJs>>> | null = null;
-const engine = (wasm: string) => (sql ??= readFile(wasm).then((binary) => initSqlJs({ wasmBinary: binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength) as ArrayBuffer })));
+const engine = (wasm: string) =>
+  (sql ??= readFile(wasm).then((binary) =>
+    initSqlJs({ wasmBinary: binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength) as ArrayBuffer }),
+  ));
 
 const now = () => new Date().toISOString();
 
@@ -191,7 +269,9 @@ export class ProductionDb {
 
   private isProduction(): boolean {
     const version = this.value<number>('pragma user_version') ?? 0;
-    return version === 0 ? this.rows('select name from sqlite_master').length === 0 : this.rows("select 1 from sqlite_master where name = 'production'").length > 0;
+    return version === 0
+      ? this.rows('select name from sqlite_master').length === 0
+      : this.rows("select 1 from sqlite_master where name = 'production'").length > 0;
   }
 
   private migrate() {
@@ -211,7 +291,17 @@ export class ProductionDb {
       this.run(
         `insert into production (id, name, code, frame_rate, checksum, total_days, devices, naming_tokens, current_day, created_at, updated_at)
          values (1, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-        [production.name, production.code, production.frameRate, production.checksum, production.totalDays, JSON.stringify(production.devices), JSON.stringify(production.namingTokens), at, at],
+        [
+          production.name,
+          production.code,
+          production.frameRate,
+          production.checksum,
+          production.totalDays,
+          JSON.stringify(production.devices),
+          JSON.stringify(production.namingTokens),
+          at,
+          at,
+        ],
       );
       this.run('insert into shoot_day (number, date, created_at) values (1, ?, ?)', [localDate(), at]);
     });
@@ -406,7 +496,14 @@ export class ProductionDb {
     if (!scene) throw new Error('No such scene.');
     const next = { ...scene, ...patch };
     this.transaction(() =>
-      this.run('update scene set description = ?, status = ?, notes = ?, look = ? where day = ? and id = ?', [next.description, next.status, next.notes, next.look, day, id]),
+      this.run('update scene set description = ?, status = ?, notes = ?, look = ? where day = ? and id = ?', [
+        next.description,
+        next.status,
+        next.notes,
+        next.look,
+        day,
+        id,
+      ]),
     );
   }
 
@@ -438,7 +535,17 @@ export class ProductionDb {
       for (const [position, destination] of record.destinations.entries()) {
         this.run(
           'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error) values (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [record.day, record.id, destination.id, position, destination.name, destination.root, destination.targetDir, destination.reportsDir, destination.error],
+          [
+            record.day,
+            record.id,
+            destination.id,
+            position,
+            destination.name,
+            destination.root,
+            destination.targetDir,
+            destination.reportsDir,
+            destination.error,
+          ],
         );
       }
       const insertClip = this.db.prepare(
@@ -481,17 +588,18 @@ export class ProductionDb {
     const transfers = this.rows<Record<string, SqlValue>>('select * from transfer where day = ? order by started_at, id', [day]);
     return transfers.map((row) => {
       const id = String(row['id']);
-      const destinations = this.rows<Record<string, SqlValue>>('select * from transfer_destination where day = ? and transfer_id = ? order by position', [day, id]).map(
-        (leg) => ({
-          id: String(leg['leg_id']),
-          name: String(leg['name']),
-          root: String(leg['root']),
-          targetDir: String(leg['target_dir']),
-          reportsDir: String(leg['reports_dir']),
-          error: (leg['error'] as string | null) ?? null,
-          outcomes: {} as Record<string, FileOutcome>,
-        }),
-      );
+      const destinations = this.rows<Record<string, SqlValue>>('select * from transfer_destination where day = ? and transfer_id = ? order by position', [
+        day,
+        id,
+      ]).map((leg) => ({
+        id: String(leg['leg_id']),
+        name: String(leg['name']),
+        root: String(leg['root']),
+        targetDir: String(leg['target_dir']),
+        reportsDir: String(leg['reports_dir']),
+        error: (leg['error'] as string | null) ?? null,
+        outcomes: {} as Record<string, FileOutcome>,
+      }));
       const clips = this.rows<Record<string, SqlValue>>('select * from clip where day = ? and transfer_id = ? order by id', [day, id]);
       const byLeg = new Map(destinations.map((destination) => [destination.id, destination]));
       for (const copy of this.rows<Record<string, SqlValue>>(
@@ -523,6 +631,228 @@ export class ProductionDb {
         destinations,
       };
     });
+  }
+
+  // ------------------------------------------------ the script supervisor's log
+
+  /**
+   * Replace the day's log with a newly imported one. Scenes it names that are
+   * not on the day's list are added (as shot); then every row is matched.
+   */
+  importLog(day: number, fileName: string, parsed: ParsedLog): void {
+    const listed = this.scenes(day);
+    const ids = new Set(listed.map((scene) => scene.id));
+    // "12A" is scene 12A when the list has it (and no scene 12), else scene 12, setup A.
+    const entries = parsed.entries.map((entry) =>
+      entry.setup && ids.has(entry.slate) && !ids.has(entry.scene) ? { ...entry, scene: entry.slate, setup: '' } : entry,
+    );
+    this.transaction(() => {
+      this.clearLogRows(day);
+      for (const [position, entry] of entries.entries()) {
+        this.run(
+          `insert into script_entry (day, position, scene, setup, take, slate, cameras, clip_refs, roll, sound_roll, sound_ref, tc_in, tc_out,
+             circle, print, vfx, vfx_note, notes, lens, description)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            day,
+            position,
+            entry.scene,
+            entry.setup,
+            entry.take,
+            entry.slate,
+            JSON.stringify(entry.cameras),
+            JSON.stringify(entry.clipRefs),
+            entry.roll,
+            entry.soundRoll,
+            entry.soundRef,
+            entry.tcIn,
+            entry.tcOut,
+            entry.circle ? 1 : 0,
+            entry.print ? 1 : 0,
+            entry.vfx ? 1 : 0,
+            entry.vfxNote,
+            entry.notes,
+            entry.lens,
+            entry.description,
+          ],
+        );
+      }
+      this.run('insert or replace into script_import (day, file_name, format, imported_at, warnings) values (?, ?, ?, ?, ?)', [
+        day,
+        fileName,
+        parsed.format,
+        now(),
+        JSON.stringify(parsed.warnings.slice(0, 200)),
+      ]);
+      // Scenes the log names that the day's list does not have yet.
+      let position = this.value<number>('select max(position) from scene where day = ?', [day]) ?? 0;
+      for (const entry of entries) {
+        if (ids.has(entry.scene)) continue;
+        ids.add(entry.scene);
+        position += 1;
+        this.run("insert into scene (day, id, description, status, notes, look, position) values (?, ?, ?, 'Shot', '', '', ?)", [
+          day,
+          entry.scene,
+          entry.description,
+          position,
+        ]);
+      }
+    });
+    this.rematch(day);
+  }
+
+  private clearLogRows(day: number) {
+    this.run('delete from script_match where entry_id in (select id from script_entry where day = ?)', [day]);
+    this.run('delete from script_sound where entry_id in (select id from script_entry where day = ?)', [day]);
+    this.run('delete from script_entry where day = ?', [day]);
+  }
+
+  private logEntries(day: number): StoredEntry[] {
+    return this.rows<Record<string, SqlValue>>('select * from script_entry where day = ? order by position', [day]).map((row) => ({
+      id: Number(row['id']),
+      line: Number(row['position']) + 1,
+      scene: String(row['scene']),
+      setup: String(row['setup']),
+      take: String(row['take']),
+      slate: String(row['slate']),
+      cameras: JSON.parse(String(row['cameras'])) as string[],
+      clipRefs: JSON.parse(String(row['clip_refs'])) as string[],
+      roll: String(row['roll']),
+      soundRoll: String(row['sound_roll']),
+      soundRef: String(row['sound_ref']),
+      tcIn: String(row['tc_in']),
+      tcOut: String(row['tc_out']),
+      circle: Number(row['circle']) === 1,
+      print: Number(row['print']) === 1,
+      vfx: Number(row['vfx']) === 1,
+      vfxNote: String(row['vfx_note']),
+      notes: String(row['notes']),
+      lens: String(row['lens']),
+      description: String(row['description']),
+    }));
+  }
+
+  /** Match the day's log against the day's clips again: after an import, and whenever another card comes in. */
+  rematch(day: number): void {
+    const entries = this.logEntries(day);
+    if (entries.length === 0) return;
+    const clips = this.rows<Record<string, SqlValue>>('select card, path, file_name, kind, size, mtime_ms from clip where day = ?', [day]).map<DayClip>(
+      (row) => ({
+        card: String(row['card']),
+        path: String(row['path']),
+        fileName: String(row['file_name']),
+        kind: row['kind'] as DayClip['kind'],
+        size: Number(row['size']),
+        mtimeMs: Number(row['mtime_ms']),
+      }),
+    );
+    const results = matchDay(entries, clips);
+    const decisions = new Map(
+      this.rows<Record<string, SqlValue>>('select * from script_decision where day = ?', [day]).map((row) => [
+        `${String(row['entry_key'])}#${Number(row['ref_index'])}`,
+        { key: (row['clip_key'] as string | null) ?? null, card: (row['clip_card'] as string | null) ?? null },
+      ]),
+    );
+    this.transaction(() => {
+      this.run('delete from script_match where entry_id in (select id from script_entry where day = ?)', [day]);
+      this.run('delete from script_sound where entry_id in (select id from script_entry where day = ?)', [day]);
+      for (const entry of entries) {
+        const result = results.get(entry)!;
+        for (const [index, ref] of result.camera.entries()) {
+          const decision = decisions.get(`${entryKey(entry)}#${index}`);
+          const decided = decision ? (decision.key ? 'dit' : 'wild') : 'auto';
+          this.run(
+            `insert into script_match (entry_id, ref_index, ref, camera, state, clip_key, clip_card, candidates, reason, decided)
+             values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              entry.id,
+              index,
+              ref.ref,
+              ref.camera,
+              decision ? 'matched' : ref.state,
+              decision ? decision.key : (ref.clip?.key ?? null),
+              decision ? decision.card : (ref.clip?.card ?? null),
+              // A decided clip stays among the candidates, so the screen can show what was picked.
+              JSON.stringify(
+                decision?.key && !ref.candidates.some((candidate) => candidate.key === decision.key && candidate.card === decision.card)
+                  ? [...ref.candidates, { key: decision.key, card: decision.card ?? '', tc: '—', confidence: 0, why: 'Picked by the DIT' }]
+                  : ref.candidates,
+              ),
+              ref.reason,
+              decided,
+            ],
+          );
+        }
+        if (result.sound)
+          this.run('insert into script_sound (entry_id, clip_key, clip_card) values (?, ?, ?)', [entry.id, result.sound.key, result.sound.card]);
+      }
+    });
+  }
+
+  /** The DIT's decision on one row's clip: a candidate (by the label the screen showed), or none at all (wild, MOS, no camera). */
+  resolveMatch(day: number, id: string, label: string | null): void {
+    const [entryId, refIndex] = id.split(':').map(Number) as [number, number];
+    const entry = this.logEntries(day).find((candidate) => candidate.id === entryId);
+    const row = this.rows<Record<string, SqlValue>>('select candidates from script_match where entry_id = ? and ref_index = ?', [entryId, refIndex])[0];
+    if (!entry || !row) throw new Error('That log entry is no longer in the log.');
+    let clip: Candidate | null = null;
+    if (label !== null) {
+      const candidates = JSON.parse(String(row['candidates'])) as Candidate[];
+      clip = candidates.find((candidate) => candidateLabel(candidate, candidates) === label) ?? null;
+      if (!clip) throw new Error('That clip is not one of the candidates.');
+    }
+    this.transaction(() => {
+      this.run('insert or replace into script_decision (day, entry_key, ref_index, clip_key, clip_card) values (?, ?, ?, ?, ?)', [
+        day,
+        entryKey(entry),
+        refIndex,
+        clip?.key ?? null,
+        clip?.card ?? null,
+      ]);
+      this.run("update script_match set state = 'matched', clip_key = ?, clip_card = ?, decided = ? where entry_id = ? and ref_index = ?", [
+        clip?.key ?? null,
+        clip?.card ?? null,
+        clip ? 'dit' : 'wild',
+        entryId,
+        refIndex,
+      ]);
+    });
+  }
+
+  /** The day's scenes with their setups and takes, the entries to review, the VFX flags and the import's numbers. */
+  logView(day: number): Pick<ProjectState, 'scenes' | 'log' | 'matches' | 'vfx'> {
+    const entries = this.logEntries(day);
+    const ids = new Set(entries.map((entry) => entry.id));
+    const matches = this.rows<Record<string, SqlValue>>(
+      'select m.* from script_match m join script_entry e on e.id = m.entry_id where e.day = ? order by e.position, m.ref_index',
+      [day],
+    ).map<StoredMatch>((row) => ({
+      entryId: Number(row['entry_id']),
+      refIndex: Number(row['ref_index']),
+      ref: String(row['ref']),
+      camera: String(row['camera']),
+      state: row['state'] as StoredMatch['state'],
+      clipKey: (row['clip_key'] as string | null) ?? null,
+      clipCard: (row['clip_card'] as string | null) ?? null,
+      candidates: JSON.parse(String(row['candidates'])) as Candidate[],
+      reason: String(row['reason']),
+      decided: row['decided'] as StoredMatch['decided'],
+    }));
+    const sounds = new Map(
+      this.rows<Record<string, SqlValue>>('select entry_id, clip_key from script_sound')
+        .filter((row) => ids.has(Number(row['entry_id'])))
+        .map((row) => [Number(row['entry_id']), String(row['clip_key'])]),
+    );
+    const imported = this.rows<Record<string, SqlValue>>('select * from script_import where day = ?', [day])[0];
+    const log: StoredImport | null = imported
+      ? {
+          fileName: String(imported['file_name']),
+          format: String(imported['format']),
+          importedAt: String(imported['imported_at']),
+          warnings: JSON.parse(String(imported['warnings'])) as string[],
+        }
+      : null;
+    return buildLogView({ scenes: this.scenes(day), entries, matches, sounds, log, frameRate: this.production().frameRate });
   }
 
   /** Clips found by name across the whole production, newest day first: the start of the media index. */

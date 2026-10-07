@@ -1,6 +1,7 @@
 import { DESTINATION_ROLES, SOURCE_ROLES, formatBytes, type IngestRequest, type MediaState } from '../../shared/media';
 import type { ProjectState } from '../../shared/project';
 import type { IngestDestination, TransferJob, Volume } from '../model/types';
+import type { Dispatch } from 'react';
 import type { Action, AppState } from './store';
 
 /**
@@ -14,25 +15,79 @@ import type { Action, AppState } from './store';
  *   apply in the UI at once and are written through (`persist`).
  */
 
-export const engine = (): MediaApi | null => (typeof window !== 'undefined' ? window.vcdit?.media ?? null : null);
-export const projectApi = (): ProjectApi | null => (typeof window !== 'undefined' ? window.vcdit?.project ?? null : null);
+export const engine = (): MediaApi | null => (typeof window !== 'undefined' ? (window.vcdit?.media ?? null) : null);
+export const projectApi = (): ProjectApi | null => (typeof window !== 'undefined' ? (window.vcdit?.project ?? null) : null);
+
+type FromProject = Pick<
+  AppState,
+  'production' | 'day' | 'scenes' | 'project' | 'checksum' | 'matches' | 'vfx' | 'scriptLog' | 'selectedSetup' | 'selectedMatch'
+>;
 
 /** The production as the database has it, into the UI's state. */
-export const fromProject = (state: AppState, project: ProjectState): Pick<AppState, 'production' | 'day' | 'scenes' | 'project' | 'checksum'> => ({
-  production: project.production,
-  day: project.day,
-  // Setups and takes are not in the scene list; they come with the clips and the script log.
-  scenes: project.scenes.map((scene) => ({ ...scene, setups: state.scenes.find((existing) => existing.id === scene.id)?.setups ?? [] })),
-  project: { file: project.file, days: project.days, recent: project.recent },
-  // A different production brings its own checksum default.
-  checksum: state.project?.file === project.file ? state.checksum : project.production.checksum,
-});
+export const fromProject = (state: AppState, project: ProjectState): FromProject => {
+  const scenes = project.scenes;
+  const [sceneId, setupId] = state.selectedSetup.split('|');
+  const selectedStillThere = scenes.some((scene) => scene.id === sceneId && scene.setups.some((setup) => setup.id === setupId));
+  const firstSetup = scenes.find((scene) => scene.setups.length > 0);
+  // VFX shots sent to prep, and those the DIT tagged, are the screen's own until the handoff is built.
+  const sent = new Set(state.vfx.filter((shot) => shot.prep === 'sent').map((shot) => shot.clip));
+  const vfx = project.vfx.map((shot) => ({
+    scene: shot.scene,
+    setup: shot.setup,
+    take: shot.take,
+    clip: shot.clip,
+    note: shot.note,
+    flaggedBy: 'Script sup.' as const,
+    prep: sent.has(shot.clip) ? ('sent' as const) : shot.matched ? ('eligible' as const) : ('blocked' as const),
+  }));
+  const tagged = state.project ? state.vfx.filter((shot) => shot.flaggedBy === 'DIT tag' && !vfx.some((other) => other.clip === shot.clip)) : [];
+  return {
+    production: project.production,
+    day: project.day,
+    scenes,
+    project: { file: project.file, days: project.days, recent: project.recent },
+    // A different production brings its own checksum default.
+    checksum: state.project?.file === project.file ? state.checksum : project.production.checksum,
+    matches: project.matches,
+    selectedMatch: project.matches.some((match) => match.id === state.selectedMatch)
+      ? state.selectedMatch
+      : (project.matches.find((match) => !match.resolution)?.id ?? project.matches[0]?.id ?? ''),
+    vfx: [...vfx, ...tagged],
+    scriptLog: project.log
+      ? {
+          file: project.log.file,
+          importedAt: project.log.importedAt,
+          entries: project.log.entries,
+          vfxFlags: project.log.vfxFlags,
+          format: project.log.format,
+          warnings: project.log.warnings,
+        }
+      : { file: '', importedAt: '', entries: 0, vfxFlags: 0 },
+    selectedSetup: selectedStillThere || !firstSetup ? state.selectedSetup : `${firstSetup.id}|${firstSetup.setups[0]!.id}`,
+  };
+};
 
-/** Write an edit through to the production database. Only edits the database keeps; the rest is UI state. */
-export const persist = (action: Action): void => {
+/**
+ * Write an edit through to the production database. Only edits the database
+ * keeps; the rest is UI state. `before` is the state the action was applied
+ * to. A match decision comes back with the day re-derived (the take's status
+ * changes), so its answer is applied.
+ */
+export const persist = (action: Action, before: AppState, dispatch: Dispatch<Action>): void => {
   const api = projectApi();
   if (!api) return;
+  const apply = (call: Promise<{ ok: true; state: ProjectState } | { ok: false; reason: string }>) =>
+    void call.then((result) => result.ok && dispatch({ type: 'projectState', project: result.state }));
   switch (action.type) {
+    case 'confirmMatch': {
+      const match = before.matches.find((candidate) => candidate.id === action.id);
+      const clip = match?.candidates[match.picked]?.clip;
+      if (clip) apply(api.resolveMatch(action.id, clip));
+      return;
+    }
+    case 'markWild':
+      apply(api.resolveMatch(action.id, null));
+      return;
     case 'setProduction':
       void api.update(action.patch);
       return;

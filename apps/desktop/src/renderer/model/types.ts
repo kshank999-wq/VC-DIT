@@ -1,5 +1,9 @@
 import type { ChecksumMethod, VolumeRole } from '../../shared/media';
-import type { Production, SceneStatus, ShootDay } from '../../shared/project';
+import type { MatchCandidate, MatchEntry, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry } from '../../shared/project';
+
+export type Take = TakeEntry;
+export type Setup = SetupEntry;
+export type MatchItem = MatchEntry;
 
 /**
  * The records the UI works with, after the spec's data model (§6). In the
@@ -8,7 +12,7 @@ import type { Production, SceneStatus, ShootDay } from '../../shared/project';
  * (demo.ts) until its engine work lands.
  */
 
-export type { ChecksumMethod, Production, SceneStatus, ShootDay, VolumeRole };
+export type { ChecksumMethod, MatchCandidate, Production, SceneStatus, ShootDay, VolumeRole };
 
 /** The six steps of the pipeline, in order. */
 export type StepId = 'intake' | 'verify' | 'organize' | 'vfx' | 'sync' | 'output';
@@ -30,27 +34,6 @@ export type ScreenId =
 /** Every status is shown as a dot and a word, never colour alone. */
 export type Status = 'done' | 'working' | 'needs' | 'problem' | 'idle';
 
-
-export interface Take {
-  /** Unique within the day: `${scene}|${setup}|${take}`. */
-  id: string;
-  take: string;
-  clipA: string;
-  clipB: string | null;
-  sound: string;
-  tc: string;
-  duration: string;
-  circle: boolean;
-  vfx: boolean;
-  match: 'Matched' | 'Review' | 'Unmatched';
-  sync: 'TC' | 'WF' | 'none';
-}
-
-export interface Setup {
-  id: string;
-  lens: string;
-  takes: Take[];
-}
 
 export interface Scene {
   id: string;
@@ -113,24 +96,6 @@ export interface TransferJob {
   /** From the media engine, while copying. */
   bytesPerSecond?: number;
   etaSeconds?: number | null;
-}
-
-export interface MatchCandidate {
-  clip: string;
-  tc: string;
-  confidence: number;
-  why: string;
-}
-
-/** A script-log entry that could not be matched with confidence (spec §4.5). */
-export interface MatchItem {
-  id: string;
-  log: string;
-  reason: string;
-  fields: [string, string][];
-  candidates: MatchCandidate[];
-  picked: number;
-  resolution: null | { kind: 'matched'; clip: string } | { kind: 'wild' };
 }
 
 export type SyncMethod = 'Timecode' | 'Waveform' | 'Manual';
@@ -222,4 +187,7 @@ export interface ScriptLogImport {
   importedAt: string;
   entries: number;
   vfxFlags: number;
+  /** From the desktop app's import: the format read and rows not fully understood. */
+  format?: string;
+  warnings?: string[];
 }

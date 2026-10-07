@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { localDate } from '../../shared/project';
 import { Library } from '../db/library';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
+import { parseScriptLog } from '../scriptlog/parse';
 
 const wasm = createRequire(import.meta.url).resolve('sql.js/dist/sql-wasm.wasm');
 let dir: string;
@@ -173,5 +174,94 @@ describe('the library of productions', () => {
     const again = new Library({ dir, wasm });
     expect((await again.start()).file).not.toBe(gone);
     await again.close();
+  });
+});
+
+describe("the day's script supervisor log", () => {
+  const log = [
+    'Scene,Setup,Take,Clip,Circle,VFX,TC In,TC Out,Notes',
+    '14,A,1,A015C001,,,14:02:11:00,14:03:02:12,',
+    '14,A,2,A015C002,Y,,14:05:40:00,14:06:31:00,Director likes it',
+    '14,B,1,A016C001,,Sky replacement,14:20:01:00,14:21:10:00,',
+    '21,A,1,,,,,,No clip name',
+  ].join('\n');
+
+  const cardA015 = (): TransferRecord =>
+    transfer({
+      files: [
+        { path: 'A015R1AB/A015C001_261005_R1AB.mxf', size: 100, mtimeMs: new Date('2026-10-05T14:03:03').getTime(), hash: 'a', hashedAt: null },
+        { path: 'A015R1AB/A015C002_261005_R1AB.mxf', size: 100, mtimeMs: new Date('2026-10-05T14:06:32').getTime(), hash: 'b', hashedAt: null },
+      ],
+      destinations: [],
+    });
+
+  it('lays the log out as scenes, setups and takes, adds scenes the list lacks, and lists what needs the DIT', async () => {
+    const db = await ProductionDb.open(join(dir, 'p.vcdit'), { wasm, create: { frameRate: '25 fps' } });
+    db.addScene(1, { id: '14', description: 'INT. HANGAR – DAY' });
+    db.saveTransfer(cardA015());
+    db.importLog(1, 'day1.csv', parseScriptLog('day1.csv', log));
+    const view = db.logView(1);
+
+    expect(view.scenes.map((scene) => [scene.id, scene.status, scene.setups.map((setup) => setup.id)])).toEqual([
+      ['14', 'Scheduled', ['A', 'B']],
+      ['21', 'Shot', ['A']],
+    ]);
+    const [t1, t2] = view.scenes[0]!.setups[0]!.takes;
+    expect(t1).toMatchObject({ id: '14|A|1', take: 'T01', clipA: 'A015C001', match: 'Matched', duration: '0:51', sync: 'pending' });
+    expect(t2).toMatchObject({ take: 'T02', clipA: 'A015C002', circle: true, match: 'Matched' });
+    expect(view.scenes[0]!.setups[1]!.takes[0]).toMatchObject({ clipA: '—', vfx: true, match: 'Unmatched' });
+    expect(view.log).toMatchObject({ file: 'day1.csv', format: 'CSV', entries: 4, vfxFlags: 1, matched: 2, review: 0, unmatched: 2 });
+    expect(view.matches.map((match) => [match.log, match.reason])).toEqual([
+      ['Sc 14 / B / T01 · A cam', 'No card A016 has been ingested today yet.'],
+      ['Sc 21 / A / T01', 'The log gives no clip name, roll or timecode for this take.'],
+    ]);
+    expect(view.vfx).toEqual([{ scene: '14', setup: 'B', take: '01', clip: 'A016C001', note: 'Sky replacement', matched: false }]);
+    await db.close();
+  });
+
+  it('matches waiting takes when their card comes in', async () => {
+    const db = await ProductionDb.open(join(dir, 'p.vcdit'), { wasm, create: {} });
+    db.importLog(1, 'day1.csv', parseScriptLog('day1.csv', log));
+    expect(db.logView(1).log).toMatchObject({ matched: 0, unmatched: 4 });
+    db.saveTransfer(cardA015());
+    db.rematch(1);
+    expect(db.logView(1).log).toMatchObject({ matched: 2, unmatched: 2 });
+    await db.close();
+  });
+
+  it("keeps the DIT's decisions, through a re-import of the same log, in the saved file", async () => {
+    const file = join(dir, 'p.vcdit');
+    const db = await ProductionDb.open(file, { wasm, create: {} });
+    db.saveTransfer(cardA015());
+    const byRoll = 'Scene,Setup,Take,Roll,TC In,TC Out\n14,A,2,A015,14:05:40:00,14:06:31:00\n15,A,1,,,\n';
+    db.importLog(1, 'day1.csv', parseScriptLog('day1.csv', byRoll));
+    const [review, nothing] = db.logView(1).matches;
+    expect(review).toMatchObject({ resolution: null, candidates: [expect.objectContaining({ clip: 'A015C002' }), expect.anything()] });
+
+    db.resolveMatch(1, review!.id, 'A015C002');
+    db.resolveMatch(1, nothing!.id, null);
+    expect(() => db.resolveMatch(1, review!.id, 'B999C999')).toThrow(/not one of the candidates/);
+    const decided = db.logView(1);
+    expect(decided.matches.map((match) => match.resolution)).toEqual([{ kind: 'matched', clip: 'A015C002' }, { kind: 'wild' }]);
+    expect(decided.scenes.find((scene) => scene.id === '14')!.setups[0]!.takes[0]).toMatchObject({ clipA: 'A015C002', match: 'Matched' });
+    expect(decided.log).toMatchObject({ matched: 2, review: 0, unmatched: 0 });
+
+    db.importLog(1, 'day1-updated.csv', parseScriptLog('day1-updated.csv', byRoll));
+    await db.close();
+    const again = await ProductionDb.open(file, { wasm });
+    expect(again.logView(1).matches.map((match) => match.resolution)).toEqual([{ kind: 'matched', clip: 'A015C002' }, { kind: 'wild' }]);
+    expect(again.logView(1).log!.file).toBe('day1-updated.csv');
+    await again.close();
+  });
+
+  it('reads "12A" as scene 12A when that is on the list, else as scene 12 setup A', async () => {
+    const db = await ProductionDb.open(join(dir, 'p.vcdit'), { wasm, create: {} });
+    db.addScene(1, { id: '12A' });
+    db.importLog(1, 'log.csv', parseScriptLog('log.csv', 'Slate,Take\n12A,1\n14B,2\n'));
+    expect(db.logView(1).scenes.map((scene) => [scene.id, scene.setups.map((setup) => setup.id)])).toEqual([
+      ['12A', ['—']],
+      ['14', ['B']],
+    ]);
+    await db.close();
   });
 });

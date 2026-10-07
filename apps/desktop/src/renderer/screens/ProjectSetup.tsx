@@ -391,13 +391,8 @@ export function ProjectSetup() {
               Match review →
             </button>
           </div>
-          {state.project ? (
-            <div className="card-body">
-              <p className="muted setup-note">
-                Importing the script supervisor&apos;s log (CSV, JSON or XML) is the next piece being built. It will fill the setups, takes, circle takes and
-                VFX flags for the day&apos;s scenes.
-              </p>
-            </div>
+          {api ? (
+            <LogCard api={api} act={act} />
           ) : (
             <div className="card-body stack">
               <div className="setup-file">
@@ -421,6 +416,77 @@ export function ProjectSetup() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/** The day's log in the desktop app: import (or re-import) it, see how it matched, and what was not understood. */
+function LogCard({ api, act }: { api: ProjectApi; act: (call: Promise<ProjectResult>) => void }) {
+  const { state } = useStore();
+  const [importing, setImporting] = useState(false);
+  const summary = state.scriptLog.entries > 0 ? state.scriptLog : null;
+  const open = state.matches.filter((match) => match.resolution === null).length;
+  const run = (call: Promise<ProjectResult>) => {
+    setImporting(true);
+    act(call.finally(() => setImporting(false)));
+  };
+  return (
+    <div className="card-body stack">
+      {summary ? (
+        <>
+          <div className="setup-file">
+            <span className="setup-csv mono">LOG</span>
+            <div className="grow">
+              <div className="mono setup-file-name">{summary.file}</div>
+              <div className="muted">Imported {summary.importedAt} · matched against today&apos;s cards</div>
+            </div>
+            <button
+              type="button"
+              className="btn small"
+              disabled={importing}
+              onClick={() => run(api.importLog())}
+              title="Import an updated log; your match decisions are kept"
+            >
+              Re-import
+            </button>
+          </div>
+          <div className="setup-stats">
+            <Stat value={summary.entries} label="Entries" />
+            <Stat value={summary.entries - open} label="Matched" color={statusVar('done')} />
+            <Stat value={open} label="Review" color={statusVar(open > 0 ? 'needs' : 'done')} />
+            <Stat value={summary.vfxFlags} label="VFX flags" color={stepVar('vfx')} />
+          </div>
+          {open > 0 ? <StatusText status="needs" word={`${open} need${open === 1 ? 's' : ''} a decision in Match review`} /> : null}
+          {summary.warnings?.length ? (
+            <details className="setup-warnings">
+              <summary>
+                {summary.warnings.length} row{summary.warnings.length === 1 ? '' : 's'} not fully read ({summary.format})
+              </summary>
+              <ul>
+                {summary.warnings.slice(0, 50).map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="muted setup-note">
+            Import the script supervisor&apos;s log for today: CSV or tab-separated text, Avid ALE, JSON or XML. Columns are recognised by name (Scene, Setup,
+            Take, Clip, Roll, TC In, Circle, VFX, Notes…). Each take is matched to its camera clips and sound; anything uncertain goes to Match review, and
+            takes on cards not in yet are matched when the card arrives.
+          </p>
+          <div className="row setup-log-actions">
+            <button type="button" className="btn primary" disabled={importing} onClick={() => run(api.importLog())}>
+              Import log…
+            </button>
+            <button type="button" className="btn" onClick={() => act(api.saveLogTemplate())}>
+              Save a template CSV…
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
