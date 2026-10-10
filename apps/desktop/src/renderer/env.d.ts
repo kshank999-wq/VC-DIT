@@ -89,5 +89,6 @@ interface ProjectApi {
   removeDeliveryFolder: (id: string) => Promise<ProjectResult>;
   saveManifest: () => Promise<ProjectResult>;
   showManifest: (path: string) => Promise<void>;
+  showSceneFolder: (path: string) => Promise<void>;
   showDaily: (path: string) => Promise<void>;
 }

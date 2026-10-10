@@ -6,6 +6,7 @@ import { Worker } from 'node:worker_threads';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
+import { OrganizeService } from '../organize/organize-service';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
@@ -173,6 +174,7 @@ export interface Project {
   sync: SyncService;
   dailies: DailiesService;
   delivery: DeliveryService;
+  organize: OrganizeService;
   /** Tell the windows the production changed. */
   changed: () => void;
   /** A card finished: match the log again, then mirror any VFX shot it completes. */
@@ -187,6 +189,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   let sync: SyncService | null = null;
   let dailies: DailiesService | null = null;
   let delivery: DeliveryService | null = null;
+  let organizer: OrganizeService | null = null;
   // FFmpeg and the burn-in font ship as resources; in development they are in build/ (or FFmpeg on the PATH).
   const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build');
   let ffmpegFound: Ffmpeg | null = null;
@@ -200,7 +203,11 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   });
   const stateNow = (): ProjectState => {
     const state = baseState();
-    return delivery ? { ...state, delivery: { ...state.delivery, ...delivery.view() } } : state;
+    return {
+      ...state,
+      ...(delivery ? { delivery: { ...state.delivery, ...delivery.view() } } : {}),
+      ...(organizer ? { organize: organizer.view() } : {}),
+    };
   };
   const broadcast = () => {
     const state = stateNow();
@@ -212,8 +219,13 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   const syncing = sync;
   /** Read new files' timecode and sync what timecode can; quick, so it follows every change. */
   const syncQuick = () => void syncing.run({ waveform: false });
-  /** Make the quick mirrors (links, references) for anything newly flagged, matched or verified. */
-  const mirrorQuick = () => void mirrors.run({ copies: false, retry: false });
+  organizer = new OrganizeService({ db: () => library.current, changed: broadcast });
+  const organizing = organizer;
+  /** Make the quick mirrors (links, references) for anything newly flagged, matched or verified, and keep the scene folders in step. */
+  const mirrorQuick = () => {
+    void mirrors.run({ copies: false, retry: false });
+    void organizing.run();
+  };
   dailies = new DailiesService({
     db: () => library.current,
     ffmpeg: () => ffmpegReady,
@@ -259,6 +271,8 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       library.current.updateProduction(clean);
       if (clean.name !== undefined) await library.rememberAndSave();
       if (clean.vfxMethod !== undefined) mirrorQuick();
+      // The take folders are named by the template and the production code.
+      if (clean.namingTokens !== undefined || clean.code !== undefined) void organizing.run();
     }),
   );
   ipcMain.handle('vcdit:project-update-day', (_e, patch: unknown) =>
@@ -490,6 +504,10 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
     return answer(() => writeFile(picked.filePath!, manifestCsv(db.deliveries(day.number)), 'utf8'));
   });
+  ipcMain.handle('vcdit:project-organize-show', (_e, path: unknown) => {
+    // Only the scene folders VC DIT made.
+    if (organizing.view().folders.some((folder) => folder.path === path)) void shell.openPath(String(path));
+  });
   ipcMain.handle('vcdit:project-delivery-show', (_e, path: unknown) => {
     // Only manifests VC DIT wrote.
     const db = library.current;
@@ -502,6 +520,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     sync: syncing,
     dailies: rendering,
     delivery: delivering,
+    organize: organizing,
     changed: broadcast,
     cardIn: (day) => {
       library.current.rematch(day);

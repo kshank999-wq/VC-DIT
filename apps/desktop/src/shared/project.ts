@@ -242,6 +242,8 @@ export interface ProjectState {
   /** The FFmpeg this app renders with, or null when there is none. */
   ffmpeg: { version: string } | null;
   delivery: DeliveryState;
+  /** The scene view and the selects on the destinations. */
+  organize: OrganizeState;
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }
@@ -284,7 +286,8 @@ export const DAILIES_GROUPING: DailiesSettings['grouping'][] = ['Scene → Setup
 export type DeliveryPartId = 'camera' | 'sound' | 'looks' | 'dailies' | 'vfx' | 'editorial' | 'reports-ingest' | 'reports-dailies' | 'reports';
 
 export const DELIVERY_PARTS: { id: DeliveryPartId; folder: string; exclude?: string[] }[] = [
-  { id: 'camera', folder: 'CAMERA_ORIGINALS' },
+  // The cards as ingested; the scene view's links are made again on each destination, not copied twice.
+  { id: 'camera', folder: 'CAMERA_ORIGINALS', exclude: ['_BY_SCENE'] },
   { id: 'sound', folder: 'SOUND_ORIGINALS' },
   { id: 'looks', folder: 'LUTS_LOOKS' },
   { id: 'dailies', folder: 'SYNCED_DAILIES' },
@@ -300,7 +303,7 @@ export type DeliveryPackageId = 'ocf' | 'edit' | 'dailies' | 'vfx' | 'reports';
 
 export const DELIVERY_PACKAGES: { id: DeliveryPackageId; name: string; description: string; parts: DeliveryPartId[] }[] = [
   { id: 'ocf', name: 'Camera originals archive', description: 'All camera and sound originals, ingest MHL and logs', parts: ['camera', 'sound', 'reports-ingest'] },
-  { id: 'edit', name: 'Editorial handoff', description: 'Originals, looks, and an ALE and sync list for the edit', parts: ['camera', 'sound', 'looks', 'editorial'] },
+  { id: 'edit', name: 'Editorial handoff', description: 'Originals in scene/setup folders, looks, and an ALE and sync list', parts: ['camera', 'sound', 'looks', 'editorial'] },
   { id: 'dailies', name: 'Synced dailies', description: 'The rendered dailies, their looks and manifest', parts: ['dailies', 'looks', 'reports-dailies'] },
   { id: 'vfx', name: 'VFX package', description: 'Mirrored plates and the VC VFX Prep handoff', parts: ['vfx'] },
   { id: 'reports', name: 'Reports & logs', description: 'Ingest, dailies, VFX and delivery reports', parts: ['reports-ingest', 'reports-dailies', 'reports'] },
@@ -446,8 +449,8 @@ export const applyNaming = (
     '{CLIP}': values.clip,
   };
   return tokens
-    .map((token) => fill[token] ?? token)
     .join('')
+    .replace(/\{[A-Z]+\}/g, (field) => fill[field] ?? field)
     .replace(/_+/g, '_')
     .replace(/^_|_$/g, '');
 };

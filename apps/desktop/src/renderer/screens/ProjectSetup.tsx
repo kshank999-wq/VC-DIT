@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import type { ProjectResult } from '../../shared/project';
+import { NAMING_FIELDS, applyNaming, parseNaming, type ProjectResult } from '../../shared/project';
 import type { ChecksumMethod, SceneStatus, Status } from '../model/types';
 import { projectApi } from '../state/engine';
 import { useStore } from '../state/store';
@@ -71,22 +71,16 @@ export function ProjectSetup() {
   const matched = scriptLog.entries - review;
 
   // A sample take, to show what the template and the folder layout produce.
-  const sample = { scene: '14', setup: 'B', take: '04', cam: 'A', reel: '014' };
-  const exampleName = production.namingTokens
-    .join('')
-    .replace('{PROD}', production.code || 'PROD')
-    .replace('{DAY}', pad3(day.number))
-    .replace('{SCENE}', sample.scene)
-    .replace('{SETUP}', sample.setup)
-    .replace('{TAKE}', sample.take)
-    .replace('{CAM}', sample.cam)
-    .replace('{REEL}', sample.reel);
+  const sample = { scene: '14', setup: 'B', take: '04', clip: 'A014C018' };
+  const exampleName = applyNaming(production.namingTokens, { prod: production.code || 'PROD', day: day.number, ...sample }) || sample.clip;
   const folders = [
     production.name || 'PRODUCTION',
     `SHOOT_DAY_${pad3(day.number)}_${day.date}`,
     'CAMERA_ORIGINALS',
+    '_BY_SCENE',
     `SCENE_${sample.scene.padStart(3, '0')}`,
     `SETUP_${sample.setup}`,
+    exampleName,
   ];
 
   return (
@@ -369,17 +363,25 @@ export function ProjectSetup() {
                 ),
               )}
             </div>
+            <label className="field">
+              <span className="label">Take folder name</span>
+              <input
+                className="input mono"
+                aria-label="Naming template"
+                value={production.namingTokens.join('')}
+                onChange={(event) => dispatch({ type: 'setProduction', patch: { namingTokens: parseNaming(event.target.value) } })}
+              />
+              <span className="muted small">Fields: {NAMING_FIELDS.join(' ')}</span>
+            </label>
             <div className="field">
               <span className="label">Folder preview</span>
               <div className="mono setup-preview">
                 {folders.join(' / ')} / <span style={{ color: stepVar('intake') }}>A014C018_261005_R1ZK.ari</span>
               </div>
-              <div className="mono setup-preview muted">
-                Indexed as <span style={{ color: stepVar('organize') }}>{exampleName}</span>
-              </div>
             </div>
             <p className="muted setup-note">
-              Original camera filenames are preserved. Scene/setup/take mapping is stored in the media index, not written into protected originals.
+              The cards stay exactly as ingested, with their original file names. The scene folders and circle takes are links to the same files (or
+              reference files where a drive cannot hold links), never second copies, and they follow the log as it changes.
             </p>
           </div>
         </section>

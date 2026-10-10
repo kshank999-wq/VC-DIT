@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { DailyRender, DeliveryPackageId, DeliveryState, ProjectState } from '../../shared/project';
+import type { DailyRender, DeliveryPackageId, DeliveryState, OrganizeState, ProjectState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -94,6 +94,8 @@ export interface AppState {
   delivered: string[];
   /** The desktop app's delivery: choices, drives, manifest and progress. */
   delivery: DeliveryState | null;
+  /** The desktop app's scene folders on the destinations. */
+  organize: OrganizeState | null;
   reportFilter: ReportFilter;
 }
 
@@ -139,6 +141,7 @@ export const initialState = (): AppState => ({
   deliveryPreset: 'Daily handoff — Editorial + Archive',
   delivered: [],
   delivery: null,
+  organize: null,
   reportFilter: 'all',
 });
 

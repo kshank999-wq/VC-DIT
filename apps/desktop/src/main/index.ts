@@ -6,6 +6,7 @@ import { registerProject } from './db/project-ipc';
 import type { MediaService } from './media/media-service';
 import type { DailiesService } from './dailies/dailies-service';
 import type { DeliveryService } from './delivery/delivery-service';
+import type { OrganizeService } from './organize/organize-service';
 import type { SyncService } from './sync/sync-service';
 import type { VfxService } from './vfx/vfx-service';
 import { registerMedia } from './media/media-ipc';
@@ -53,6 +54,7 @@ let vfx: VfxService | null = null;
 let sync: SyncService | null = null;
 let dailies: DailiesService | null = null;
 let delivery: DeliveryService | null = null;
+let organize: OrganizeService | null = null;
 
 void app.whenReady().then(async () => {
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
@@ -67,6 +69,7 @@ void app.whenReady().then(async () => {
   sync = project.sync;
   dailies = project.dailies;
   delivery = project.delivery;
+  organize = project.organize;
   const open = library;
   media = await registerMedia((transfer) => {
     open.current.saveTransfer(transfer);
@@ -111,6 +114,7 @@ app.on('before-quit', (event) => {
     await delivery?.idle();
     await vfx?.idle();
     await sync?.idle();
+    await organize?.idle();
     await library?.close().catch(() => undefined);
     app.quit();
   })();

@@ -33,6 +33,8 @@ import {
   type SyncEntry,
 } from '../../shared/project';
 import { parseLut } from '../looks/lut-file';
+import type { ViewClip } from '../organize/view';
+import { SCENE_VIEW, SELECTS_VIEW, applyNaming } from '../../shared/project';
 import { segment } from '../media/rules';
 import {
   DEFAULT_DELIVERY,
@@ -383,6 +385,51 @@ const MIGRATION_6 = `
   );
 `;
 MIGRATIONS.push(MIGRATION_6);
+
+const MIGRATION_7 = `
+  -- The scene view (spec §4.4): where each clip appears by scene/setup/take
+  -- (and each circle take among the selects) on each destination, so it can
+  -- follow the log and be taken down when a clip moves.
+  create table organize_link (
+    day integer not null,
+    kind text not null check (kind in ('scene', 'select')),
+    card text not null,
+    clip_key text not null,
+    leg_id text not null,
+    destination text not null,
+    rel_dir text not null,
+    target_dir text not null,
+    card_dir text not null,
+    method text not null,
+    state text not null check (state in ('placed', 'failed')),
+    error text,
+    made_at text not null,
+    primary key (day, kind, card, clip_key, leg_id)
+  );
+`;
+MIGRATIONS.push(MIGRATION_7);
+
+/** One clip in the scene view or the selects, and every destination holding its verified copy. */
+export interface OrganizeView extends ViewClip {
+  kind: 'scene' | 'select';
+  /** Under the day folder: CAMERA_ORIGINALS/_BY_SCENE/SCENE_014/SETUP_B/NJR_D014_SC14B_T03_A015. */
+  relDir: string;
+  locations: { legId: string; name: string; root: string; cardDir: string }[];
+}
+
+export interface OrganizeLink {
+  kind: 'scene' | 'select';
+  card: string;
+  clip: string;
+  legId: string;
+  destination: string;
+  relDir: string;
+  targetDir: string;
+  cardDir: string;
+  method: string;
+  state: 'placed' | 'failed';
+  error: string | null;
+}
 
 /** A file a delivery could not verify: enough to try it alone again. */
 export interface DeliveryFile {
@@ -1924,6 +1971,101 @@ export class ProductionDb {
         };
       })
       .sort((a, b) => a.card.localeCompare(b.card) || a.clip.localeCompare(b.clip));
+  }
+
+  // ------------------------------------------------ the scene view
+
+  /**
+   * Where each camera clip of the day belongs: its take's folder under the
+   * scene view (or UNMATCHED by card, until the log names it), and, for a
+   * circle take, the same under the selects. Names come from the template.
+   */
+  organizeViews(day: number): OrganizeView[] {
+    const production = this.production();
+    const entries = new Map(this.logEntries(day).map((entry) => [entry.id, entry]));
+    const takes = new Map<string, StoredEntry>();
+    for (const row of this.rows<Record<string, SqlValue>>(
+      `select m.entry_id, m.clip_card, m.clip_key from script_match m join script_entry e on e.id = m.entry_id
+       where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild' order by e.position, m.ref_index`,
+      [day],
+    )) {
+      const entry = entries.get(Number(row['entry_id']));
+      const id = `${String(row['clip_card'])}|${String(row['clip_key'])}`;
+      if (entry && !takes.has(id)) takes.set(id, entry);
+    }
+    const clips = new Map<string, { card: string; clip: string }>();
+    for (const row of this.rows<Record<string, SqlValue>>("select card, file_name from clip where day = ? and kind = 'camera' order by card, path", [day])) {
+      const name = String(row['file_name']);
+      if (!VIDEO_FILE.test(name)) continue;
+      const card = String(row['card']);
+      const clip = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
+      if (!clips.has(`${card}|${clip}`)) clips.set(`${card}|${clip}`, { card, clip });
+    }
+    const used = new Set<string>();
+    const unique = (dir: string, clip: string) => {
+      const relDir = used.has(dir.toUpperCase()) ? `${dir}_${segment(clip)}` : dir;
+      used.add(relDir.toUpperCase());
+      return relDir;
+    };
+    const views: OrganizeView[] = [];
+    for (const { card, clip } of clips.values()) {
+      const locations = this.clipLocations(day, card, clip);
+      if (locations.length === 0) continue;
+      const entry = takes.get(`${card}|${clip}`);
+      const base = {
+        clip,
+        card,
+        scene: entry?.scene ?? '',
+        setup: entry?.setup ?? '',
+        take: entry?.take ?? '',
+        files: locations[0]!.files.map((file) => ({ path: file.path, size: file.size, hash: file.hash })),
+        locations: locations.map(({ legId, name, root, cardDir }) => ({ legId, name, root, cardDir })),
+      };
+      if (!entry) {
+        views.push({ ...base, kind: 'scene', relDir: unique(`${SCENE_VIEW}/UNMATCHED/${segment(card)}/${segment(clip)}`, clip) });
+        continue;
+      }
+      const name = segment(
+        applyNaming(production.namingTokens, { prod: production.code || production.name, day, scene: entry.scene, setup: entry.setup, take: entry.take, clip }),
+        clip,
+      );
+      const path = `SCENE_${segment(entry.scene).padStart(3, '0')}/SETUP_${entry.setup ? segment(entry.setup) : 'NONE'}/${name}`;
+      views.push({ ...base, kind: 'scene', relDir: unique(`${SCENE_VIEW}/${path}`, clip) });
+      if (entry.circle || entry.print) views.push({ ...base, kind: 'select', relDir: unique(`${SELECTS_VIEW}/${path}`, clip) });
+    }
+    return views;
+  }
+
+  organizeLinks(day: number): OrganizeLink[] {
+    return this.rows<Record<string, SqlValue>>('select * from organize_link where day = ? order by kind, card, clip_key', [day]).map((row) => ({
+      kind: row['kind'] as OrganizeLink['kind'],
+      card: String(row['card']),
+      clip: String(row['clip_key']),
+      legId: String(row['leg_id']),
+      destination: String(row['destination']),
+      relDir: String(row['rel_dir']),
+      targetDir: String(row['target_dir']),
+      cardDir: String(row['card_dir']),
+      method: String(row['method']),
+      state: row['state'] as OrganizeLink['state'],
+      error: (row['error'] as string | null) ?? null,
+    }));
+  }
+
+  saveOrganize(day: number, link: OrganizeLink) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into organize_link (day, kind, card, clip_key, leg_id, destination, rel_dir, target_dir, card_dir, method, state, error, made_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [day, link.kind, link.card, link.clip, link.legId, link.destination, link.relDir, link.targetDir, link.cardDir, link.method, link.state, link.error, now()],
+      ),
+    );
+  }
+
+  removeOrganize(day: number, link: Pick<OrganizeLink, 'kind' | 'card' | 'clip' | 'legId'>) {
+    this.transaction(() =>
+      this.run('delete from organize_link where day = ? and kind = ? and card = ? and clip_key = ? and leg_id = ?', [day, link.kind, link.card, link.clip, link.legId]),
+    );
   }
 
   /** Clips found by name across the whole production, newest day first: the start of the media index. */

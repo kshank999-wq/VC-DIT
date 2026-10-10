@@ -41,6 +41,7 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   renders: [],
   dailiesActivity: null,
   ffmpeg: null,
+  organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
   delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
@@ -138,6 +139,7 @@ beforeEach(() => {
     removeDeliveryFolder: vi.fn(async () => ok(current)),
     saveManifest: vi.fn(async () => ok(current)),
     showManifest: vi.fn(async () => undefined),
+    showSceneFolder: vi.fn(async () => undefined),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -469,5 +471,35 @@ describe('a production from the database', () => {
 
     fireEvent.change(screen.getByLabelText('Delivery preset'), { target: { value: 'Archive' } });
     expect(api.saveDelivery).toHaveBeenLastCalledWith({ packages: ['ocf', 'reports'], destinations: ['/Volumes/SHTL_03'] });
+  });
+
+  it('edits the naming template and shows the scene folders on the drives', () => {
+    current = fresh({
+      ...logged,
+      organize: {
+        placed: 12,
+        references: 2,
+        failed: 1,
+        pending: 0,
+        folders: [{ destination: 'RAID', path: '/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/_BY_SCENE' }],
+        problems: [{ clip: 'A001C002', destination: 'SHTL', error: 'A different file is already in the scene folder: CLIPS/A001C002.mov. It was not replaced.' }],
+        activity: null,
+      },
+    });
+    render(
+      <StoreProvider>
+        <ProjectSetup />
+        <SceneOrganizer />
+      </StoreProvider>,
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Naming template' }), { target: { value: '{PROD}_SC{SCENE}{SETUP}_T{TAKE}' } });
+    expect(api.update).toHaveBeenLastCalledWith({ namingTokens: ['{PROD}', '_', 'SC', '{SCENE}', '{SETUP}', '_', 'T', '{TAKE}'] });
+    expect(screen.getByText(/_BY_SCENE \/ SCENE_014 \/ SETUP_B \/ NJR_SC14B_T04/)).toBeTruthy();
+
+    expect(screen.getByText('12 clips placed')).toBeTruthy();
+    expect(screen.getByText(/2 as reference files/)).toBeTruthy();
+    expect(screen.getByText(/A001C002 on SHTL: A different file/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Open on RAID/ }));
+    expect(api.showSceneFolder).toHaveBeenCalledWith('/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/_BY_SCENE');
   });
 });

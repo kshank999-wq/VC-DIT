@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('vcdit', {
     removeDeliveryFolder: (id: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-remove-folder', id),
     saveManifest: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-save-manifest'),
     showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
+    showSceneFolder: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-organize-show', path),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

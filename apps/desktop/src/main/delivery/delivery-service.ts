@@ -1,5 +1,5 @@
 import { mkdir, stat, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   DELIVERY_PACKAGES,
   deliveryHeadroom,
@@ -15,6 +15,7 @@ import type { ReportContext, WrittenReports } from '../media/reports';
 import { segment } from '../media/rules';
 import type { LegPlan, SourceFile, TransferProgress, TransferResult } from '../media/transfer';
 import type { WorkerPlan } from '../media/transfer-worker';
+import { buildView } from '../organize/view';
 import { editorialAle, editorialCsv } from './editorial';
 import { dayDir, listPart, scanInventory, type Inventory, type Place } from './inventory';
 
@@ -70,6 +71,26 @@ const csvCell = (value: string | number | null) => {
 const bytesOf = (files: { size: number }[]) => files.reduce((sum, file) => sum + file.size, 0);
 const MAX_PROBLEMS = 20;
 const MAX_FAILED_KEPT = 20000;
+
+/**
+ * Lay the day's scene view and selects out on a destination that received
+ * the cards: links (or references) to the copies it now holds. A clip whose
+ * files are not all there is left out. Returns how many were placed.
+ */
+export const placeViews = async (db: ProductionDb, day: number, targetDay: string): Promise<number> => {
+  let placed = 0;
+  for (const view of db.organizeViews(day)) {
+    const cardDir = join(targetDay, 'CAMERA_ORIGINALS', basename(view.locations[0]!.cardDir));
+    try {
+      for (const file of view.files) if ((await stat(join(cardDir, ...file.path.split('/')))).size !== file.size) throw new Error('not all there');
+      await buildView(cardDir, join(targetDay, ...view.relDir.split('/')), view);
+      placed += 1;
+    } catch {
+      // Not delivered there, or something else is in the way: the cards themselves are what count.
+    }
+  }
+  return placed;
+};
 
 /** The manifest as a CSV: one row per package per destination. */
 export const manifestCsv = (records: StoredDelivery[]): string => {
@@ -333,6 +354,16 @@ export class DeliveryService {
       }
       for (const tally of tallies.values()) db.saveDelivery(day, tally);
       this.deps.changed();
+    }
+    // The scene view goes with the originals: made again on each destination, as links to what it now holds.
+    if (!signal.aborted && groups.some((group) => group.files.some((file) => file.path.startsWith('CAMERA_ORIGINALS/')))) {
+      const sources = new Set(groups.filter((group) => group.files.some((file) => file.path.startsWith('CAMERA_ORIGINALS/'))).map((group) => group.sourceId));
+      for (const place of targets) {
+        if (sources.has(place.id)) continue;
+        this.activity = { label: `Scene folders on ${place.name}`, totalBytes, doneBytes, bytesPerSecond: 0 };
+        this.deps.changed();
+        await placeViews(db, day, dayDir(place.root, ref));
+      }
     }
     await this.writeSummaries(db, day, ref, targets);
   }

@@ -227,6 +227,35 @@ connection.
   destinations, files, sizes, checksums, method, times, retries) to the
   production's `REPORTS/ingest_verification/` and to the local database.
 
+## Scene folders (`src/main/organize`)
+
+The cards stay in `CAMERA_ORIGINALS/<CARD>` exactly as ingested. Each
+verified clip also appears, on every destination holding it, in:
+
+- `CAMERA_ORIGINALS/_BY_SCENE/SCENE_###/SETUP_X/<take name>/`, with the clip's
+  files (and sidecars) at their card-relative paths; clips the log does not
+  name yet wait in `_BY_SCENE/UNMATCHED/<CARD>/<CLIP>/`;
+- `SELECTS_CIRCLE_TAKES/SCENE_###/SETUP_X/<take name>/` for circle and print takes.
+
+The take name comes from the production's naming template (Project setup;
+fields `{PROD} {DAY} {SCENE} {SETUP} {TAKE} {CAM} {REEL} {CLIP}`), with
+`_<clip>` added when two clips would share a name. Original file names are
+never changed.
+
+These are hard links to the card copy, so they take no space; on a drive
+that cannot hold links (exFAT, FAT32, some network shares) a reference file
+names where the clip is. The `organize_link` table records each placement,
+and the view follows the day: after each card, log import, match decision or
+template change, a clip whose take changed is moved and a take no longer
+circled leaves the selects. Taking a folder down removes only what VC DIT
+made there (links to the same data as the card copy, and its own reference
+files) and folders left empty; anything else is left in place, and an
+existing different file is never replaced.
+
+Deliveries copy the cards once (the camera part leaves `_BY_SCENE` out) and
+then lay the scene folders and selects out again on each destination as
+links to the copies it received.
+
 ## Delivery (`src/main/delivery`)
 
 A delivery copies chosen **packages** of the open day to chosen
@@ -236,7 +265,7 @@ on the Delivery screen). Each package is a set of parts of the day folder:
 | Package | Parts |
 | --- | --- |
 | Camera originals archive | `CAMERA_ORIGINALS`, `SOUND_ORIGINALS`, `REPORTS/ingest_verification` |
-| Editorial handoff | originals, `LUTS_LOOKS`, `EDITORIAL` (an ALE and a sync CSV written for this delivery) |
+| Editorial handoff | originals (with the scene folders), `LUTS_LOOKS`, `EDITORIAL` (an ALE and a sync CSV written for this delivery) |
 | Synced dailies | `SYNCED_DAILIES`, `LUTS_LOOKS`, `REPORTS/dailies` |
 | VFX package | `VFX` (mirrors and the VC VFX Prep handoff) |
 | Reports & logs | `REPORTS` |
@@ -314,6 +343,8 @@ because the media is there and must not pass through vc-dit.com.
 4. Done: the LUT library, assignment rules, look preview and dailies
    rendering with FFmpeg.
    Done: the delivery manager to drives and folders: packages, preflight,
-   verified copies, manifests and retries. Next: the Reports screen on real
+   verified copies, manifests and retries.
+   Done: scene/setup folders and circle-take selects as links, named by an
+   editable naming template, following the log. Next: the Reports screen on real
    data; raw camera formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.

@@ -1,6 +1,7 @@
 import { useRef, type CSSProperties, type KeyboardEvent } from 'react';
 import { legState } from '../model/status';
 import type { SceneStatus, Status, Take } from '../model/types';
+import { projectApi } from '../state/engine';
 import { useStore, type AppState, type PoolFilter } from '../state/store';
 import { Frame, statusVar, stepVar, tone } from '../ui/kit';
 import './organize.css';
@@ -142,6 +143,7 @@ export function SceneOrganizer() {
               </div>
             ))}
         </div>
+        {state.organize ? <SceneFolders /> : null}
       </nav>
 
       <div className="org-main">
@@ -271,6 +273,44 @@ export function SceneOrganizer() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The scene folders on the drives: every verified clip linked under
+ * CAMERA_ORIGINALS/_BY_SCENE by its take (and circle takes under
+ * SELECTS_CIRCLE_TAKES), following the log as it changes.
+ */
+function SceneFolders() {
+  const { state } = useStore();
+  const organize = state.organize!;
+  const api = projectApi();
+  const status: Status = organize.failed > 0 ? 'problem' : organize.activity || organize.pending > 0 ? 'working' : organize.placed > 0 ? 'done' : 'idle';
+  return (
+    <div className="org-bin-group" aria-label="Scene folders">
+      <div className="label org-bin-title">Scene folders</div>
+      <p className="org-folders small" style={tone(statusVar(status))}>
+        <span className="dot" aria-hidden="true" />{' '}
+        {organize.activity ??
+          (organize.placed === 0 && organize.pending === 0
+            ? 'Clips appear here by scene once their cards are verified.'
+            : `${organize.placed} clip${organize.placed === 1 ? '' : 's'} placed${organize.pending ? ` · ${organize.pending} to place` : ''}`)}
+      </p>
+      {organize.references > 0 ? (
+        <p className="org-folders small muted">{organize.references} as reference files: that drive cannot hold links.</p>
+      ) : null}
+      {organize.problems.map((problem) => (
+        <p key={`${problem.clip}|${problem.destination}`} className="org-folders small" style={{ color: statusVar('problem') }}>
+          {problem.clip} on {problem.destination}: {problem.error}
+        </p>
+      ))}
+      {organize.folders.map((folder) => (
+        <button key={folder.path} type="button" className="org-bin" title={folder.path} onClick={() => void api?.showSceneFolder(folder.path)}>
+          <span className="grow">Open on {folder.destination}</span>
+          <span className="mono muted">↗</span>
+        </button>
+      ))}
     </div>
   );
 }

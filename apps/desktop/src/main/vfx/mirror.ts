@@ -107,16 +107,20 @@ const writeReference = async (plan: MirrorPlan, target: string, note: string | n
   );
 };
 
-/** Hard-link every file, or say the drive cannot. A file already there must be the same data (same inode). */
-const linkAll = async (plan: MirrorPlan, target: string): Promise<'linked' | 'unsupported'> => {
-  for (const file of plan.location.files) {
-    const source = join(plan.location.cardDir, ...parts(file.path));
+/**
+ * Hard-link each of a clip's files from its card folder into `target`, at
+ * the same card-relative path, or say the drive cannot. A file already there
+ * must be the same data (same inode); anything else is never replaced.
+ */
+export const linkFiles = async (cardDir: string, files: { path: string }[], target: string, where: string): Promise<'linked' | 'unsupported'> => {
+  for (const file of files) {
+    const source = join(cardDir, ...parts(file.path));
     const mirror = join(target, ...parts(file.path));
     const original = await stat(source);
     try {
       const existing = await stat(mirror);
       if (existing.dev === original.dev && existing.ino === original.ino) continue;
-      throw new Error(`A different file is already in the VFX folder: ${file.path}. It was not replaced.`);
+      throw new Error(`A different file is already in the ${where}: ${file.path}. It was not replaced.`);
     } catch (cause) {
       if (codeOf(cause) !== 'ENOENT') throw cause;
     }
@@ -130,6 +134,8 @@ const linkAll = async (plan: MirrorPlan, target: string): Promise<'linked' | 'un
   }
   return 'linked';
 };
+
+const linkAll = (plan: MirrorPlan, target: string) => linkFiles(plan.location.cardDir, plan.location.files, target, 'VFX folder');
 
 export const mirrorShot = async (plan: MirrorPlan, runCopy: RunCopy, tool: { name: string; version: string }): Promise<MirrorOutcome> => {
   const { location } = plan;
