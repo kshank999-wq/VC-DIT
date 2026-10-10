@@ -416,3 +416,56 @@ export const packageBytes = (state: Pick<DeliveryState, 'parts'>, id: DeliveryPa
     { files: 0, bytes: 0 },
   );
 };
+
+// ------------------------------------------------ naming and the scene view (spec §4.4)
+
+/** The parts a naming template can use. */
+export const NAMING_FIELDS = ['{PROD}', '{DAY}', '{SCENE}', '{SETUP}', '{TAKE}', '{CAM}', '{REEL}', '{CLIP}'] as const;
+
+/** "{PROD}_D{DAY}_SC{SCENE}" as the tokens the production keeps. */
+export const parseNaming = (text: string): string[] =>
+  text
+    .slice(0, 200)
+    .split(/(\{[A-Z]+\}|_)/)
+    .filter(Boolean);
+
+/** A take's name by the template: "NJR_D014_SC14B_T04_A015". Originals keep their own names; this names the take's folder. */
+export const applyNaming = (
+  tokens: string[],
+  values: { prod: string; day: number; scene: string; setup: string; take: string; clip: string },
+): string => {
+  const camera = /^([A-Z])(\d{3})/i.exec(values.clip);
+  const fill: Record<string, string> = {
+    '{PROD}': values.prod,
+    '{DAY}': String(values.day).padStart(3, '0'),
+    '{SCENE}': values.scene,
+    '{SETUP}': values.setup,
+    '{TAKE}': values.take.padStart(2, '0'),
+    '{CAM}': camera?.[1]?.toUpperCase() ?? '',
+    '{REEL}': camera?.[2] ?? '',
+    '{CLIP}': values.clip,
+  };
+  return tokens
+    .map((token) => fill[token] ?? token)
+    .join('')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+};
+
+/** Where the day's clips appear by scene, and the circle takes: linked folders, never extra copies. */
+export const SCENE_VIEW = 'CAMERA_ORIGINALS/_BY_SCENE';
+export const SELECTS_VIEW = 'SELECTS_CIRCLE_TAKES';
+
+export interface OrganizeState {
+  /** Clips placed in the scene view, on every destination holding them. */
+  placed: number;
+  /** Of those, how many are reference files because the drive cannot hold links. */
+  references: number;
+  failed: number;
+  /** Clips (per destination) not yet placed. */
+  pending: number;
+  /** The scene view's folder on each destination. */
+  folders: { destination: string; path: string }[];
+  problems: { clip: string; destination: string; error: string }[];
+  activity: string | null;
+}
