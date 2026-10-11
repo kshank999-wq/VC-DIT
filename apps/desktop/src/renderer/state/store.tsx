@@ -180,6 +180,7 @@ export type Action =
   | { type: 'toggleDestination'; destination: string }
   | { type: 'setDestinationRelay'; destination: string; relay: boolean }
   | { type: 'cardCleared'; job: string; at: string }
+  | { type: 'volumeEjected'; volume: string }
   | { type: 'setChecksum'; checksum: ChecksumMethod }
   | { type: 'startIngest' }
   // Verify
@@ -373,6 +374,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
     case 'cardCleared':
       // The preview's stand-in for the engine: the card shows as cleared.
       return { ...state, jobs: state.jobs.map((job) => (job.id === action.job ? { ...job, clearedAt: action.at } : job)) };
+    case 'volumeEjected':
+      return { ...state, volumes: state.volumes.filter((volume) => volume.id !== action.volume) };
     case 'retryLeg':
       return {
         ...state,

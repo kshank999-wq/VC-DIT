@@ -103,6 +103,7 @@ export function ClearCardDialog({ job, onClose }: { job: TransferJob; onClose: (
   };
 
   const ok = step !== 'checking' && check?.ok === true && problems.length === 0;
+  const mounted = volumeOfJob(state, job);
   return (
     <div className="dialog-backdrop" onClick={step === 'clearing' ? undefined : onClose}>
       <div className="dialog clear-dialog" role="dialog" aria-modal="true" aria-labelledby="clear-title" onClick={(event) => event.stopPropagation()}>
@@ -136,9 +137,10 @@ export function ClearCardDialog({ job, onClose }: { job: TransferJob; onClose: (
             </p>
             <p className="muted small">A note of it was written beside the transfer log on each copy.</p>
             <div className="row clear-actions">
-              <button type="button" className="btn primary" autoFocus onClick={onClose}>
+              <button type="button" className="btn" onClick={onClose}>
                 Done
               </button>
+              {mounted ? <EjectButton volume={mounted} primary onEjected={onClose} /> : <span className="muted small">Ejected. It can come out.</span>}
             </div>
           </>
         ) : (
@@ -257,6 +259,41 @@ export function SafeToClearNotices() {
             setClearing(null);
           }}
         />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Eject a card, as Finder or Explorer would, so it can be pulled out and
+ * handed back. Says so if another app is holding it.
+ */
+export function EjectButton({ volume, primary = false, onEjected }: { volume: Volume; primary?: boolean; onEjected?: () => void }) {
+  const { state, dispatch } = useStore();
+  const media = state.engine ? engine() : null;
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const eject = async () => {
+    setBusy(true);
+    setProblem(null);
+    const result = media ? await media.eject(volume.id) : { ok: true };
+    setBusy(false);
+    if (!result.ok) {
+      setProblem(result.reason ?? `${volume.name} was not ejected.`);
+      return;
+    }
+    if (!media) dispatch({ type: 'volumeEjected', volume: volume.id });
+    onEjected?.();
+  };
+  return (
+    <>
+      <button type="button" className={`btn small${primary ? ' primary' : ''}`} disabled={busy} onClick={() => void eject()} title="Eject it, so it can be pulled out safely">
+        {busy ? 'Ejecting…' : `⏏ Eject ${volume.name}`}
+      </button>
+      {problem ? (
+        <span className="eject-problem small" role="alert">
+          {problem}
+        </span>
       ) : null}
     </>
   );

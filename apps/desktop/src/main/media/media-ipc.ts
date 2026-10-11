@@ -100,6 +100,8 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
   ipcMain.handle('vcdit:media-check-clear', (_e, jobId: unknown, value: unknown) => service.checkClear(String(jobId), rule(value)));
   ipcMain.handle('vcdit:media-clear', (_e, jobId: unknown, value: unknown) => service.clearCard(String(jobId), rule(value)));
 
+  ipcMain.handle('vcdit:media-eject', (_e, volumeId: unknown) => service.eject(String(volumeId)));
+
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {
     // Only folders the engine wrote to.

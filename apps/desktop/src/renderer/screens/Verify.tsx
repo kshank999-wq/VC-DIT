@@ -4,7 +4,7 @@ import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { UploadControls } from '../ui/UploadControls';
-import { ClearCardDialog, clearedWord, volumeOfJob } from '../ui/ClearCard';
+import { ClearCardDialog, clearedWord, EjectButton, volumeOfJob } from '../ui/ClearCard';
 import { useState } from 'react';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
 import './ingest.css';
@@ -122,7 +122,10 @@ export function Verify() {
               </span>
               <span className="grow" />
               {job.clearedAt ? (
-                <span className="muted small">{clearedWord(job)}</span>
+                <>
+                  <span className="muted small">{clearedWord(job)}</span>
+                  {volumeOfJob(state, job) ? <EjectButton volume={volumeOfJob(state, job)!} /> : null}
+                </>
               ) : head.status === 'done' && volumeOfJob(state, job) ? (
                 <button type="button" className="btn small" onClick={() => setClearing(job)}>
                   Clear card…

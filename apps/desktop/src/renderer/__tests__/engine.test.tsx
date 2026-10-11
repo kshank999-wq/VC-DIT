@@ -135,6 +135,7 @@ beforeEach(() => {
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
     checkClear: vi.fn(async () => CHECK),
+    eject: vi.fn(async () => ({ ok: true })),
     clearCard: vi.fn(async () => ({ ok: true, removed: 1284, check: CHECK })),
     browseRoots: vi.fn(async () => [{ id: raid.id, name: 'RAID', path: '/Volumes/RAID/HALCYON', present: true }]),
     browse: vi.fn(async (_id: string, _production: string, rel: string) => ({ ok: true, more: 0, entries: LISTINGS[rel] ?? [] })),
@@ -422,10 +423,18 @@ describe('clearing a card for camera', () => {
     expect(sure.textContent).toContain('They stay on RAID and SHTL');
     fireEvent.click(within(sure).getByRole('button', { name: 'Yes, clear A015' }));
     expect(media.clearCard).toHaveBeenCalledWith('A015', 'two-local');
-    expect(await screen.findByRole('dialog', { name: 'A015 is clear' })).toBeTruthy();
+    const clear = await screen.findByRole('dialog', { name: 'A015 is clear' });
+    // Eject it from there, to hand it back.
+    fireEvent.click(within(clear).getByRole('button', { name: '⏏ Eject A015' }));
+    await waitFor(() => expect(media.eject).toHaveBeenCalledWith(card.id));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'A015 is clear' })).toBeNull());
 
     push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...safeJob(), clearedAt: '2026-10-06T19:01:00Z' }] });
     expect(tile().dataset['stage']).toBe('cleared');
+    // Still plugged in after clearing: the tile offers to eject it, and says why it could not.
+    media.eject.mockResolvedValueOnce({ ok: false, reason: 'A015 was not ejected. Another app is using it. Close anything showing its files, then eject again.' });
+    fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject A015' }));
+    expect((await within(tile()).findByRole('alert')).textContent).toMatch(/Another app is using it/);
   });
 
   it('says why when the check fails, and offers no way to clear', async () => {

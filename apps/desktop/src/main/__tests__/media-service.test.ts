@@ -441,4 +441,28 @@ describe('clearing a card for camera', () => {
     await service.poll();
     expect(await service.checkClear('A015', 'two-local')).toEqual({ ok: false, problems: ['A015 is not plugged in.'] });
   });
+
+  it('ejects a card once it is not in use, and only says so when it has really gone', async () => {
+    await ingestBoth();
+    const ejected: string[] = [];
+    const eject = async (path: string) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    (service as unknown as { deps: { eject: typeof eject } }).deps.eject = eject;
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'A015')]);
+    expect(service.state().volumes.map((volume) => volume.name)).not.toContain('A015');
+
+    // A drive the system will not let go of stays, and the reason is given.
+    (service as unknown as { deps: { eject: () => Promise<string> } }).deps.eject = async () => 'Another app is using it. Close anything showing its files, then eject again.';
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: false, reason: 'RAID was not ejected. Another app is using it. Close anything showing its files, then eject again.' });
+  });
+
+  it('will not eject a card while it is being copied', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: false, reason: 'A015 is being copied. Eject it when the transfer has finished.' });
+    await settle();
+  });
 });

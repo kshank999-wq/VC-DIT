@@ -5,7 +5,7 @@ import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
-import { cardStage, ClearCardDialog, clearedWord, jobOfVolume, type CardStage } from '../ui/ClearCard';
+import { cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
@@ -175,6 +175,10 @@ export function Intake() {
                     <button type="button" className="btn small offload-clear" onClick={() => setClearing(job!)}>
                       Clear card…
                     </button>
+                  ) : stage === 'cleared' ? (
+                    <div className="offload-eject">
+                      <EjectButton volume={volume} primary />
+                    </div>
                   ) : null}
                 </div>
               );

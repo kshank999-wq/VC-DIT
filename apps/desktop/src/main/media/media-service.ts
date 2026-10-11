@@ -24,7 +24,7 @@ import type { FormatRule } from '../../shared/project';
 import { checkClear, clearCardFiles } from './clear';
 import { isTransient, listSource, STOPPED, type FileOutcome, type LegPlan, type LegProgress, type SourceFile } from './transfer';
 import type { WorkerCommand, WorkerMessage, WorkerPlan } from './transfer-worker';
-import { capacityOf, classifyVolume, describeMount, listMounts, type Capacity, type Mount } from './volumes';
+import { capacityOf, classifyVolume, describeMount, ejectVolume, listMounts, type Capacity, type Mount } from './volumes';
 
 /**
  * The media engine's state in the main process: the volumes plugged in and
@@ -61,6 +61,8 @@ export interface MediaServiceDeps {
   /** Tests: where volumes are found, and how a transfer is run, instead of the system's mounts and a worker thread. */
   mounts?: () => Promise<Mount[]>;
   startWorker?: (plan: WorkerPlan) => TransferRunner;
+  /** Tests: how a volume is ejected (the reason it failed, or null), instead of the system's command. */
+  eject?: (mountPath: string) => Promise<string | null>;
 }
 
 /** The part of a worker thread the service uses. */
@@ -975,6 +977,30 @@ export class MediaService {
     void this.poll();
     this.emit(true);
     return { ok: true, removed: result.removed, check };
+  }
+
+  /**
+   * Eject a card or drive, as Finder or Explorer would. Not while anything
+   * reads from or writes to it. Done only when it has really gone.
+   */
+  async eject(volumeId: string): Promise<{ ok: boolean; reason?: string }> {
+    const entry = this.volumes.get(volumeId);
+    if (!entry) return { ok: true };
+    const { volume } = entry;
+    if (this.inUse(volumeId) || this.inUse(volume.mountPath)) return { ok: false, reason: `${volume.name} is being copied. Eject it when the transfer has finished.` };
+    const failed = await (this.deps.eject ? this.deps.eject(volume.mountPath) : ejectVolume(volume.mountPath, this.platform));
+    // Gone from the system's list, or still there: the list says which.
+    for (let i = 0; i < 20; i += 1) {
+      const mounts = await (this.deps.mounts ? this.deps.mounts() : listMounts(this.platform));
+      if (!mounts.some((mount) => mount.path === volume.mountPath)) {
+        this.volumes.delete(volumeId);
+        this.emit(true);
+        return { ok: true };
+      }
+      if (failed) break;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return { ok: false, reason: `${volume.name} was not ejected. ${failed ?? 'Another app may be using it.'}` };
   }
 
   // ------------------------------------------------ what the screens see

@@ -62,6 +62,8 @@ interface MediaApi {
   setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
+  /** Eject a card or drive, as Finder or Explorer would; ok once it has really gone. */
+  eject: (volumeId: string) => Promise<{ ok: boolean; reason?: string }>;
   /** Is everything on this card safely elsewhere, checked now (nothing changes)? */
   checkClear: (jobId: string, rule: import('../shared/project').FormatRule) => Promise<import('../shared/media').ClearCheck | { ok: false; problems: string[] }>;
   /** Erase the card's ingested files, after checking again. */

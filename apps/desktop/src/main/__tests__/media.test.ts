@@ -7,7 +7,7 @@ import { createHasher, prepareChecksums } from '../media/checksum';
 import { c4id, mhlHashList, writeReports } from '../media/reports';
 import { cardFolder, destinationProblem, isRemote, sameOrInside, segment } from '../media/rules';
 import { listSource, PART_SUFFIX, runTransfer, type LegPlan } from '../media/transfer';
-import { classifyVolume, fromDiskutil, fromWindows } from '../media/volumes';
+import { classifyVolume, ejectCommand, fromDiskutil, fromWindows } from '../media/volumes';
 import { inside, listFolder, searchFolder } from '../media/browse';
 import { link, symlink } from 'node:fs/promises';
 
@@ -395,5 +395,15 @@ describe('browsing a drive', () => {
     if (!found.ok) throw new Error(found.reason);
     expect(found.entries.map((item) => item.rel)).toEqual(['D1/a015-notes.txt', 'D1/CAMERA_ORIGINALS/A015', 'D1/CAMERA_ORIGINALS/A015/A015C002.mxf']);
     expect(found.complete).toBe(true);
+  });
+});
+
+describe('ejecting', () => {
+  it('asks each system the way its own file browser does', () => {
+    expect(ejectCommand('/Volumes/A015', 'darwin')).toEqual(['diskutil', ['eject', '/Volumes/A015']]);
+    const [file, args] = ejectCommand('E:\\', 'win32');
+    expect(file).toBe('powershell.exe');
+    expect(args.at(-1)).toBe("(New-Object -ComObject Shell.Application).Namespace(17).ParseName('E:').InvokeVerb('Eject')");
+    expect(ejectCommand('/media/dit/A015', 'linux')).toEqual(['umount', ['/media/dit/A015']]);
   });
 });

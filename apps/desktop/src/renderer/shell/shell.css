@@ -130,3 +130,5 @@ body.resizing { cursor: col-resize; user-select: none; }
 .clear-actions { justify-content: flex-end; gap: 8px; }
 .clear-notices { position: fixed; right: 18px; bottom: 18px; z-index: 15; display: grid; gap: 8px; width: min(520px, calc(100vw - 36px)); }
 .clear-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--s-done); background: var(--card); box-shadow: var(--shadow, 0 6px 24px rgb(0 0 0 / .3)); }
+.eject-problem { color: var(--s-problem); max-width: 320px; }
+.offload-eject { display: grid; justify-items: center; gap: 4px; text-align: center; }

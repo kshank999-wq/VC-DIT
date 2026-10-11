@@ -270,3 +270,34 @@ export const classifyVolume = async (root: string, limit = 4000): Promise<Classi
   if (files === 0) return { detected: 'Empty volume', role: 'Other' };
   return { detected: video ? `${video} video files` : 'Other files', role: 'Other' };
 };
+
+// ---------------------------------------------------------------- ejecting
+
+/**
+ * Ask the system to eject a volume, as Finder or Explorer would: macOS
+ * unmounts and powers down the card (diskutil eject), Windows uses the
+ * shell's Eject, Linux unmounts. Whether it worked is judged by the volume
+ * actually going away (see MediaService.eject), not by the command.
+ */
+export const ejectCommand = (mountPath: string, platform: NodeJS.Platform = process.platform): [string, string[]] => {
+  if (platform === 'darwin') return ['diskutil', ['eject', mountPath]];
+  if (platform === 'win32') {
+    const letter = mountPath.slice(0, 2).replace(/'/g, '');
+    return [
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', `(New-Object -ComObject Shell.Application).Namespace(17).ParseName('${letter}').InvokeVerb('Eject')`],
+    ];
+  }
+  return ['umount', [mountPath]];
+};
+
+export const ejectVolume = async (mountPath: string, platform: NodeJS.Platform = process.platform): Promise<string | null> => {
+  const [file, args] = ejectCommand(mountPath, platform);
+  try {
+    await run(file, args, 30_000);
+    return null;
+  } catch (cause) {
+    const text = cause instanceof Error ? cause.message : String(cause);
+    return /busy|in use|dissent/i.test(text) ? 'Another app is using it. Close anything showing its files, then eject again.' : 'The system would not eject it.';
+  }
+};
