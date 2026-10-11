@@ -69,6 +69,19 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 - Do not mark a card safe to format until all required destinations pass verification.
 - Generate transfer logs/manifests that can be exported with the production package.
 
+#### 4.3.1 Relay uploads: the card comes out, the upload carries on (queued)
+
+Cloud destinations (LucidLink, Suite, Frame.io, a slow network share) can take hours on set internet, and the card is needed back in the camera long before that. So a slow destination is fed from the main backup, not from the card:
+
+- In Destinations, each destination is either **From the card** (default for local drives, RAID, shuttle) or **Relay from the backup** (default for cloud and network destinations; the operator can change either way).
+- Ingest copies the card to the From-the-card destinations and verifies them as now. When they all pass, the card shows **Safe to eject**. Only the From-the-card destinations count towards that, and VC DIT still warns when fewer than two copies are verified.
+- The relay then starts on its own: it reads from the first verified backup (the RAID, unless the operator picks another) and writes to each relay destination, verifying each file against the checksum taken **from the card**, not a new one from the backup. So a fault on the backup can't be passed on as good.
+- Relays run in their own queue, one card after another and behind any card ingest, so they never slow the card copies. They can be limited, paused and resumed, and they survive a dropped connection or a restart of the app, carrying on from the last finished file.
+- If the backup they read from is unplugged, the relay waits and says so; it never switches to another source without saying so.
+- Transfers shows each relay as card → backup → cloud with its own progress, speed and time left. Verify shows the card as safe to eject while the relay is still running, and the relay's own state beside it.
+- Before quitting, or at wrap, VC DIT lists any relays not yet finished and asks before stopping them. The day report and the delivery manifest record each relay: source backup, start, finish, files verified.
+- Uploads through a service's API (Frame.io, later Google Drive) use the same relay queue as soon as those integrations land.
+
 ### 4.4 Naming & Folder Automation
 
 - Configurable naming convention centered on Production → Shoot Day → Scene → Setup → Take/Clip.
