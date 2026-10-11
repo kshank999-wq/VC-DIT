@@ -11,6 +11,7 @@ import { readMediaMeta } from '../media/metadata';
 import { parseScriptLog } from '../scriptlog/parse';
 import { analyse, readFirstMeta } from '../sync/analyse';
 import { SyncService, type RunAnalysis } from '../sync/sync-service';
+import { Thumbnails } from '../thumbs/thumbnails';
 import { tintCube } from './fixtures/luts';
 // @ts-expect-error a plain JS helper shared with the fixture script
 import { burstSignal, RATE, wavBytes } from './fixtures/signal.mjs';
@@ -166,5 +167,30 @@ describe.skipIf(!ffmpeg)('dailies, rendered', () => {
     expect(frames.graded).toMatch(/^data:image\/jpeg;base64,/);
     expect(frames.graded).not.toBe(frames.original);
     expect((await dailies.preview(clip!.id, null)).graded).toBeNull();
+  });
+});
+
+describe.skipIf(!ffmpeg)('clip thumbnails', () => {
+  it('makes a frame once, through the clip\'s look or as shot, and keeps it', async () => {
+    const dir = join(base, 'thumbnails');
+    const thumbnails = new Thumbnails({ db: () => db, ffmpeg: async () => ffmpeg, dir });
+    const asShot = await thumbnails.get('A001C001', { look: false, size: 'small' });
+    expect(asShot).toMatch(/^data:image\/jpeg;base64,\/9j\//);
+    expect(await readdir(dir)).toHaveLength(1);
+    // Asked again (with its card this time): the same file, not a new FFmpeg run.
+    expect(await thumbnails.get('A001|A001C001', { look: false, size: 'small' })).toBe(asShot);
+    expect(await readdir(dir)).toHaveLength(1);
+
+    db.importLut('Warm.cube', tintCube);
+    const warm = await thumbnails.get('A001C001', { look: true, size: 'small' });
+    expect(warm).not.toBe(asShot);
+    const large = await thumbnails.get('A001C001', { look: true, size: 'large' });
+    expect(large.length).toBeGreaterThan(warm.length);
+    expect((await readdir(dir)).filter((name) => name.endsWith('.jpg'))).toHaveLength(3);
+    // Many at once share the work: the same answer, still three files.
+    expect(new Set(await Promise.all(Array.from({ length: 6 }, () => thumbnails.get('A001C001', { look: true, size: 'small' }))))).toEqual(new Set([warm]));
+    expect((await readdir(dir)).filter((name) => name.endsWith('.jpg'))).toHaveLength(3);
+
+    await expect(thumbnails.get('Z999C999', { look: false, size: 'small' })).rejects.toThrow('This clip has no readable picture yet.');
   });
 });

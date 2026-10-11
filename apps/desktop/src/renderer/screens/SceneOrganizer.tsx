@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { legState } from '../model/status';
 import type { SceneStatus, Status, Take } from '../model/types';
 import { projectApi } from '../state/engine';
@@ -50,6 +50,47 @@ const verified = (state: AppState, clip: string): [string, Status] => {
 
 const pad3 = (id: string) => id.padStart(3, '0');
 
+/** Thumbnails already fetched for the open production and day, by clip, look and size; null when the clip has none. */
+const thumbs = new Map<string, string | null>();
+let thumbsFor = '';
+
+/** Start again (another production or day, or a test). */
+export const forgetThumbnails = () => thumbs.clear();
+
+/**
+ * A clip's frame from the media (desktop app): small for the pool, large for
+ * the viewer, through its look or as shot. Undefined while it is being read.
+ */
+const useThumbnail = (clip: string | null, look: boolean, size: 'small' | 'large', version: string): string | null | undefined => {
+  const api = projectApi();
+  const { state } = useStore();
+  const key = clip && clip !== '—' ? `${clip}|${look}|${size}|${version}` : null;
+  const opened = `${state.project?.file ?? ''}|${state.day.number}`;
+  if (opened !== thumbsFor) {
+    forgetThumbnails();
+    thumbsFor = opened;
+  }
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    if (!api || !state.project || !key || thumbs.has(key)) return undefined;
+    let live = true;
+    void api.thumbnail(clip!, { look, size }).then((result) => {
+      thumbs.set(key, result.ok ? result.url : null);
+      if (live) rerender((n) => n + 1);
+    });
+    return () => {
+      live = false;
+    };
+  }, [api, state.project, key, clip, look, size]);
+  if (!api || !state.project || !key) return null;
+  return thumbs.has(key) ? thumbs.get(key)! : undefined;
+};
+
+function PoolFrame({ clip, version }: { clip: string; version: string }) {
+  const url = useThumbnail(clip, true, 'small', version);
+  return url ? <img className="org-thumb-img" src={url} alt="" /> : <Frame style={{ position: 'absolute', inset: 0, borderRadius: 4 }} />;
+}
+
 export function SceneOrganizer() {
   const { state, dispatch } = useStore();
   const pool = useRef<HTMLDivElement>(null);
@@ -61,6 +102,9 @@ export function SceneOrganizer() {
   const shown = takes.filter(bin.test);
   const take = shown.find((candidate) => candidate.id === state.selectedTake) ?? shown[0] ?? null;
   const look = scene?.look.replace(/\.cube$/, '') ?? '';
+  // A different look rule makes different frames.
+  const version = state.lutRules.map((rule) => `${rule.id}:${rule.lutId}`).join(',');
+  const viewerFrame = useThumbnail(take?.clipA ?? null, state.lookOn, 'large', version);
 
   const move = (by: number) => {
     if (!take) return;
@@ -162,10 +206,14 @@ export function SceneOrganizer() {
             </div>
             <div className="org-stage">
               <div className={`org-stage-frame${state.lookOn ? ' is-graded' : ''}`}>
-                <Frame style={{ position: 'absolute', inset: 0, borderRadius: 2 }} />
+                {viewerFrame ? (
+                  <img className="org-stage-img" src={viewerFrame} alt={`${take?.clipA} ${state.lookOn ? 'through its look' : 'as shot (LOG)'}`} />
+                ) : (
+                  <Frame style={{ position: 'absolute', inset: 0, borderRadius: 2 }} />
+                )}
                 {take ? (
                   <>
-                    <span className="org-burn-name mono">clip frame · {take.clipA}</span>
+                    <span className={`org-burn-name mono${viewerFrame ? ' on-picture' : ''}`}>{viewerFrame ? take.clipA : `clip frame · ${take.clipA}`}</span>
                     <span className="org-burn-tc mono">{take.tc}</span>
                   </>
                 ) : null}
@@ -217,7 +265,7 @@ export function SceneOrganizer() {
           <div className="org-bar">
             <strong>Media pool</strong>
             <span className="mono muted ellipsis">
-              01_CAMERA_ORIGINALS / SCENE_{pad3(sceneId)} / SETUP_{setupId}
+              {state.project ? 'CAMERA_ORIGINALS / _BY_SCENE' : '01_CAMERA_ORIGINALS'} / SCENE_{pad3(sceneId)} / SETUP_{setupId}
             </span>
             <span className="grow" />
             <span className="muted nowrap">Every take kept — bins are views</span>
@@ -254,7 +302,7 @@ export function SceneOrganizer() {
                     onClick={() => dispatch({ type: 'selectTake', take: item.id })}
                   >
                     <span className="org-thumb-frame">
-                      <Frame style={{ position: 'absolute', inset: 0, borderRadius: 4 }} />
+                      <PoolFrame clip={item.clipA} version={version} />
                       <span className="org-badge is-take mono">{item.take}</span>
                       {item.circle ? <span className="org-badge is-select">◎ SELECT</span> : null}
                       {item.vfx ? <span className="org-badge is-vfx mono">VFX</span> : null}

@@ -366,6 +366,13 @@ because the media is there and must not pass through vc-dit.com.
    shows sample data in the desktop app any more.
    Done: the Files panel counts the day's real media under the folders' real
    names; drop-frame timecode (29.97/59.94 DF) in the ALE, sync list and
-   dailies burn-ins; notes on each shoot day, carried into the day report. Next: the Reports screen on real
+   dailies burn-ins; notes on each shoot day, carried into the day report.
+   Done: clip thumbnails in the Scene Organizer (src/main/thumbs): one frame
+   from the middle of each clip, through its look or as shot, made once with
+   FFmpeg from a verified copy and kept in the app's data.
+   Fixed: the app hung at start in Electron (bundled sql.js); sql.js is now a
+   runtime dependency, and a failed start says why. Checked end to end in the
+   built app: a delivery through the real transfer worker, with progress,
+   stop and retry. Next: the Reports screen on real
    data; raw camera formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.

@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('vcdit', {
     showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
     showSceneFolder: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-organize-show', path),
     reports: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-reports'),
+    thumbnail: (clip: string, options: { look: boolean; size: 'small' | 'large' }): Promise<unknown> => ipcRenderer.invoke('vcdit:project-thumbnail', clip, options),
     showReport: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-report-show', path),
     dayReport: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-day-report', where),
   },

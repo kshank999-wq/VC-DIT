@@ -6,7 +6,7 @@ import { App } from '../App';
 import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
 import { ProjectSetup } from '../screens/ProjectSetup';
-import { SceneOrganizer } from '../screens/SceneOrganizer';
+import { forgetThumbnails, SceneOrganizer } from '../screens/SceneOrganizer';
 import { SyncWorkspace } from '../screens/SyncWorkspace';
 import { VfxHandoff } from '../screens/VfxHandoff';
 import { Looks } from '../screens/Looks';
@@ -96,6 +96,7 @@ function Where() {
 }
 
 beforeEach(() => {
+  forgetThumbnails();
   current = fresh();
   broadcast = null;
   api = {
@@ -144,6 +145,7 @@ beforeEach(() => {
     showManifest: vi.fn(async () => undefined),
     showSceneFolder: vi.fn(async () => undefined),
     reports: vi.fn(async () => []),
+    thumbnail: vi.fn(async (clip: string, options: { look: boolean; size: string }) => ({ ok: true, url: `data:image/jpeg;base64,${clip}-${options.look ? 'look' : 'log'}-${options.size}` })),
     showReport: vi.fn(async () => undefined),
     dayReport: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/day_report/NJR_D001_REPORT.pdf'] })),
   };
@@ -574,5 +576,23 @@ describe('a production from the database', () => {
     );
     fireEvent.change(screen.getByRole('textbox', { name: 'Day notes' }), { target: { value: 'Rain at 15:00; B camera down 40 min.' } });
     expect(api.updateDay).toHaveBeenLastCalledWith({ notes: 'Rain at 15:00; B camera down 40 min.' });
+  });
+
+  it('shows each take\'s real frame in the pool and the viewer, through its look or as shot', async () => {
+    current = logged;
+    const { container } = render(
+      <StoreProvider>
+        <SceneOrganizer />
+      </StoreProvider>,
+    );
+    await waitFor(() => expect(container.querySelector('.org-thumb-img')).toBeTruthy());
+    expect(api.thumbnail).toHaveBeenCalledWith('A001C001', { look: true, size: 'small' });
+    expect((container.querySelector('.org-thumb-img') as HTMLImageElement).src).toBe('data:image/jpeg;base64,A001C001-look-small');
+    // A take with no clip yet keeps the placeholder.
+    expect(api.thumbnail).not.toHaveBeenCalledWith('—', expect.anything());
+    const viewer = (await screen.findByAltText('A001C001 through its look')) as HTMLImageElement;
+    expect(viewer.src).toBe('data:image/jpeg;base64,A001C001-look-large');
+    fireEvent.click(screen.getByRole('button', { name: /LOOK ON/ }));
+    expect(((await screen.findByAltText('A001C001 as shot (LOG)')) as HTMLImageElement).src).toBe('data:image/jpeg;base64,A001C001-log-large');
   });
 });

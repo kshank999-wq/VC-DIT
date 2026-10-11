@@ -8,6 +8,7 @@ import type { ChecksumMethod } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
+import { Thumbnails } from '../thumbs/thumbnails';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
@@ -446,6 +447,15 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     }),
   );
   ipcMain.handle('vcdit:project-lut-rule-remove', (_e, id: unknown) => answer(() => library.current.removeLutRule(Number(id))));
+  const thumbnails = new Thumbnails({ db: () => library.current, ffmpeg: () => ffmpegReady, dir: join(app.getPath('userData'), 'thumbnails') });
+  ipcMain.handle('vcdit:project-thumbnail', async (_e, clip: unknown, options: unknown) => {
+    const value = (options ?? {}) as Record<string, unknown>;
+    try {
+      return { ok: true, url: await thumbnails.get(String(clip).slice(0, 200), { look: value['look'] === true, size: value['size'] === 'large' ? 'large' : 'small' }) };
+    } catch (cause) {
+      return { ok: false, reason: (cause as Error).message };
+    }
+  });
   ipcMain.handle('vcdit:project-look-preview', async (_e, clipId: unknown, lutId: unknown) => {
     try {
       return { ok: true, ...(await rendering.preview(String(clipId), lutId === null ? null : Number(lutId))) };
