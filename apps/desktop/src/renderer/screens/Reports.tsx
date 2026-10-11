@@ -192,10 +192,13 @@ function ProjectReports() {
     };
   }, [api, state.project?.file, state.day.number, state.jobs, state.matches, state.sync, state.vfx, state.renders, state.luts, state.delivery?.records, state.organize]);
 
-  const exportReport = (what: 'report' | 'film-studio' | 'drives') => {
+  const exportReport = (what: 'report' | 'film-studio' | 'drives' | 'send') => {
     setBusy(true);
     const work =
-      what === 'report'
+      what === 'send'
+        ? // Straight to the production in VC Film Studio. Its own warnings (a day it has no date for) follow the count.
+          api.sendToFilmStudio().then((result) => (result.ok ? { ok: true as const, text: [result.text, ...result.warnings].join(' '), path: undefined } : result))
+        : what === 'report'
         ? api.dayReport('save').then((result) => (result.ok ? { ok: true as const, text: 'Day report saved.', path: result.written[0] } : result))
         : what === 'film-studio'
           ? api.filmStudio('save').then((result) =>
@@ -232,8 +235,17 @@ function ProjectReports() {
             <button type="button" className="btn" disabled={busy} onClick={() => exportReport('report')}>
               Save day report (PDF)…
             </button>
-            <button type="button" className="btn primary" disabled={busy} title="The day's DIT log (cards, copies, notes, takes, sync, dailies, VFX, deliveries) for VC Film Studio's DIT section" onClick={() => exportReport('film-studio')}>
-              {busy ? 'Writing…' : 'Export to VC Film Studio…'}
+            <button type="button" className="btn" disabled={busy} title="The day's DIT log (cards, copies, notes, takes, sync, dailies, VFX, deliveries) as a file for VC Film Studio's data desk" onClick={() => exportReport('film-studio')}>
+              Export to VC Film Studio…
+            </button>
+            <button
+              type="button"
+              className="btn primary"
+              disabled={busy}
+              title="Sends the day's DIT log straight to this production in VC Film Studio, with the upload key from Project setup. Sending a day again adds only what is new."
+              onClick={() => exportReport('send')}
+            >
+              {busy ? 'Working…' : 'Send to VC Film Studio'}
             </button>
           </div>
         }

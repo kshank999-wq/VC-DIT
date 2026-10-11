@@ -297,13 +297,31 @@ holding the day ("Write to drives" writes it with the day report). It holds:
 - the takes, sync, dailies, VFX shots, deliveries and the day's reports.
 
 Film Studio takes it in on its data desk (**From VC DIT → Import day log**;
-`lib/dit-import.ts` in the VC_Film_Studio repository, branch
-`claude/vc-dit-import`): cards become rolls with their copies, the day is
-matched by date, notes keep their timecode. An import only adds: a roll
-entered there keeps what it says, a copy verified there is never changed, a
-failed copy never arrives as verified, and the same day imported twice adds
-nothing twice. Its test reads a real export from this app. A direct upload
-from VC DIT is the next step.
+`lib/dit-import.ts` in the VC_Film_Studio repository): cards become rolls
+with their copies, the day is matched by date, notes keep their timecode. An
+import only adds: a roll entered there keeps what it says, a copy verified
+there is never changed, a failed copy never arrives as verified, and the same
+day imported twice adds nothing twice. Its test reads a real export from this
+app.
+
+**Send to VC Film Studio** (Reports) does the same without the file
+(`src/main/reports/film-studio-send.ts`, `src/main/film-studio-link.ts`): it
+posts the same JSON to `https://www.vcfilmstudio.com/api/dit/upload` with
+`Authorization: Bearer vcdit_…`, an upload key made on the production's data
+desk (**From VC DIT → Send from the cart**) and pasted into **Project setup →
+VC Film Studio**. Film Studio plans it with the same import code and writes it
+in one transaction, all or nothing, so after any failure sending again is the
+right advice and adds nothing twice. A key belongs to one Film Studio
+production; a log for a differently named production is refused.
+
+- The key is kept per production file, on this computer (`film-studio.json`
+  in the app's data folder, sealed with `safeStorage`), never in the `.vcdit`
+  file, which travels on drives. The screens are told only whether there is a
+  key and its last four characters.
+- Every answer is a sentence for the DIT: Film Studio's own refusals are shown
+  as they come; offline, a timeout, or a page that is not Film Studio's answer
+  (a Wi-Fi sign-in) each say the day is safe to send again.
+- `MAIN_VITE_FILM_STUDIO_URL` points a test build at a preview deployment.
 
 ## Reports (`src/main/reports`)
 

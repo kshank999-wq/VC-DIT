@@ -9,6 +9,8 @@ import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/deli
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
 import { filmStudioDay } from '../reports/film-studio';
+import { sendDay } from '../reports/film-studio-send';
+import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
@@ -645,12 +647,22 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     }
   });
 
-  /** The day's DIT log for VC Film Studio (JSON), with the day report PDF beside it. */
+  /**
+   * The day's DIT log for VC Film Studio (JSON): saved with the day report PDF
+   * beside it, written to the drives, or sent straight to the production in
+   * Film Studio with its upload key.
+   */
   ipcMain.handle('vcdit:project-film-studio', async (e, where: unknown) => {
     try {
       const db = library.current;
       const day = db.currentDay().number;
       const log = `${JSON.stringify(filmStudioDay(db, day, await reportsNow(), { name: 'VC DIT', version: app.getVersion() }), null, 2)}\n`;
+      if (where === 'send') {
+        const key = await filmStudioKey(db.file);
+        if (!key) return { ok: false, reason: 'This production has no Film Studio upload key yet. Paste one in Project setup → VC Film Studio.' };
+        // No PDF: Film Studio reads the log. The PDF is for people, and "Write to drives" puts it where they look.
+        return await sendDay({ fetch: (...args) => fetch(...args), endpoint: filmStudioEndpoint, key, log });
+      }
       const pdf = await dayReportPdf();
       if (where === 'drives') {
         const base = `${dayName('VC_FILM_STUDIO')}_${fileStamp()}`;
@@ -674,6 +686,10 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  // The upload key for the open production. The screens never see the key itself.
+  ipcMain.handle('vcdit:film-studio-link', () => filmStudioLink(library.current.file));
+  ipcMain.handle('vcdit:film-studio-link-set', (_e, key: unknown) => setFilmStudioKey(library.current.file, key));
+  ipcMain.handle('vcdit:film-studio-link-clear', () => clearFilmStudioKey(library.current.file));
   ipcMain.handle('vcdit:project-organize-show', (_e, path: unknown) => {
     // Only the scene folders VC DIT made.
     if (organizing.view().folders.some((folder) => folder.path === path)) void shell.openPath(String(path));
