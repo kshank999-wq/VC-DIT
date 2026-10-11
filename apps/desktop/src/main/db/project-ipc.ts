@@ -12,7 +12,7 @@ import { filmStudioDay } from '../reports/film-studio';
 import { sendDay } from '../reports/film-studio-send';
 import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
-import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type DeliverySettings, type FormatRule, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
 import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
@@ -60,6 +60,7 @@ const productionPatch = (input: unknown): Partial<Production> => {
     });
   }
   if (MIRROR_METHODS.includes(value['vfxMethod'] as MirrorMethod)) patch.vfxMethod = value['vfxMethod'] as MirrorMethod;
+  if (FORMAT_RULES.includes(value['formatRule'] as FormatRule)) patch.formatRule = value['formatRule'] as FormatRule;
   if (Array.isArray(value['namingTokens'])) patch.namingTokens = (value['namingTokens'] as unknown[]).slice(0, 40).map((token) => text(token, 40) ?? '');
   return patch;
 };

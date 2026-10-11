@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { readdir, readFile, realpath, stat, statfs } from 'node:fs/promises';
 import { basename } from 'node:path';
-import type { VolumeRole } from '../../shared/media';
+import type { DeviceInfo, VolumeRole } from '../../shared/media';
 
 /**
  * Finding mounted cards and drives (spec §4.2): what is plugged in, its
@@ -22,7 +22,10 @@ export interface Described {
   name: string;
   kind: string;
   filesystem: string;
+  device: DeviceInfo;
 }
+
+export const UNKNOWN_DEVICE: DeviceInfo = { model: null, bus: null, solidState: null, raid: false };
 
 export interface Capacity {
   totalBytes: number;
@@ -80,29 +83,91 @@ export const listMounts = async (platform: NodeJS.Platform = process.platform): 
 const plistValue = (plist: string, key: string): string | null => {
   const found = new RegExp(`<key>${key}</key>\\s*<(string|true|false)\\s*/?>([^<]*)`).exec(plist);
   if (!found) return null;
-  return found[1] === 'string' ? found[2]! : found[1]!;
+  return found[1] === 'string' ? found[2]!.trim() : found[1]!;
+};
+
+/**
+ * What diskutil says about a volume, and (for APFS, whose volumes sit in a
+ * container) about the physical disk under it: the model, the bus, solid
+ * state or not, and whether it is an AppleRAID set.
+ */
+export const fromDiskutil = (volume: string, store: string | null, fallbackName: string): Described => {
+  const pick = (key: string) => (store ? plistValue(store, key) : null) || plistValue(volume, key);
+  const protocol = pick('BusProtocol') ?? '';
+  const internal = (pick('Internal') ?? plistValue(volume, 'Internal')) === 'true';
+  const network = /^(smbfs|nfs|afpfs|webdav|cifs)$/i.test(plistValue(volume, 'FilesystemType') ?? '');
+  const kind = network
+    ? 'Network share'
+    : /secure digital|^sd/i.test(protocol)
+      ? 'SD card'
+      : /usb/i.test(protocol)
+        ? 'USB drive'
+        : /thunderbolt|pci/i.test(protocol) && !internal
+          ? 'Thunderbolt drive'
+          : internal
+            ? 'Internal drive'
+            : 'Drive';
+  const solid = pick('SolidState');
+  const model = (store ? plistValue(store, 'MediaName') : null) || plistValue(volume, 'MediaName') || plistValue(volume, 'IORegistryEntryName');
+  return {
+    name: plistValue(volume, 'VolumeName') || fallbackName,
+    kind,
+    filesystem: plistValue(volume, 'FilesystemUserVisibleName') || plistValue(volume, 'FilesystemName') || '',
+    device: {
+      model: model && !/^(untitled|disk\d.*|apfs.*|media)$/i.test(model) ? model : null,
+      bus: network ? 'Network' : protocol || null,
+      solidState: solid === 'true' ? true : solid === 'false' ? false : null,
+      raid: pick('RAIDMaster') === 'true' || pick('RAIDSlice') === 'true' || /appleraid/i.test(plistValue(volume, 'Content') ?? ''),
+    },
+  };
+};
+
+/** What PowerShell says about a drive letter (see describeMount). */
+export interface WindowsDisk {
+  VolumeName?: string | null;
+  FileSystem?: string | null;
+  DriveType?: number | null;
+  ProviderName?: string | null;
+  Model?: string | null;
+  Bus?: string | null;
+  Media?: string | null;
+}
+
+export const fromWindows = (disk: WindowsDisk, letter: string): Described => {
+  const bus = disk.Bus && disk.Bus !== 'Unknown' ? disk.Bus : null;
+  const kind =
+    disk.DriveType === 4
+      ? 'Network share'
+      : bus === 'SD' || bus === 'MMC'
+        ? 'SD card'
+        : bus === 'USB'
+          ? 'USB drive'
+          : disk.DriveType === 2
+            ? 'Removable drive'
+            : disk.DriveType === 5
+              ? 'Optical disc'
+              : 'Drive';
+  return {
+    name: disk.VolumeName || disk.ProviderName || letter,
+    kind,
+    filesystem: disk.FileSystem ?? '',
+    device: {
+      model: disk.Model?.trim() || null,
+      bus: disk.DriveType === 4 ? 'Network' : bus,
+      solidState: disk.Media === 'SSD' ? true : disk.Media === 'HDD' ? false : null,
+      raid: bus === 'RAID' || bus === 'Spaces' || /storage space/i.test(disk.Model ?? ''),
+    },
+  };
 };
 
 export const describeMount = async (mount: Mount, platform: NodeJS.Platform = process.platform): Promise<Described> => {
   try {
     if (platform === 'darwin') {
-      const plist = await run('diskutil', ['info', '-plist', mount.path]);
-      const protocol = plistValue(plist, 'BusProtocol') ?? '';
-      const internal = plistValue(plist, 'Internal') === 'true';
-      const kind = /secure digital|sd/i.test(protocol)
-        ? 'SD card'
-        : /usb/i.test(protocol)
-          ? 'USB drive'
-          : /thunderbolt|pci/i.test(protocol) && !internal
-            ? 'Thunderbolt drive'
-            : internal
-              ? 'Internal drive'
-              : 'Drive';
-      return {
-        name: plistValue(plist, 'VolumeName') || mount.name,
-        kind,
-        filesystem: plistValue(plist, 'FilesystemUserVisibleName') || plistValue(plist, 'FilesystemName') || '',
-      };
+      const volume = await run('diskutil', ['info', '-plist', mount.path]);
+      // An APFS volume's model and bus are its physical store's.
+      const storeId = /<key>APFSPhysicalStore<\/key>\s*<string>([^<]+)<\/string>/.exec(volume)?.[1] ?? null;
+      const store = storeId ? await run('diskutil', ['info', '-plist', storeId]).catch(() => null) : null;
+      return fromDiskutil(volume, store, mount.name);
     }
     if (platform === 'win32') {
       const letter = mount.path.slice(0, 2);
@@ -110,18 +175,24 @@ export const describeMount = async (mount: Mount, platform: NodeJS.Platform = pr
         '-NoProfile',
         '-NonInteractive',
         '-Command',
-        `Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}'" | Select-Object VolumeName,FileSystem,DriveType,ProviderName | ConvertTo-Json -Compress`,
+        [
+          `$v = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}'"`,
+          `$p = Get-Partition -DriveLetter '${letter[0]}' -ErrorAction SilentlyContinue`,
+          `$d = if ($p) { $p | Get-Disk -ErrorAction SilentlyContinue }`,
+          `$pd = if ($d) { Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object DeviceId -eq "$($d.Number)" | Select-Object -First 1 }`,
+          `[pscustomobject]@{ VolumeName = $v.VolumeName; FileSystem = $v.FileSystem; DriveType = $v.DriveType; ProviderName = $v.ProviderName; Model = $d.FriendlyName; Bus = "$($d.BusType)"; Media = "$($pd.MediaType)" } | ConvertTo-Json -Compress`,
+        ].join('; '),
       ]);
-      const disk = JSON.parse(json) as { VolumeName?: string; FileSystem?: string; DriveType?: number; ProviderName?: string };
-      const kind = disk.DriveType === 2 ? 'Removable drive' : disk.DriveType === 4 ? 'Network share' : disk.DriveType === 5 ? 'Optical disc' : 'Drive';
-      return { name: disk.VolumeName || disk.ProviderName || letter, kind, filesystem: disk.FileSystem ?? '' };
+      return fromWindows(JSON.parse(json) as WindowsDisk, letter);
     }
     const table = await readFile('/proc/self/mounts', 'utf8');
     const row = table.split('\n').find((line) => line.split(' ')[1]?.replace(/\\040/g, ' ') === mount.path);
-    return { name: mount.name, kind: 'Drive', filesystem: row?.split(' ')[2] ?? '' };
+    const filesystem = row?.split(' ')[2] ?? '';
+    const network = /^(cifs|smb3?|nfs4?|fuse\.sshfs)$/.test(filesystem);
+    return { name: mount.name, kind: network ? 'Network share' : 'Drive', filesystem, device: { ...UNKNOWN_DEVICE, bus: network ? 'Network' : null } };
   } catch {
     // A network share diskutil cannot describe, a slow PowerShell: the name and size still show.
-    return { name: mount.name, kind: 'Drive', filesystem: '' };
+    return { name: mount.name, kind: 'Drive', filesystem: '', device: UNKNOWN_DEVICE };
   }
 };
 
@@ -190,6 +261,9 @@ export const classifyVolume = async (root: string, limit = 4000): Promise<Classi
   if (count('mxf') && arriNames) return { detected: 'ARRI · MXF', role: 'Camera' };
   if (count('mov') && arriNames) return { detected: 'ARRI · ProRes', role: 'Camera' };
   if (folders.has('CONTENTS') && folders.has('CLIPS001')) return { detected: 'Canon', role: 'Camera' };
+  if (folders.has('CONTENTS') && folders.has('VIDEO') && folders.has('CLIP')) return { detected: 'Panasonic · P2', role: 'Camera' };
+  if (video && [...folders].some((folder) => /^\d{3}MEDIA$|^DJI_/.test(folder))) return { detected: `DJI · ${video} clips`, role: 'Camera' };
+  if (video && [...folders].some((folder) => /^\d{3}_PANA$/.test(folder))) return { detected: `Panasonic · ${video} clips`, role: 'Camera' };
   if (video && folders.has('DCIM')) return { detected: `Camera · ${video} clips`, role: 'Camera' };
   if (count('mxf')) return { detected: `Camera · ${count('mxf')} MXF`, role: 'Camera' };
   if (sound && !video) return { detected: `Sound · ${sound} WAV`, role: 'Sound' };

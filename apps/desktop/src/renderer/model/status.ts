@@ -1,4 +1,5 @@
 import type { AppState } from '../state/store';
+import type { FormatRule } from '../../shared/project';
 import type { ScreenId, Status, StepId, TransferJob, TransferLeg } from './types';
 
 /**
@@ -36,6 +37,8 @@ export const worst = (statuses: Status[]): Status => statuses.reduce<Status>((a,
 
 export const legState = (leg: TransferLeg): 'failed' | 'verified' | 'checking' | 'copying' | 'waiting' => {
   if (leg.failed) return 'failed';
+  // An upload held up (paused, its backup unplugged, its turn not come): waiting, whatever it has sent so far.
+  if (leg.waiting) return 'waiting';
   if (leg.copyPct >= 100 && leg.verifyPct >= 100) return 'verified';
   if (leg.copyPct >= 100) return 'checking';
   if (leg.copyPct > 0) return 'copying';
@@ -51,24 +54,46 @@ export const legWord = (leg: TransferLeg): string => {
     case 'checking':
       return `Checking ${Math.floor(leg.verifyPct)}%`;
     case 'copying':
-      return `Copying ${Math.floor(leg.copyPct)}%`;
+      return `${leg.relay ? 'Uploading' : 'Copying'} ${Math.floor(leg.copyPct)}%`;
     default:
-      return 'Waiting';
+      return leg.waiting ?? 'Waiting';
   }
 };
 
 /** Copy and read-back together, as one bar: half each. */
 export const legProgress = (leg: TransferLeg): number => (leg.copyPct + leg.verifyPct) / 2;
 
-export type JobState = 'safe' | 'problem' | 'running' | 'waiting';
+export type JobState = 'safe' | 'eject' | 'problem' | 'running' | 'waiting';
 
-/** "Safe to format" only when every destination verified; never when one failed (spec §4.3, §8). */
-export const jobState = (job: TransferJob): JobState => {
-  if (job.legs.some((leg) => leg.failed)) return 'problem';
-  if (job.legs.every((leg) => legState(leg) === 'verified')) return 'safe';
-  if (job.queued || job.legs.every((leg) => legState(leg) === 'waiting')) return 'waiting';
+/**
+ * Where a card stands (spec §4.3, §4.3.1, §8). Never safe to format while a
+ * copy it relies on has failed. The rule decides which copies it relies on:
+ *
+ * - two-local (the default): the copies made straight from the card. Safe
+ *   once all of them verified and there are at least two. Uploads relayed
+ *   from a backup do not count, and do not hold the card up.
+ * - every: every destination, uploads included.
+ *
+ * "eject": the card is no longer being read (its copies are done) but is
+ * not yet safe to format: an upload it waits on is still going, or there
+ * are fewer than two local copies.
+ */
+export const jobState = (job: TransferJob, rule: FormatRule = 'two-local'): JobState => {
+  const local = job.legs.filter((leg) => !leg.relay);
+  const relays = job.legs.filter((leg) => leg.relay);
+  const counted = rule === 'every' ? job.legs : local;
+  if (counted.some((leg) => leg.failed)) return 'problem';
+  const localDone = local.every((leg) => legState(leg) === 'verified');
+  if (localDone) {
+    if (rule === 'every') return relays.every((leg) => legState(leg) === 'verified') ? 'safe' : 'eject';
+    return local.length >= 2 ? 'safe' : 'eject';
+  }
+  if (job.queued || local.every((leg) => legState(leg) === 'waiting')) return 'waiting';
   return 'running';
 };
+
+/** The uploads of a card that failed (and are not part of its format rule, or they would make the card a problem). */
+export const failedUploads = (job: TransferJob): TransferLeg[] => job.legs.filter((leg) => leg.relay && leg.failed);
 
 export const jobProgress = (job: TransferJob): number => Math.floor(job.legs.reduce((sum, leg) => sum + legProgress(leg), 0) / job.legs.length);
 
@@ -89,10 +114,12 @@ const pendingSources = (state: AppState) =>
   state.volumes.filter((volume) => (volume.role === 'Camera' || volume.role === 'Sound') && !volume.ingested);
 
 export const summarize = (state: AppState): Record<StepId, StepSummary> => {
-  const jobs = state.jobs.map(jobState);
+  const jobs = state.jobs.map((job) => jobState(job, state.production.formatRule));
   const safe = jobs.filter((job) => job === 'safe').length;
-  const failed = jobs.filter((job) => job === 'problem').length;
+  // A failed upload is a problem to see too, even when the card itself is safe.
+  const failed = state.jobs.filter((job, index) => jobs[index] === 'problem' || failedUploads(job).length > 0).length;
   const running = jobs.filter((job) => job === 'running').length;
+  const uploading = state.jobs.filter((job) => job.legs.some((leg) => leg.relay && !leg.failed && legState(leg) !== 'verified')).length;
 
   const fresh = pendingSources(state).length;
   const intake: StepSummary = {
@@ -105,9 +132,18 @@ export const summarize = (state: AppState): Record<StepId, StepSummary> => {
 
   const verify: StepSummary = {
     id: 'verify',
-    status: failed > 0 ? 'problem' : running > 0 || jobs.includes('waiting') ? 'working' : 'done',
+    status: failed > 0 ? 'problem' : running > 0 || jobs.includes('waiting') || jobs.includes('eject') || uploading > 0 ? 'working' : 'done',
     metric: `${safe}/${state.jobs.length} verified`,
-    detail: failed > 0 ? `${failed} card${failed === 1 ? '' : 's'} failed ${failed === 1 ? 'its' : 'their'} check` : running > 0 ? `${running} copying or checking` : 'Every card safe to format',
+    detail:
+      failed > 0
+        ? `${failed} card${failed === 1 ? '' : 's'} failed ${failed === 1 ? 'its' : 'their'} check`
+        : running > 0
+          ? `${running} copying or checking`
+          : uploading > 0
+            ? `${uploading} card${uploading === 1 ? '' : 's'} still uploading`
+            : jobs.includes('eject')
+              ? 'Cards out, not yet safe to format'
+              : 'Every card safe to format',
     word: failed > 0 ? 'Problem' : running > 0 ? 'Working' : 'Done',
   };
 

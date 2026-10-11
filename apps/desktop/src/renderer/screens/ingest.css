@@ -185,7 +185,8 @@
 
 /* The pictures: line drawings tinted by what the thing is. */
 .media-icon { --tint: var(--st-verify); flex: none; overflow: visible; }
-.media-card, .media-sd { --tint: var(--st-intake); }
+.media-card, .media-sd, .media-redmag, .media-axs, .media-codex, .media-cfast { --tint: var(--st-intake); }
+.media-redmag .mi-line { stroke: var(--s-problem); }
 .media-sound { --tint: var(--st-sync); }
 .media-icon .mi-body { fill: color-mix(in oklch, var(--tint) 16%, var(--card)); stroke: var(--tint); stroke-width: 2; }
 .media-icon .mi-label { fill: var(--card); stroke: color-mix(in oklch, var(--tint) 55%, var(--card)); stroke-width: 1.5; }
@@ -195,3 +196,25 @@
 .media-icon .mi-folder { fill: color-mix(in oklch, var(--st-intake) 55%, var(--card)); stroke: var(--st-intake); stroke-width: 1.5; }
 .media-icon .mi-folder-lip { stroke: color-mix(in oklch, var(--st-intake) 80%, var(--card)); stroke-width: 1.5; }
 .media-cloud .mi-body { fill: color-mix(in oklch, var(--tint) 22%, var(--card)); }
+
+/* A source or destination's picture: the system's icon or the drawn one, with a camera maker's badge. */
+.device-icon { position: relative; display: inline-grid; place-items: center; flex: none; }
+.device-icon-system { object-fit: contain; image-rendering: auto; }
+.brand-badge {
+  position: absolute; right: -6px; bottom: -2px;
+  display: inline-flex; align-items: center; padding: 0 5px; border-radius: 4px;
+  background: var(--card); border: 1px solid var(--border); color: var(--ink);
+  font-family: 'IBM Plex Sans', system-ui, sans-serif; font-weight: 700; letter-spacing: .02em; line-height: 1; white-space: nowrap;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .18);
+}
+.brand-badge img { display: block; width: auto; }
+.brand-red { color: var(--s-problem); }
+
+/* From the card or uploaded from the backup: a destination's choice. */
+.relay-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 11px; }
+.relay-switch button { border: 0; background: transparent; color: var(--muted); padding: 3px 7px; cursor: pointer; font: inherit; }
+.relay-switch button[aria-pressed='true'] { background: color-mix(in oklch, var(--st-intake) 18%, var(--card)); color: var(--ink); font-weight: 600; }
+.relay-switch button:disabled { cursor: default; opacity: .6; }
+.offload-transfers-head { display: flex; align-items: center; gap: 8px; }
+.offload-transfers-head .offload-head { flex: 1; }
+.offload-row.is-upload .offload-row-title .relay-hop { color: var(--muted); }

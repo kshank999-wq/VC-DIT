@@ -17,6 +17,8 @@ export interface WorkerPlan {
   /** Every destination of the card, for the log; `legs` may be just the one being retried. */
   allLegs: LegPlan[];
   method: ChecksumMethod;
+  /** What a file says if the source goes away: the card, or (an upload) the backup it reads from. */
+  sourceLost?: string;
   contexts: Record<string, ReportContext>;
 }
 
@@ -38,6 +40,7 @@ void (async () => {
   try {
     const result = await runTransfer(plan.sourceRoot, plan.files, plan.legs, plan.method, {
       signal: controller.signal,
+      sourceLost: plan.sourceLost,
       onProgress: (progress) => post({ type: 'progress', progress }),
     });
     const reports = await writeReports(result, plan.legs, plan.contexts, plan.allLegs);

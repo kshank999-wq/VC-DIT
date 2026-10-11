@@ -1,4 +1,5 @@
 import { jobProgress, jobState, legProgress, legState, legWord, type JobState } from '../model/status';
+import type { FormatRule } from '../../shared/project';
 import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
@@ -12,12 +13,16 @@ import './ingest.css';
  * failed (§4.3, §8); V1 never offers to format or delete a card.
  */
 
-const ORDER: Record<JobState, number> = { problem: 0, running: 1, waiting: 2, safe: 3 };
+const ORDER: Record<JobState, number> = { problem: 0, running: 1, waiting: 2, eject: 3, safe: 4 };
 
-const pill = (job: TransferJob): { status: Status; word: string } => {
-  switch (jobState(job)) {
+const pill = (job: TransferJob, rule: FormatRule): { status: Status; word: string } => {
+  switch (jobState(job, rule)) {
     case 'safe':
       return { status: 'done', word: 'Safe to format' };
+    case 'eject': {
+      const local = job.legs.filter((leg) => !leg.relay).length;
+      return { status: 'needs', word: rule === 'two-local' && local < 2 ? "Can come out · only one local copy — don't format" : "Can come out · don't format until the upload verifies" };
+    }
     case 'problem':
       return { status: 'problem', word: "Problem — don't format" };
     case 'running':
@@ -32,6 +37,11 @@ const legStatus = (leg: TransferLeg): Status => {
   return state === 'verified' ? 'done' : state === 'failed' ? 'problem' : state === 'waiting' ? 'idle' : 'working';
 };
 
+const RULE_WORD: Record<FormatRule, string> = {
+  'two-local': 'two verified local copies',
+  every: 'every destination verified, uploads included',
+};
+
 export function Verify() {
   const { state, dispatch } = useStore();
   const media = state.engine ? engine() : null;
@@ -40,8 +50,11 @@ export function Verify() {
     else dispatch({ type: 'retryLeg', job: job.id, leg: leg.name });
   };
   // Problems first, then what is moving, then the queue, then the finished cards.
-  const jobs = state.jobs.map((job, index) => ({ job, index })).sort((a, b) => ORDER[jobState(a.job)] - ORDER[jobState(b.job)] || a.index - b.index);
-  const count = (which: JobState) => state.jobs.filter((job) => jobState(job) === which).length;
+  const rule = state.production.formatRule;
+  const jobs = state.jobs.map((job, index) => ({ job, index })).sort((a, b) => ORDER[jobState(a.job, rule)] - ORDER[jobState(b.job, rule)] || a.index - b.index);
+  const count = (which: JobState) => state.jobs.filter((job) => jobState(job, rule) === which).length;
+  const uploads = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.relay));
+  const uploading = uploads.filter((leg) => !leg.failed && legState(leg) !== 'verified').length;
   const problems = count('problem');
   const running = count('running');
   const waiting = count('waiting');
@@ -55,11 +68,17 @@ export function Verify() {
         title="Copy & verification"
         description={
           media
-            ? "Each card is copied, then checked. It's safe to format only when every destination says Verified. Each destination gets an ASC MHL and a transfer log (REPORTS/ingest_verification)."
-            : "Each card is copied, then checked. It's safe to format only when every destination says Verified."
+            ? "Each card is copied, then checked. It's safe to format only when the copies it relies on say Verified, and never while one has failed. Each destination gets an ASC MHL and a transfer log (REPORTS/ingest_verification)."
+            : "Each card is copied, then checked. It's safe to format only when the copies it relies on say Verified, and never while one has failed."
         }
         actions={
-          media ? null : (
+          media ? (
+            uploads.length ? (
+              <button type="button" className="btn" aria-pressed={state.relaysPaused} onClick={() => void media.pauseRelays(!state.relaysPaused)}>
+                {state.relaysPaused ? 'Resume uploads' : 'Pause uploads'}
+              </button>
+            ) : null
+          ) : (
             <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
               Export transfer logs
             </button>
@@ -77,10 +96,12 @@ export function Verify() {
         {count('safe')} of {state.jobs.length} cards safe to format
         {problems ? <span className="bad"> · {problems} problem{problems === 1 ? '' : 's'} — don't format {problems === 1 ? 'it' : 'them'}</span> : null}
         {rest.length ? ` · ${rest.join(' · ')}` : null}
+        {uploading ? ` · ${uploading} upload${uploading === 1 ? '' : 's'} ${state.relaysPaused ? 'paused' : 'not finished'}` : null}
       </p>
+      <p className="muted small">Safe to format means {RULE_WORD[rule]}. Change it in Project setup.</p>
 
       {jobs.map(({ job }) => {
-        const head = pill(job);
+        const head = pill(job, rule);
         return (
           <section key={job.id} className={`card verify-card${head.status === 'problem' ? ' problem' : ''}`} aria-label={`Card ${job.id}`}>
             <div className="verify-head">
@@ -107,7 +128,10 @@ export function Verify() {
                 return (
                   <div key={leg.name} className="verify-leg">
                     <div className="row">
-                      <span className="mono muted grow">→ {leg.name}</span>
+                      <span className="mono muted grow">
+                        {leg.relay ? `↑ ${leg.name}` : `→ ${leg.name}`}
+                        {leg.relay ? <span className="faint"> · upload{leg.relayFrom ? ` from ${leg.relayFrom}` : ' from the backup'}</span> : null}
+                      </span>
                       {media && leg.targetDir && legState(leg) === 'verified' ? (
                         <button type="button" className="btn ghost small" onClick={() => void media.show(leg.targetDir!)}>
                           Show
@@ -120,8 +144,8 @@ export function Verify() {
                     <ProgressBar pct={leg.failed ? 100 : legProgress(leg)} color={statusVar(status === 'idle' ? 'working' : status)} label={`${job.id} to ${leg.name}`} />
                     {leg.failed ? (
                       <div className="row">
-                        <button type="button" className="btn danger small" aria-label={`Retry copy ${job.id} → ${leg.name}`} onClick={() => retry(job, leg)}>
-                          Retry copy
+                        <button type="button" className="btn danger small" aria-label={`Retry ${leg.relay ? 'upload' : 'copy'} ${job.id} → ${leg.name}`} onClick={() => retry(job, leg)}>
+                          {leg.relay ? 'Retry upload' : 'Retry copy'}
                         </button>
                         <span className="muted verify-why">{leg.error ?? 'Checksum mismatch — copy again from the card.'}</span>
                       </div>

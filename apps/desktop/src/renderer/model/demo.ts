@@ -41,6 +41,7 @@ export const PRODUCTION: Production = {
   ],
   namingTokens: ['{PROD}', '_', 'D{DAY}', '_', 'SC{SCENE}', '{SETUP}', '_', 'T{TAKE}', '_', '{CAM}{REEL}'],
   vfxMethod: 'Hard link',
+  formatRule: 'two-local',
 };
 
 export const DAY: ShootDay = {
@@ -147,6 +148,7 @@ export const INGEST_DESTINATIONS: IngestDestination[] = [
   { id: 'RAID', name: 'HLC_RAID_01', kind: 'Primary RAID · Thunderbolt', free: '31.2 TB', fillPct: 35, selected: true },
   { id: 'SHTL07', name: 'SHTL_07', kind: 'Shuttle → Editorial', free: '5.1 TB', fillPct: 36, selected: true },
   { id: 'NAS', name: 'PROD_NAS', kind: 'Production storage · 10GbE', free: '84 TB', fillPct: 58, selected: true },
+  { id: 'LUCID', name: 'HLC_Filespace', kind: '/Volumes/hlc-filespace · LucidLink', free: '40 TB', fillPct: 12, selected: false, relay: true },
 ];
 
 const leg = (name: string, copyPct: number, verifyPct: number, rate = 1, failed = false) => ({ name, copyPct, verifyPct, rate, failed });

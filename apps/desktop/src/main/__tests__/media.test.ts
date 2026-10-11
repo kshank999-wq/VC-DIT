@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHasher, prepareChecksums } from '../media/checksum';
 import { c4id, mhlHashList, writeReports } from '../media/reports';
-import { cardFolder, destinationProblem, sameOrInside, segment } from '../media/rules';
+import { cardFolder, destinationProblem, isRemote, sameOrInside, segment } from '../media/rules';
 import { listSource, PART_SUFFIX, runTransfer, type LegPlan } from '../media/transfer';
-import { classifyVolume } from '../media/volumes';
+import { classifyVolume, fromDiskutil, fromWindows } from '../media/volumes';
 
 let base: string;
 let card: string;
@@ -275,5 +275,48 @@ describe('recognising a volume', () => {
     const raid = join(base, 'raidvol');
     await write(raid, 'HALCYON/SHOOT_DAY_013_2026-10-04/CAMERA_ORIGINALS/A012/x.mxf', 'x');
     expect(await classifyVolume(raid)).toEqual({ detected: 'VC DIT media drive', role: 'Destination' });
+  });
+});
+
+describe('what the device is', () => {
+  const plist = (entries: Record<string, string | boolean>) =>
+    `<plist><dict>${Object.entries(entries)
+      .map(([key, value]) => `<key>${key}</key>${typeof value === 'boolean' ? `<${value}/>` : `<string>${value}</string>`}`)
+      .join('')}</dict></plist>`;
+
+  it('reads a RED mag, an SSD and an AppleRAID set from diskutil, using the APFS store for the model', () => {
+    const mag = fromDiskutil(plist({ VolumeName: 'A001_C001', FilesystemName: 'exfat', BusProtocol: 'USB', Internal: false, SolidState: true, MediaName: 'RED MINI-MAG 960GB', RAIDMaster: false }), null, 'A001');
+    expect(mag).toEqual({ name: 'A001_C001', kind: 'USB drive', filesystem: 'exfat', device: { model: 'RED MINI-MAG 960GB', bus: 'USB', solidState: true, raid: false } });
+
+    const apfsVolume = plist({ VolumeName: 'SHTL_08', FilesystemUserVisibleName: 'APFS', MediaName: '', BusProtocol: 'USB', Internal: false });
+    const store = plist({ MediaName: 'Samsung PSSD T7', BusProtocol: 'USB', SolidState: true, Internal: false });
+    expect(fromDiskutil(apfsVolume, store, 'SHTL_08').device).toEqual({ model: 'Samsung PSSD T7', bus: 'USB', solidState: true, raid: false });
+
+    const raid = fromDiskutil(plist({ VolumeName: 'HLC_RAID', BusProtocol: 'Thunderbolt', Internal: false, RAIDMaster: true, SolidState: false }), null, 'HLC_RAID');
+    expect(raid).toMatchObject({ kind: 'Thunderbolt drive', device: { raid: true, solidState: false } });
+
+    const share = fromDiskutil(plist({ VolumeName: 'PROD', FilesystemType: 'smbfs' }), null, 'PROD');
+    expect(share).toMatchObject({ kind: 'Network share', device: { bus: 'Network' } });
+  });
+
+  it('reads the disk behind a Windows drive letter', () => {
+    expect(fromWindows({ VolumeName: 'SHTL_08', FileSystem: 'exFAT', DriveType: 3, Model: 'Samsung PSSD T9', Bus: 'USB', Media: 'SSD' }, 'E:')).toEqual({
+      name: 'SHTL_08',
+      kind: 'USB drive',
+      filesystem: 'exFAT',
+      device: { model: 'Samsung PSSD T9', bus: 'USB', solidState: true, raid: false },
+    });
+    expect(fromWindows({ VolumeName: 'RAID', FileSystem: 'NTFS', DriveType: 3, Model: 'Storage Space', Bus: 'Spaces', Media: 'Unspecified' }, 'R:').device).toMatchObject({ raid: true, solidState: null });
+    expect(fromWindows({ VolumeName: 'B001', FileSystem: 'exFAT', DriveType: 2, Model: 'SD Card Reader', Bus: 'SD', Media: '' }, 'F:').kind).toBe('SD card');
+    expect(fromWindows({ ProviderName: '\\\\nas\\prod', FileSystem: 'NTFS', DriveType: 4 }, 'Z:')).toMatchObject({ name: '\\\\nas\\prod', kind: 'Network share', device: { bus: 'Network' } });
+  });
+
+  it('knows which destinations are on the far end of a network', () => {
+    expect(isRemote('/Users/dit/Library/CloudStorage/Dropbox/Dailies')).toBe(true);
+    expect(isRemote('Drive', 'lucidfs', 'filespace')).toBe(true);
+    expect(isRemote('Network share', 'smbfs')).toBe(true);
+    expect(isRemote('\\\\nas\\prod')).toBe(true);
+    expect(isRemote('Thunderbolt drive', 'APFS', 'HLC_RAID_01')).toBe(false);
+    expect(isRemote('/Volumes/RAID/Boxes')).toBe(false);
   });
 });

@@ -1,16 +1,32 @@
+import { useEffect, useState } from 'react';
+import type { DeviceInfo } from '../../shared/media';
+
 /**
  * What a source or destination is, at a glance (as offload tools show it):
- * a camera card, a sound card, a drive, a RAID, a shuttle, an archive, a
- * network share, a folder, or a cloud-synced folder. Drawn here, in the
- * app's own line style; cloud services show as a cloud with the service's
- * name rather than its trademarked logo.
+ * a camera card (CFexpress, a RED mag, AXS, a Codex drive, CFast, SD), a
+ * sound card, an SSD, a hard drive, a RAID, a shuttle, an archive, a
+ * network share, a folder, or a cloud-synced folder. The kind comes from
+ * what the system says about the device (its model, bus, solid state,
+ * RAID) and what is on it.
+ *
+ * Drives and folders show the system's own icon where the app has one
+ * (Explorer's on Windows, Finder's on macOS), so they look as they do
+ * everywhere else on that computer. Camera media, RAIDs and archives,
+ * which the system draws as plain drives, are drawn here. Camera cards
+ * carry their maker's badge (see BrandBadge).
  */
 
 export type MediaKind =
   | 'card'
+  | 'redmag'
+  | 'axs'
+  | 'codex'
+  | 'cfast'
   | 'sd'
   | 'sound'
   | 'internal'
+  | 'ssd'
+  | 'hdd'
   | 'external'
   | 'raid'
   | 'shuttle'
@@ -42,18 +58,40 @@ export const serviceOf = (...hints: (string | null | undefined)[]): string | nul
   return SERVICES.find(([pattern]) => pattern.test(text))?.[1] ?? null;
 };
 
-/** A mounted volume: from its role, what kind of device it is ("SD card", "Network share"…), its name and filesystem. */
-export const volumeLook = (volume: { role: string; media: string; name: string; filesystem: string; detected?: string }): MediaLook => {
+/** Makers' RAID enclosures and RAID software, by model name. */
+const RAID_MODEL = /raid|thunderbay|pegasus|2big|4big|6big|8big|12big|softraid|areca|accusys|sonnet fusion|terramaster d\d|qnap|synology|drobo|g-speed|g-raid|promise|owc express 4m2|storage space/i;
+/** Solid-state drives that do not say so: by model. */
+const SSD_MODEL = /ssd|nvme|m\.2|\bt[579]\b|portable ssd|extreme pro|sandisk extreme|crucial x\d|envoy|atomos|angelbird|ssd7|glyph atom|lacie rugged ssd/i;
+
+/** Which camera medium a card is, from its model and bus. */
+const cardKind = (hints: string, bus: string | null | undefined): MediaKind => {
+  if (/red\s*(mini-?)?mag|redmag|red mag/i.test(hints)) return 'redmag';
+  if (/\baxs\b/i.test(hints)) return 'axs';
+  if (/codex|compact drive/i.test(hints)) return 'codex';
+  if (/cfast/i.test(hints)) return 'cfast';
+  if (/^(sd|mmc|secure digital)/i.test(bus ?? '') || /\bsd\b|sd card|sdxc|sdhc|microsd/i.test(hints)) return 'sd';
+  return 'card';
+};
+
+/** A mounted volume: from what the system says the device is, its role, its name and filesystem. */
+export const volumeLook = (volume: { role: string; media: string; name: string; filesystem: string; detected?: string; device?: DeviceInfo }): MediaLook => {
   const device = volume.media.split(' · ')[0] ?? '';
-  const service = serviceOf(volume.name, volume.filesystem);
+  const model = volume.device?.model ?? '';
+  const hints = `${model} ${device}`;
+  const service = serviceOf(volume.name, volume.filesystem, model);
   if (service) return { kind: 'cloud', service };
   if (volume.role === 'Sound') return { kind: 'sound', service: null };
-  if (volume.role === 'Camera') return { kind: /\bsd\b|sd card/i.test(device) ? 'sd' : 'card', service: null };
-  if (/network|smb|nfs|afp/i.test(`${device} ${volume.filesystem}`)) return { kind: 'nas', service: null };
+  if (volume.role === 'Camera') return { kind: cardKind(hints, volume.device?.bus), service: null };
+  if (/network|smb|nfs|afp|webdav/i.test(`${device} ${volume.filesystem} ${volume.device?.bus ?? ''}`)) return { kind: 'nas', service: null };
+  if (volume.role === 'Archive' && /lto|tape|ltfs/i.test(`${hints} ${volume.name} ${volume.filesystem}`)) return { kind: 'archive', service: null };
+  if (volume.device?.raid || RAID_MODEL.test(`${hints} ${volume.name}`)) return { kind: 'raid', service: null };
   if (volume.role === 'Shuttle') return { kind: 'shuttle', service: null };
-  if (volume.role === 'Archive') return { kind: /lto|tape/i.test(`${device} ${volume.name}`) ? 'archive' : 'nas', service: null };
   if (/internal/i.test(device)) return { kind: 'internal', service: null };
-  if (/raid/i.test(`${volume.name} ${device}`)) return { kind: 'raid', service: null };
+  // A camera medium in a reader, used as a destination: still drawn as what it is.
+  const media = cardKind(hints, volume.device?.bus);
+  if (media !== 'card' || /cfexpress|xqd/i.test(hints)) return { kind: media, service: null };
+  if (volume.device?.solidState === true || SSD_MODEL.test(hints)) return { kind: 'ssd', service: null };
+  if (volume.device?.solidState === false) return { kind: 'hdd', service: null };
   return { kind: 'external', service: null };
 };
 
@@ -68,10 +106,16 @@ export const folderLook = (folder: { name: string; kind: string }): MediaLook =>
 };
 
 export const KIND_WORD: Record<MediaKind, string> = {
-  card: 'Camera card',
+  card: 'CFexpress card',
+  redmag: 'RED mag',
+  axs: 'AXS card',
+  codex: 'Codex drive',
+  cfast: 'CFast card',
   sd: 'SD card',
   sound: 'Sound card',
   internal: 'Internal drive',
+  ssd: 'SSD',
+  hdd: 'Hard drive',
   external: 'Drive',
   raid: 'RAID',
   shuttle: 'Shuttle drive',
@@ -81,17 +125,176 @@ export const KIND_WORD: Record<MediaKind, string> = {
   cloud: 'Cloud folder',
 };
 
+/** Kinds the system draws as well as anyone: plain drives, shares and folders. Its own icon is used for these where there is one. */
+const SYSTEM_KINDS = new Set<MediaKind>(['internal', 'ssd', 'hdd', 'external', 'shuttle', 'nas', 'folder', 'cloud']);
+
+const systemIcons = new Map<string, Promise<string | null>>();
+/** The system's icon for a drive or folder (desktop app only), once it has been asked for. */
+export const useSystemIcon = (path: string | undefined, kind: MediaKind): string | null => {
+  const [icon, setIcon] = useState<string | null>(null);
+  useEffect(() => {
+    const media = typeof window === 'undefined' ? undefined : window.vcdit?.media;
+    if (!path || !SYSTEM_KINDS.has(kind) || !media?.icon) {
+      setIcon(null);
+      return undefined;
+    }
+    let live = true;
+    if (!systemIcons.has(path)) systemIcons.set(path, media.icon(path).catch(() => null));
+    void systemIcons.get(path)!.then((found) => live && setIcon(found));
+    return () => {
+      live = false;
+    };
+  }, [path, kind]);
+  return icon;
+};
+
+/** Tests: forget the system icons asked for. */
+export const forgetSystemIcons = () => systemIcons.clear();
+
+/**
+ * A source or destination's picture: the system's own icon for a drive or
+ * folder when the desktop app has one, else the drawn one; a camera card
+ * with its maker's badge.
+ */
+export function DeviceIcon({ look, size = 64, path, brand }: { look: MediaLook; size?: number; path?: string; brand?: string | null }) {
+  const system = useSystemIcon(path, look.kind);
+  return (
+    <span className="device-icon" style={{ width: size, height: size }}>
+      {system ? <img src={system} width={size} height={size} alt="" className="device-icon-system" draggable={false} /> : <MediaIcon look={look} size={size} />}
+      {brand ? <BrandBadge brand={brand} size={size} /> : null}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------- camera makers
+
+export type Brand = 'arri' | 'red' | 'sony' | 'blackmagic' | 'canon' | 'panasonic' | 'dji';
+
+export const BRAND_NAME: Record<Brand, string> = {
+  arri: 'ARRI',
+  red: 'RED',
+  sony: 'SONY',
+  blackmagic: 'Blackmagic',
+  canon: 'Canon',
+  panasonic: 'Panasonic',
+  dji: 'DJI',
+};
+
+/** The camera maker, from what the engine found on the card ("ARRI · ARRIRAW", "VENICE 2 · X-OCN ST"). */
+export const brandOf = (detected: string | null | undefined): Brand | null => {
+  const text = detected ?? '';
+  if (/\barri\b|alexa|amira/i.test(text)) return 'arri';
+  if (/\bred\b|r3d|v-raptor|komodo|monstro|helium/i.test(text)) return 'red';
+  if (/sony|venice|burano|fx[369]|x-ocn|xavc/i.test(text)) return 'sony';
+  if (/blackmagic|braw|ursa|pocket/i.test(text)) return 'blackmagic';
+  if (/canon|cinema raw|c[37]0|c[35]00/i.test(text)) return 'canon';
+  if (/panasonic|varicam|lumix|\bp2\b/i.test(text)) return 'panasonic';
+  if (/\bdji\b|ronin|inspire|mavic/i.test(text)) return 'dji';
+  return null;
+};
+
+/**
+ * The maker's logo files, where the production has put them in
+ * src/renderer/assets/brands (arri.svg, red.svg, sony.svg…; see the README
+ * there). Without one, the maker's name is set as a small badge.
+ */
+const BRAND_FILES = import.meta.glob('../assets/brands/*.{svg,png}', { eager: true, query: '?url', import: 'default' }) as Record<string, string>;
+const brandFile = (brand: Brand): string | null =>
+  Object.entries(BRAND_FILES).find(([path]) => path.split('/').pop()!.replace(/\.(svg|png)$/, '') === brand)?.[1] ?? null;
+
+export function BrandBadge({ brand, size = 64 }: { brand: string; size?: number }) {
+  const known = (Object.keys(BRAND_NAME) as Brand[]).includes(brand as Brand) ? (brand as Brand) : null;
+  const file = known ? brandFile(known) : null;
+  const name = known ? BRAND_NAME[known] : brand;
+  const height = Math.max(12, Math.round(size * 0.24));
+  return (
+    <span className={`brand-badge brand-${known ?? 'other'}`} title={name} style={{ height, fontSize: Math.round(height * 0.62) }}>
+      {file ? <img src={file} alt={name} style={{ height: Math.round(height * 0.7) }} /> : name}
+    </span>
+  );
+}
+
 /** The picture. Colour comes from `currentColor` and the --icon-* tokens, so it follows the theme. */
 export function MediaIcon({ look, size = 64 }: { look: MediaLook; size?: number }) {
   const common = { width: size, height: size, viewBox: '0 0 64 64', 'aria-hidden': true as const, className: `media-icon media-${look.kind}` };
   switch (look.kind) {
+    case 'redmag':
+      return (
+        <svg {...common}>
+          <rect x="8" y="16" width="48" height="32" rx="3" className="mi-body" />
+          <path d="M8 22h48" className="mi-line" />
+          <rect x="14" y="27" width="26" height="14" rx="2" className="mi-label" />
+          <text x="27" y="37" textAnchor="middle" className="mi-text">
+            MAG
+          </text>
+          <path d="M46 29v10M50 29v10" className="mi-line" />
+        </svg>
+      );
+    case 'axs':
+      return (
+        <svg {...common}>
+          <rect x="12" y="10" width="40" height="44" rx="3" className="mi-body" />
+          <path d="M12 18h40" className="mi-line" />
+          <rect x="18" y="24" width="28" height="18" rx="2" className="mi-label" />
+          <text x="32" y="36" textAnchor="middle" className="mi-text">
+            AXS
+          </text>
+          <path d="M20 48h24" className="mi-line" />
+        </svg>
+      );
+    case 'codex':
+      return (
+        <svg {...common}>
+          <rect x="10" y="12" width="44" height="40" rx="5" className="mi-body" />
+          <rect x="16" y="20" width="32" height="16" rx="2" className="mi-label" />
+          <text x="32" y="31" textAnchor="middle" className="mi-text">
+            CODEX
+          </text>
+          <path d="M18 44h20" className="mi-line" />
+          <circle cx="45" cy="44" r="1.8" className="mi-led" />
+        </svg>
+      );
+    case 'cfast':
+      return (
+        <svg {...common}>
+          <rect x="12" y="8" width="40" height="48" rx="3" className="mi-body" />
+          <rect x="18" y="14" width="28" height="18" rx="2" className="mi-label" />
+          <text x="32" y="26" textAnchor="middle" className="mi-text">
+            CFAST
+          </text>
+          <path d="M18 48h28" className="mi-line" />
+        </svg>
+      );
+    case 'ssd':
+      return (
+        <svg {...common}>
+          <rect x="14" y="8" width="36" height="48" rx="6" className="mi-body" />
+          <rect x="20" y="16" width="24" height="22" rx="3" className="mi-label" />
+          <text x="32" y="30" textAnchor="middle" className="mi-text">
+            SSD
+          </text>
+          <circle cx="32" cy="47" r="1.8" className="mi-led" />
+        </svg>
+      );
+    case 'hdd':
+      return (
+        <svg {...common}>
+          <rect x="10" y="10" width="44" height="44" rx="6" className="mi-body" />
+          <circle cx="30" cy="30" r="13" className="mi-label" />
+          <circle cx="30" cy="30" r="3" className="mi-line" />
+          <path d="M46 20l-10 9" className="mi-line" />
+          <circle cx="46" cy="47" r="1.8" className="mi-led" />
+        </svg>
+      );
     case 'card':
       return (
         <svg {...common}>
           <rect x="14" y="8" width="36" height="48" rx="4" className="mi-body" />
           <rect x="20" y="14" width="24" height="16" rx="2" className="mi-label" />
           <path d="M20 46h4M27 46h4M34 46h4M41 46h3" className="mi-line" />
-          <path d="M22 20h14M22 25h9" className="mi-line" />
+          <text x="32" y="25" textAnchor="middle" className="mi-text">
+            CFE
+          </text>
         </svg>
       );
     case 'sd':

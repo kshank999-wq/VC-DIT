@@ -31,6 +31,21 @@ export interface MediaVolume {
   role: VolumeRole;
   /** A transfer from it was queued this session. */
   ingested: boolean;
+  /** As a destination: fed from the main backup once the card has verified there, not from the card (a slow cloud or network drive). */
+  relay: boolean;
+  /** What the device itself is, from the system: its model, how it is connected, solid state or spinning. */
+  device: DeviceInfo;
+}
+
+/** What the system says about the disk behind a volume. Any of it may be unknown. */
+export interface DeviceInfo {
+  /** The maker's model name: "RED MINI-MAG 960GB", "OWC ThunderBay 4", "Samsung PSSD T7". */
+  model: string | null;
+  /** "USB", "Thunderbolt", "PCI-Express", "SD", "NVMe", "SATA", "RAID", "Network". */
+  bus: string | null;
+  solidState: boolean | null;
+  /** Part of a RAID set the system knows about (AppleRAID, a Windows RAID bus, Storage Spaces). */
+  raid: boolean;
 }
 
 /** A folder picked as a destination: a NAS share, a LucidLink mount, a folder on the RAID. */
@@ -42,12 +57,16 @@ export interface FolderDestination {
   freeBytes: number;
   /** The folder can be reached now. */
   online: boolean;
+  /** Fed from the main backup rather than the card (see MediaVolume.relay). */
+  relay: boolean;
 }
 
 export interface MediaState {
   volumes: MediaVolume[];
   folders: FolderDestination[];
   jobs: JobSnapshot[];
+  /** Uploads that relay from a backup are paused (they carry on when resumed, from the last verified file). */
+  relaysPaused: boolean;
 }
 
 export interface IngestRequest {
@@ -75,6 +94,16 @@ export interface LegSnapshot {
   problemFiles: number;
   /** Where the card's folder is on this destination. */
   targetDir: string;
+  /** Fed from a backup rather than the card. */
+  relay: boolean;
+  /** The backup it is (or will be) read from, by name, once known. */
+  relayFrom: string | null;
+  /** Why a relay is not moving now: "Paused", "Waiting for RAID: plug it back in to carry on.". */
+  waiting: string | null;
+  /** A relay's own speed, time left and file, while it runs (a card's copy reports these on the job). */
+  bytesPerSecond: number;
+  etaSeconds: number | null;
+  currentFile: string | null;
 }
 
 export interface JobSnapshot {

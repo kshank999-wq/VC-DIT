@@ -39,7 +39,7 @@ const live = (state: AppState): LiveRow[] =>
     const card = /^Ingest verification — (.+)$/.exec(row.name)?.[1];
     const job = card ? state.jobs.find((candidate) => candidate.id === card) : undefined;
     if (job) {
-      const now = jobState(job);
+      const now = jobState(job, state.production.formatRule);
       const covers = `ASC MHL · ${job.files} · ${job.legs.length} destinations`;
       if (now === 'safe') return { ...base, status: 'Complete', tone: 'done', word: 'Complete', covers: row.status === 'Complete' ? row.covers : covers };
       if (now === 'running' || now === 'waiting') {
@@ -167,7 +167,7 @@ const time = (iso: string | null) => {
 const withLive = (state: AppState, entry: ReportEntry): ReportEntry => {
   const job = entry.card ? state.jobs.find((candidate) => candidate.id === entry.card || candidate.label === entry.card) : undefined;
   if (!job) return entry;
-  const now = jobState(job);
+  const now = jobState(job, state.production.formatRule);
   if (now === 'running' || now === 'waiting') return { ...entry, status: 'working', word: 'In progress' };
   if (now === 'problem' && entry.status !== 'problem') return { ...entry, status: 'problem', word: 'Problem' };
   return entry;

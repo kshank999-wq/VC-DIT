@@ -95,6 +95,8 @@ export interface TransferOptions {
   onProgress?: (progress: TransferProgress) => void;
   progressEveryMs?: number;
   chunkBytes?: number;
+  /** What a file's failure says when the source disappears mid-run ("The card was removed."). */
+  sourceLost?: string;
   /** Test seam: runs between the copy and the read-back of each destination file. */
   afterCopy?: (legId: string, written: string, file: SourceFile) => Promise<void>;
 }
@@ -164,7 +166,7 @@ const describe = (cause: unknown): string => {
     case 'ENXIO':
     case 'ENOENT':
     case 'ENOTDIR':
-      return 'The destination stopped responding or was disconnected.';
+      return DESTINATION_GONE;
     default:
       return cause instanceof Error ? cause.message : String(cause);
   }
@@ -205,7 +207,15 @@ interface LegRun {
   files: LegFile[];
 }
 
-const STOPPED = 'Stopped before it was verified.';
+export const STOPPED = 'Stopped before it was verified.';
+export const CARD_REMOVED = 'The card was removed.';
+export const DESTINATION_GONE = 'The destination stopped responding or was disconnected.';
+export const DESTINATION_UNAVAILABLE = 'The destination is not available.';
+export const DESTINATION_DISCONNECTED = 'The destination was disconnected.';
+
+/** A destination that went away, rather than a copy that was wrong: worth trying again later (an upload over set internet). */
+export const isTransient = (error: string | null | undefined): boolean =>
+  error === DESTINATION_GONE || error === DESTINATION_UNAVAILABLE || error === DESTINATION_DISCONNECTED;
 
 export const runTransfer = async (
   sourceRoot: string,
@@ -228,7 +238,7 @@ export const runTransfer = async (
     legs.push({
       plan,
       device,
-      progress: { phase: 'copying', totalBytes, copiedBytes: 0, verifiedBytes: 0, problemFiles: 0, error: device === null ? 'The destination is not available.' : null },
+      progress: { phase: 'copying', totalBytes, copiedBytes: 0, verifiedBytes: 0, problemFiles: 0, error: device === null ? DESTINATION_UNAVAILABLE : null },
       files: files.map(() => ({ kind: 'pending' })),
     });
   }
@@ -274,7 +284,7 @@ export const runTransfer = async (
   const stillThere = async (leg: LegRun): Promise<boolean> => {
     if (!alive(leg)) return false;
     if ((await deviceOf(leg.plan.root)) === leg.device) return true;
-    await kill(leg, 'The destination was disconnected.');
+    await kill(leg, DESTINATION_DISCONNECTED);
     return false;
   };
 
@@ -289,7 +299,7 @@ export const runTransfer = async (
     currentFile = file.path;
 
     if ((await deviceOf(sourceRoot)) !== sourceDevice) {
-      for (const leg of legs) if (leg.files[index]!.kind === 'pending') finish(leg, index, { state: 'failed', error: 'The card was removed.' });
+      for (const leg of legs) if (leg.files[index]!.kind === 'pending') finish(leg, index, { state: 'failed', error: options.sourceLost ?? CARD_REMOVED });
       continue;
     }
 

@@ -246,7 +246,7 @@ export const dailiesSettings = (options: AppState['dailies']): DailiesSettings =
 
 const pct = (used: number, total: number) => (total > 0 ? Math.round((used / total) * 100) : 0);
 
-export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs'> => {
+export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs' | 'relaysPaused'> => {
   const volumes = media.volumes.map<Volume>((volume) => {
     const before = state.volumes.find((candidate) => candidate.id === volume.id);
     const used = Math.max(0, volume.totalBytes - volume.freeBytes);
@@ -268,6 +268,8 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
             : DESTINATION_ROLES.includes(volume.role),
       ingested: volume.ingested,
       mountPath: volume.mountPath,
+      relay: volume.relay,
+      device: volume.device,
     };
   });
   const destinations = media.folders.map<IngestDestination>((folder) => {
@@ -279,6 +281,8 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       free: folder.online ? formatBytes(folder.freeBytes) : '—',
       fillPct: pct(folder.totalBytes - folder.freeBytes, folder.totalBytes),
       selected: folder.online && (before?.selected ?? true),
+      relay: folder.relay,
+      path: folder.path,
     };
   });
   const jobs = media.jobs.map<TransferJob>((job) => ({
@@ -300,11 +304,17 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       rate: 1,
       error: leg.error,
       targetDir: leg.targetDir,
+      relay: leg.relay,
+      relayFrom: leg.relayFrom,
+      waiting: leg.waiting,
+      bytesPerSecond: leg.bytesPerSecond,
+      etaSeconds: leg.etaSeconds,
+      currentFile: leg.currentFile,
     })),
     bytesPerSecond: job.bytesPerSecond,
     etaSeconds: job.etaSeconds,
   }));
-  return { volumes, destinations, jobs };
+  return { volumes, destinations, jobs, relaysPaused: media.relaysPaused ?? false };
 };
 
 /** What Intake asks the engine for: the ticked cards to the ticked destinations. */

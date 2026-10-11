@@ -111,7 +111,7 @@ void app.whenReady().then(async () => {
 let quitting = false;
 app.on('before-quit', (event) => {
   if (quitting) return;
-  if (media?.busy()) {
+  if (media?.cardBusy()) {
     const choice = dialog.showMessageBoxSync({
       type: 'warning',
       buttons: ['Keep copying', 'Quit anyway'],
@@ -119,6 +119,20 @@ app.on('before-quit', (event) => {
       cancelId: 0,
       message: 'A transfer is still running.',
       detail: 'If you quit now, the card being copied is not safe to format. Unverified copies are removed; start the ingest again to finish it.',
+    });
+    if (choice === 0) {
+      event.preventDefault();
+      return;
+    }
+  } else if (media && media.relaysPending() > 0) {
+    const pending = media.relaysPending();
+    const choice = dialog.showMessageBoxSync({
+      type: 'question',
+      buttons: ['Keep uploading', 'Quit'],
+      defaultId: 0,
+      cancelId: 0,
+      message: `${pending} upload${pending === 1 ? ' is' : 's are'} not finished.`,
+      detail: 'The cards are already safe on the backup. If you quit, the uploads carry on from the backup, from the last verified file, the next time this day is open in VC DIT.',
     });
     if (choice === 0) {
       event.preventDefault();

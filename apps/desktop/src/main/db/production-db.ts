@@ -4,7 +4,9 @@ import initSqlJs, { type Database, type SqlValue } from 'sql.js';
 import type { ChecksumMethod } from '../../shared/media';
 import {
   DEFAULT_NAMING,
+  FORMAT_RULES,
   MIRROR_METHODS,
+  type FormatRule,
   localDate,
   type MirrorMethod,
   type Production,
@@ -77,6 +79,9 @@ export interface TransferRecord {
     reportsDir: string;
     error: string | null;
     outcomes: Record<string, FileOutcome>;
+    /** Fed from a backup (relayFrom, a leg id) rather than the card. */
+    relay?: boolean;
+    relayFrom?: string | null;
   }[];
 }
 
@@ -436,6 +441,13 @@ MIGRATIONS.push(`
     select number, null, 'none', created_at, 'general', notes from shoot_day where trim(notes) != '';
 `);
 
+// Relay uploads (spec §4.3.1): a destination fed from a backup, and which; the production's rule for when a card is safe to format.
+MIGRATIONS.push(`
+  alter table transfer_destination add column relay integer not null default 0;
+  alter table transfer_destination add column relay_from text;
+  alter table production add column format_rule text not null default 'two-local';
+`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -577,6 +589,7 @@ export const DEFAULT_PRODUCTION: Production = {
   devices: [],
   namingTokens: DEFAULT_NAMING,
   vfxMethod: 'Hard link',
+  formatRule: 'two-local',
 };
 
 export class ProductionDb {
@@ -654,7 +667,7 @@ export class ProductionDb {
           at,
         ],
       );
-      this.run('update production set vfx_method = ? where id = 1', [production.vfxMethod]);
+      this.run('update production set vfx_method = ?, format_rule = ? where id = 1', [production.vfxMethod, production.formatRule]);
       this.run('insert into shoot_day (number, date, created_at) values (1, ?, ?)', [localDate(), at]);
     });
   }
@@ -736,6 +749,7 @@ export class ProductionDb {
       devices: JSON.parse(String(row['devices'])) as Production['devices'],
       namingTokens: JSON.parse(String(row['naming_tokens'])) as string[],
       vfxMethod: MIRROR_METHODS.includes(row['vfx_method'] as MirrorMethod) ? (row['vfx_method'] as MirrorMethod) : 'Hard link',
+      formatRule: FORMAT_RULES.includes(row['format_rule'] as FormatRule) ? (row['format_rule'] as FormatRule) : 'two-local',
     };
   }
 
@@ -743,7 +757,7 @@ export class ProductionDb {
     const next = { ...this.production(), ...patch };
     this.transaction(() =>
       this.run(
-        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, vfx_method = ?, updated_at = ? where id = 1',
+        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, vfx_method = ?, format_rule = ?, updated_at = ? where id = 1',
         [
           next.name,
           next.code,
@@ -753,6 +767,7 @@ export class ProductionDb {
           JSON.stringify(next.devices),
           JSON.stringify(next.namingTokens),
           next.vfxMethod,
+          next.formatRule,
           now(),
         ],
       ),
@@ -897,7 +912,7 @@ export class ProductionDb {
       ]);
       for (const [position, destination] of record.destinations.entries()) {
         this.run(
-          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error) values (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error, relay, relay_from) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             record.day,
             record.id,
@@ -908,6 +923,8 @@ export class ProductionDb {
             destination.targetDir,
             destination.reportsDir,
             destination.error,
+            destination.relay ? 1 : 0,
+            destination.relayFrom ?? null,
           ],
         );
       }
@@ -962,6 +979,8 @@ export class ProductionDb {
         reportsDir: String(leg['reports_dir']),
         error: (leg['error'] as string | null) ?? null,
         outcomes: {} as Record<string, FileOutcome>,
+        relay: Number(leg['relay']) === 1,
+        relayFrom: (leg['relay_from'] as string | null) ?? null,
       }));
       const clips = this.rows<Record<string, SqlValue>>('select * from clip where day = ? and transfer_id = ? order by id', [day, id]);
       const byLeg = new Map(destinations.map((destination) => [destination.id, destination]));

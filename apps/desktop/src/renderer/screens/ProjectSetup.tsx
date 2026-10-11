@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { NAMING_FIELDS, applyNaming, parseNaming, type ProjectResult } from '../../shared/project';
+import type { FormatRule } from '../../shared/project';
 import type { ChecksumMethod, SceneStatus, Status } from '../model/types';
 import { projectApi } from '../state/engine';
 import { useStore } from '../state/store';
@@ -235,6 +236,22 @@ export function ProjectSetup() {
                   <option key={method}>{method}</option>
                 ))}
               </select>
+            </label>
+            <label className="field">
+              <span className="label">Safe to format when</span>
+              <select
+                className="select"
+                value={production.formatRule}
+                onChange={(event) => dispatch({ type: 'setProduction', patch: { formatRule: event.target.value as FormatRule } })}
+              >
+                <option value="two-local">Two local copies verified (uploads don't count)</option>
+                <option value="every">Every destination verified, uploads included</option>
+              </select>
+              <span className="faint small">
+                {production.formatRule === 'two-local'
+                  ? 'A card can be formatted once the RAID and a shuttle (any two copies from the card) have verified, while its upload carries on.'
+                  : 'A card waits for its uploads too. It can still come out once its local copies are done.'}
+              </span>
             </label>
 
             <div className="field setup-span">

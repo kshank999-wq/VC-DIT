@@ -1,4 +1,4 @@
-import type { ChecksumMethod, VolumeRole } from '../../shared/media';
+import type { ChecksumMethod, DeviceInfo, VolumeRole } from '../../shared/media';
 import type { LutScope, MatchCandidate, MatchEntry, MirrorMethod, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry, VfxLocation } from '../../shared/project';
 
 export type Take = TakeEntry;
@@ -60,6 +60,10 @@ export interface Volume {
   ingested: boolean;
   /** Where it is mounted (from the media engine). */
   mountPath?: string;
+  /** As a destination: fed from the backup rather than the card (an upload). */
+  relay?: boolean;
+  /** What the system says the device is: its model, bus, solid state, RAID. */
+  device?: DeviceInfo;
 }
 
 export interface IngestDestination {
@@ -69,6 +73,10 @@ export interface IngestDestination {
   free: string;
   fillPct: number;
   selected: boolean;
+  /** Fed from the backup rather than the card (an upload). */
+  relay?: boolean;
+  /** Where it is (from the media engine), for the system's own icon. */
+  path?: string;
 }
 
 /** One destination of one card's transfer (spec "Transfer Record"). */
@@ -83,6 +91,13 @@ export interface TransferLeg {
   id?: string;
   error?: string | null;
   targetDir?: string;
+  /** An upload fed from a backup (relayFrom, by name) rather than the card; why it is not moving; its own speed and file. */
+  relay?: boolean;
+  relayFrom?: string | null;
+  waiting?: string | null;
+  bytesPerSecond?: number;
+  etaSeconds?: number | null;
+  currentFile?: string | null;
 }
 
 export interface TransferJob {

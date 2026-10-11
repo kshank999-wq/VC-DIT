@@ -16,7 +16,17 @@ export interface Production {
   namingTokens: string[];
   /** How VFX shots are mirrored into the VFX folders (spec §4.9). */
   vfxMethod: MirrorMethod;
+  /** When a card counts as safe to format (spec §4.3.1). */
+  formatRule: FormatRule;
 }
+
+/**
+ * two-local: once at least two copies made straight from the card (the
+ * RAID, a shuttle) have verified; uploads relayed from a backup do not
+ * count. every: once every destination has verified, uploads included.
+ */
+export type FormatRule = 'two-local' | 'every';
+export const FORMAT_RULES: FormatRule[] = ['two-local', 'every'];
 
 /**
  * Hard link: the VFX folder's file is the same data as the editorial one, no

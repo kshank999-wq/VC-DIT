@@ -25,8 +25,27 @@ const card = {
   suggestedRole: 'Camera' as const,
   role: 'Camera' as const,
   ingested: false,
+  relay: false,
+  device: { model: 'CFexpress Type B', bus: 'USB', solidState: true, raid: false },
 };
 const raid = { ...card, id: '/Volumes/RAID', name: 'RAID', mountPath: '/Volumes/RAID', detected: 'VC DIT media drive', role: 'Destination' as const, suggestedRole: 'Destination' as const };
+
+const leg: JobSnapshot['legs'][number] = {
+  id: raid.id,
+  name: 'RAID',
+  copyPct: 40,
+  verifyPct: 0,
+  failed: false,
+  error: null,
+  problemFiles: 0,
+  targetDir: '/Volumes/RAID/HALCYON/A015',
+  relay: false,
+  relayFrom: null,
+  waiting: null,
+  bytesPerSecond: 0,
+  etaSeconds: null,
+  currentFile: null,
+};
 
 const job = (patch: Partial<JobSnapshot['legs'][number]> = {}): JobSnapshot => ({
   id: 'A015',
@@ -40,7 +59,7 @@ const job = (patch: Partial<JobSnapshot['legs'][number]> = {}): JobSnapshot => (
   queued: false,
   running: true,
   checksum: 'xxHash64',
-  legs: [{ id: raid.id, name: 'RAID', copyPct: 40, verifyPct: 0, failed: false, error: null, problemFiles: 0, targetDir: '/Volumes/RAID/HALCYON/A015', ...patch }],
+  legs: [{ ...leg, ...patch }],
   bytesPerSecond: 850e6,
   etaSeconds: 500,
   startedAt: '2026-10-06T18:00:00Z',
@@ -68,7 +87,7 @@ const push = (state: MediaState) => act(() => listener?.(state));
 beforeEach(() => {
   listener = null;
   media = {
-    state: vi.fn(async () => ({ volumes: [card, raid], folders: [], jobs: [] })),
+    state: vi.fn(async () => ({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [] })),
     onChange: vi.fn((next: (state: MediaState) => void) => {
       listener = next;
       return () => (listener = null);
@@ -79,6 +98,9 @@ beforeEach(() => {
     ingest: vi.fn(async () => ({ ok: true, jobs: ['A015'] })),
     retry: vi.fn(async () => ({ ok: true, jobs: ['A015'] })),
     stopJob: vi.fn(async () => ({ ok: true })),
+    setRelay: vi.fn(async () => ({ ok: true })),
+    pauseRelays: vi.fn(async () => undefined),
+    icon: vi.fn(async () => null),
     show: vi.fn(async () => undefined),
   };
   window.vcdit = {
@@ -138,8 +160,22 @@ describe('Intake on the media engine', () => {
     expect(media.addFolder).toHaveBeenCalled();
   });
 
+  it('sets a destination to upload from the backup, and needs one fed from the card', async () => {
+    const lucid = { id: 'folder:/lucid', name: 'Filespace', path: '/Volumes/lucid/Filespace', totalBytes: 1e13, freeBytes: 5e12, online: true, relay: true };
+    media.state.mockResolvedValueOnce({ volumes: [card, raid], folders: [lucid], jobs: [] });
+    mount(<Intake />);
+    await waitFor(() => screen.getByText('A015'));
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    expect(within(out).getByText('LucidLink')).toBeTruthy();
+    expect(screen.getByText(/1 destination \+ 1 upload/)).toBeTruthy();
+    fireEvent.click(within(within(out).getByRole('group', { name: 'How RAID is fed' })).getByRole('button', { name: 'Upload from backup' }));
+    expect(media.setRelay).toHaveBeenCalledWith(raid.id, true);
+    // Everything uploading, nothing from the card: it says so instead of starting.
+    expect((screen.getByRole('button', { name: /Start verified ingest/ }) as HTMLButtonElement).disabled || screen.queryByText(/copies straight from the card/)).toBeTruthy();
+  });
+
   it('says what to do when nothing is plugged in', async () => {
-    media.state.mockResolvedValueOnce({ volumes: [], folders: [], jobs: [] });
+    media.state.mockResolvedValueOnce({ volumes: [], folders: [], relaysPaused: false, jobs: [] });
     mount(<Intake />);
     expect(await screen.findByText(/No cards yet/)).toBeTruthy();
   });
@@ -149,7 +185,7 @@ describe('Verify on the media engine', () => {
   it('shows real progress, speed and time left', async () => {
     mount(<Verify />);
     await waitFor(() => expect(media.state).toHaveBeenCalled());
-    push({ volumes: [card, raid], folders: [], jobs: [job()] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [job()] });
     expect(screen.getByText('Copying 40%')).toBeTruthy();
     expect(screen.getByText(/850 MB\/s · 8 min left/)).toBeTruthy();
     expect(screen.getByText(/Not safe yet/)).toBeTruthy();
@@ -161,6 +197,7 @@ describe('Verify on the media engine', () => {
     push({
       volumes: [card, raid],
       folders: [],
+      relaysPaused: false,
       jobs: [{ ...job({ copyPct: 100, verifyPct: 100, failed: true, error: 'The destination was disconnected.' }), running: false }],
     });
     expect(screen.getByText(/Problem — don't format/)).toBeTruthy();
@@ -169,19 +206,53 @@ describe('Verify on the media engine', () => {
     expect(media.retry).toHaveBeenCalledWith('A015', raid.id);
   });
 
-  it('calls a card safe to format only when every destination verified', async () => {
+  it('calls a card safe to format once two local copies verified, and only then', async () => {
     mount(<Verify />);
     await waitFor(() => expect(media.state).toHaveBeenCalled());
-    push({ volumes: [card, raid], folders: [], jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, bytesPerSecond: 0 }] });
+    const done = { copyPct: 100, verifyPct: 100 };
+    // One local copy: it can come out, but it is not safe to format.
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), running: false, bytesPerSecond: 0 }] });
+    expect(screen.getByText(/Can come out · only one local copy/)).toBeTruthy();
+    expect(screen.queryByText('Safe to format')).toBeNull();
+    // Two: safe.
+    const shuttle = { ...leg, ...done, id: '/Volumes/SHTL', name: 'SHTL', targetDir: '/Volumes/SHTL/HALCYON/A015' };
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle], running: false, bytesPerSecond: 0 }] });
     expect(screen.getByText('Safe to format')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Show' })[0]!);
     expect(media.show).toHaveBeenCalledWith('/Volumes/RAID/HALCYON/A015');
+  });
+
+  it('lets the card come out while its upload carries on, and pauses uploads', async () => {
+    mount(<Verify />);
+    await waitFor(() => expect(media.state).toHaveBeenCalled());
+    const done = { copyPct: 100, verifyPct: 100 };
+    const shuttle = { ...leg, ...done, id: '/Volumes/SHTL', name: 'SHTL' };
+    const cloud = { ...leg, id: 'folder:/lucid', name: 'LucidLink', relay: true, relayFrom: 'RAID', copyPct: 30, verifyPct: 0, bytesPerSecond: 40e6, etaSeconds: 3600 };
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle, cloud], running: false, bytesPerSecond: 0 }] });
+    // Two local copies verified: safe, whatever the upload is doing.
+    expect(screen.getByText('Safe to format')).toBeTruthy();
+    expect(screen.getByText(/upload from RAID/)).toBeTruthy();
+    expect(screen.getByText(/1 upload not finished/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Pause uploads' }));
+    expect(media.pauseRelays).toHaveBeenCalledWith(true);
+  });
+
+  it('under the every-destination rule, waits for the upload before calling the card safe', async () => {
+    const { jobState } = await import('../model/status');
+    const local = { name: 'RAID', copyPct: 100, verifyPct: 100, failed: false, rate: 1 };
+    const upload = { name: 'Frame.io', copyPct: 40, verifyPct: 0, failed: false, rate: 1, relay: true };
+    const card = { id: 'A015', label: '', size: '', files: '', queued: false, checksum: 'xxHash64' as const, legs: [local, { ...local, name: 'SHTL' }, upload] };
+    expect(jobState(card, 'two-local')).toBe('safe');
+    expect(jobState(card, 'every')).toBe('eject');
+    expect(jobState({ ...card, legs: [local, { ...local, name: 'SHTL' }, { ...upload, failed: true }] }, 'two-local')).toBe('safe');
+    expect(jobState({ ...card, legs: [local, { ...local, name: 'SHTL' }, { ...upload, failed: true }] }, 'every')).toBe('problem');
+    expect(jobState({ ...card, legs: [local, { ...local, name: 'SHTL', failed: true }, upload] }, 'two-local')).toBe('problem');
   });
 
   it('shows each card to each destination as it copies, with the file, time left and speed, and stops a card', async () => {
     mount(<Intake />);
     await waitFor(() => screen.getByText('A015'));
-    push({ volumes: [card, raid], folders: [], jobs: [job()] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [job()] });
     const transfers = screen.getByRole('region', { name: 'Transfers' });
     expect(within(transfers).getByText('A015C002_261005_R1AB.ari')).toBeTruthy();
     expect(within(transfers).getByText(/min left \(850 MB\/s\)/)).toBeTruthy();
@@ -192,7 +263,7 @@ describe('Verify on the media engine', () => {
     expect(media.show).toHaveBeenCalledWith('/Volumes/RAID/HALCYON/A015');
 
     // Verified: the row says so, and there is nothing to stop.
-    push({ volumes: [card, raid], folders: [], jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, bytesPerSecond: 0, etaSeconds: null, currentFile: null }] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, bytesPerSecond: 0, etaSeconds: null, currentFile: null }] });
     expect(within(transfers).getByText('Verified')).toBeTruthy();
     expect(within(transfers).queryByRole('button', { name: 'Stop A015' })).toBeNull();
   });
@@ -212,5 +283,28 @@ describe('what a source or destination looks like', () => {
     expect(folderLook({ name: 'Dailies', kind: '/Users/dit/Library/CloudStorage/Dropbox/Dailies' })).toEqual({ kind: 'cloud', service: 'Dropbox' });
     expect(folderLook({ name: 'Marketing', kind: 'G:\\My Drive\\Marketing' })).toEqual({ kind: 'cloud', service: 'Google Drive' });
     expect(folderLook({ name: 'Documents', kind: '/Users/dit/Documents' }).kind).toBe('folder');
+  });
+
+  it('tells a RED mag, an AXS card, an SSD, a hard drive and a RAID apart from what the system says', async () => {
+    const { volumeLook, brandOf } = await import('../ui/media-icons');
+    const device = (model: string | null, patch: Partial<{ bus: string; solidState: boolean; raid: boolean }> = {}) => ({ model, bus: null, solidState: null, raid: false, ...patch });
+    const look = (role: string, model: string | null, patch = {}, name = 'X') => volumeLook({ role, media: 'USB drive · 1 TB', name, filesystem: 'exFAT', device: device(model, patch) }).kind;
+    expect(look('Camera', 'RED MINI-MAG 960GB')).toBe('redmag');
+    expect(look('Camera', 'SONY AXS-A1TS48')).toBe('axs');
+    expect(look('Camera', 'Codex Compact Drive 2TB')).toBe('codex');
+    expect(look('Camera', 'SanDisk Extreme PRO CFast 2.0')).toBe('cfast');
+    expect(look('Camera', null, { bus: 'Secure Digital' })).toBe('sd');
+    expect(look('Camera', 'Angelbird AV PRO CFexpress B')).toBe('card');
+    expect(look('Shuttle', 'Samsung PSSD T7', { solidState: true })).toBe('shuttle');
+    expect(look('Destination', 'Samsung PSSD T7', { solidState: true })).toBe('ssd');
+    expect(look('Destination', 'WD Elements 25A3', { solidState: false })).toBe('hdd');
+    expect(look('Destination', 'OWC ThunderBay 4')).toBe('raid');
+    expect(look('Destination', 'Unknown', { raid: true })).toBe('raid');
+    expect(look('Destination', 'RED MINI-MAG 480GB')).toBe('redmag');
+    expect(brandOf('ARRI · ARRIRAW')).toBe('arri');
+    expect(brandOf('RED · R3D')).toBe('red');
+    expect(brandOf('VENICE 2 · X-OCN ST')).toBe('sony');
+    expect(brandOf('Blackmagic · BRAW')).toBe('blackmagic');
+    expect(brandOf('Sound · 212 WAV')).toBeNull();
   });
 });

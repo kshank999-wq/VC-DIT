@@ -48,6 +48,8 @@ export type ReportFilter = 'all' | StepId;
 export interface AppState {
   /** Volumes, destinations and transfers come from the real media engine. */
   engine: boolean;
+  /** Uploads relayed from a backup are paused (media engine). */
+  relaysPaused: boolean;
   /** The open production's file, its days and the recent productions, when the database is in use. */
   project: { file: string; days: ShootDay[]; recent: { file: string; name: string }[] } | null;
   screen: ScreenId;
@@ -105,6 +107,7 @@ export interface AppState {
 
 export const initialState = (): AppState => ({
   engine: false,
+  relaysPaused: false,
   project: null,
   screen: 'today',
   filesOpen: true,
@@ -168,6 +171,7 @@ export type Action =
   | { type: 'setVolumeRole'; volume: string; role: VolumeRole }
   | { type: 'toggleVolume'; volume: string }
   | { type: 'toggleDestination'; destination: string }
+  | { type: 'setDestinationRelay'; destination: string; relay: boolean }
   | { type: 'setChecksum'; checksum: ChecksumMethod }
   | { type: 'startIngest' }
   // Verify
@@ -218,16 +222,21 @@ export const DESTINATION_ROLES: VolumeRole[] = ['Destination', 'Shuttle', 'Archi
 export const SOURCE_ROLES: VolumeRole[] = ['Camera', 'Sound'];
 
 const legDone = (leg: TransferJob['legs'][number]) => leg.copyPct >= 100 && leg.verifyPct >= 100;
-const jobRunning = (job: TransferJob) => !job.queued && job.legs.some((leg) => !leg.failed && !legDone(leg));
+// Uploads run on their own, so the next card does not wait for them.
+const jobRunning = (job: TransferJob) => !job.queued && job.legs.some((leg) => !leg.relay && !leg.failed && !legDone(leg));
 
 /** Advance every running transfer one step: copy first, then the read-back check. */
 const advance = (jobs: TransferJob[]): TransferJob[] => {
   let next = jobs.map((job) => {
     if (job.queued) return job;
+    // An upload starts once every copy from the card has verified, and reads from the first of them.
+    const localDone = job.legs.filter((leg) => !leg.relay).every(legDone);
     return {
       ...job,
       legs: job.legs.map((leg) => {
         if (leg.failed || legDone(leg)) return leg;
+        if (leg.relay && !localDone) return { ...leg, waiting: 'Starts once the card has verified on a backup.' };
+        if (leg.relay && leg.waiting) return { ...leg, waiting: null };
         if (leg.copyPct < 100) return { ...leg, copyPct: Math.min(100, leg.copyPct + 4 * leg.rate) };
         return { ...leg, verifyPct: Math.min(100, leg.verifyPct + 5 * leg.rate) };
       }),
@@ -307,15 +316,22 @@ export const reducer = (state: AppState, action: Action): AppState => {
       if (!volume || !DESTINATION_ROLES.includes(volume.role)) return state;
       return { ...state, volumes: state.volumes.map((candidate) => (candidate === volume ? { ...candidate, included: !candidate.included } : candidate)) };
     }
+    case 'setDestinationRelay':
+      return {
+        ...state,
+        destinations: state.destinations.map((destination) => (destination.id === action.destination ? { ...destination, relay: action.relay } : destination)),
+        volumes: state.volumes.map((volume) => (volume.id === action.destination ? { ...volume, relay: action.relay } : volume)),
+      };
     case 'setChecksum':
       return { ...state, checksum: action.checksum };
     case 'startIngest': {
       const legs = [
-        ...state.destinations.filter((destination) => destination.selected).map((destination) => destination.name),
-        ...state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role) && volume.included).map((volume) => volume.name),
+        ...state.destinations.filter((destination) => destination.selected).map((destination) => ({ name: destination.name, relay: !!destination.relay })),
+        ...state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role) && volume.included).map((volume) => ({ name: volume.name, relay: !!volume.relay })),
       ];
+      const backup = legs.find((leg) => !leg.relay)?.name ?? null;
       const sources = state.volumes.filter((volume) => SOURCE_ROLES.includes(volume.role) && volume.included && !volume.ingested);
-      if (legs.length === 0 || sources.length === 0) return state;
+      if (!backup || sources.length === 0) return state;
       const fresh = sources
         .filter((volume) => !state.jobs.some((job) => job.id === volume.name))
         .map<TransferJob>((volume) => ({
@@ -325,7 +341,9 @@ export const reducer = (state: AppState, action: Action): AppState => {
           files: '—',
           queued: true,
           checksum: state.checksum,
-          legs: legs.map((name, index) => ({ name, copyPct: 0, verifyPct: 0, failed: false, rate: 1.2 + index * 0.15 })),
+          legs: legs.map(({ name, relay }, index) =>
+            relay ? { name, copyPct: 0, verifyPct: 0, failed: false, rate: 0.35, relay, relayFrom: backup } : { name, copyPct: 0, verifyPct: 0, failed: false, rate: 1.2 + index * 0.15 },
+          ),
         }));
       return {
         ...state,

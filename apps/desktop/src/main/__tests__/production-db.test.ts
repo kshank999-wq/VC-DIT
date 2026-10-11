@@ -42,6 +42,8 @@ const transfer = (patch: Partial<TransferRecord> = {}): TransferRecord => ({
       reportsDir: '/Volumes/RAID/P/SHOOT_DAY_001/REPORTS/ingest_verification',
       error: null,
       outcomes: { 'A015R1AB/A015C001_261005_R1AB.mxf': { state: 'verified' }, 'A015R1AB/A015C002_261005_R1AB.mxf': { state: 'already-there' } },
+      relay: false,
+      relayFrom: null,
     },
     {
       id: 'folder:/nas',
@@ -54,6 +56,9 @@ const transfer = (patch: Partial<TransferRecord> = {}): TransferRecord => ({
         'A015R1AB/A015C001_261005_R1AB.mxf': { state: 'verified' },
         'A015R1AB/A015C002_261005_R1AB.mxf': { state: 'failed', error: 'Checksum mismatch: the copy does not match the card.' },
       },
+      // An upload fed from the RAID: kept as such.
+      relay: true,
+      relayFrom: '/Volumes/RAID',
     },
   ],
   ...patch,

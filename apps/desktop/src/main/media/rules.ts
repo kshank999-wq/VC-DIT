@@ -56,3 +56,13 @@ export const reportsFolder = (root: string, request: Pick<IngestRequest, 'produc
 
 /** Free space a destination should keep after a transfer: 1%, at least 1 GB. */
 export const headroom = (totalBytes: number): number => Math.max(1e9, totalBytes * 0.01);
+
+/**
+ * A destination that is slow to write because it is on the far end of a
+ * network: a cloud filespace or synced folder, a network share. By default
+ * these are fed from the main backup once the card has verified there, so
+ * the card can come out without waiting on the internet (spec §4.3.1).
+ */
+const REMOTE =
+  /network share|^(smbfs|nfs4?|afpfs|webdav|cifs|smb3?|lucidfs|fuse\.lucid\w*)$|lucid|frame\.?io|suite ?studios|dropbox|google ?drive|googledrive|my drive|onedrive|\bbox\b|icloud|cloudstorage|mobile documents|^\\\\/i;
+export const isRemote = (...hints: (string | null | undefined)[]): boolean => hints.some((hint) => !!hint && REMOTE.test(hint));

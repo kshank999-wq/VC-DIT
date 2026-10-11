@@ -39,7 +39,26 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
   });
   ipcMain.handle('vcdit:media-remove-folder', (_e, id: unknown) => service.removeFolder(String(id)));
   ipcMain.handle('vcdit:media-ingest', (_e, request: unknown) => service.ingest(request as IngestRequest));
-  ipcMain.handle('vcdit:media-stop', (_e, jobId: unknown) => service.stopJob(String(jobId)));
+  ipcMain.handle('vcdit:media-stop', (_e, jobId: unknown, legId: unknown) => service.stopJob(String(jobId), typeof legId === 'string' ? legId : undefined));
+  ipcMain.handle('vcdit:media-set-relay', (_e, id: unknown, relay: unknown) => service.setRelay(String(id), relay === true));
+  ipcMain.handle('vcdit:media-pause-relays', (_e, paused: unknown) => service.pauseRelays(paused === true));
+  // The system's own picture of a drive or folder, so they look as they do in Explorer or Finder.
+  const icons = new Map<string, string | null>();
+  ipcMain.handle('vcdit:media-icon', async (_e, path: unknown) => {
+    if (typeof path !== 'string') return null;
+    const state = service.state();
+    const known = state.volumes.some((volume) => volume.mountPath === path) || state.folders.some((folder) => folder.path === path);
+    if (!known) return null;
+    if (!icons.has(path)) {
+      try {
+        const image = await app.getFileIcon(path, { size: 'large' });
+        icons.set(path, image.isEmpty() ? null : image.toDataURL());
+      } catch {
+        icons.set(path, null);
+      }
+    }
+    return icons.get(path) ?? null;
+  });
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {
     // Only folders the engine wrote to.

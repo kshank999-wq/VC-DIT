@@ -26,7 +26,7 @@ const LICENSED = { plan: 'dit', state: 'licensed', email: null, serial: null, pa
 
 const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   file: '/data/productions/nightjar.vcdit',
-  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link' },
+  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link', formatRule: 'two-local' },
   day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
   days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
   scenes: [],

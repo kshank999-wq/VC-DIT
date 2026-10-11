@@ -92,7 +92,10 @@ contextBridge.exposeInMainWorld('vcdit', {
     removeFolder: (id: string): Promise<void> => ipcRenderer.invoke('vcdit:media-remove-folder', id),
     ingest: (request: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:media-ingest', request),
     retry: (jobId: string, legId: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-retry', jobId, legId),
-    stopJob: (jobId: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-stop', jobId),
+    stopJob: (jobId: string, legId?: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-stop', jobId, legId),
+    setRelay: (id: string, relay: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:media-set-relay', id, relay),
+    pauseRelays: (paused: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:media-pause-relays', paused),
+    icon: (path: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-icon', path),
     show: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:media-show', path),
   },
 });

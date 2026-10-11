@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { jobState, STEPS, summarize } from '../model/status';
+import { failedUploads, jobState, STEPS, summarize } from '../model/status';
 import type { ScreenId, Status, StepId } from '../model/types';
 import { useStore, type Action, type AppState } from '../state/store';
 import { stepVar, statusVar, tone } from '../ui/kit';
@@ -40,7 +40,7 @@ export const buildTree = (state: AppState): Node[] => {
   const color = (step: StepId) => stepVar(step);
   const shot = state.scenes.filter((scene) => scene.setups.length > 0);
   const vfxScenes = [...new Set(state.vfx.map((item) => `${item.scene}|${item.setup}`))];
-  const failed = state.jobs.some((job) => jobState(job) === 'problem');
+  const failed = state.jobs.some((job) => jobState(job, state.production.formatRule) === 'problem' || failedUploads(job).length > 0);
   const reports: [string, StepId, ScreenId][] = [
     ['ingest_verification', 'verify', 'verify'],
     ['script_supervisor', 'organize', 'match'],

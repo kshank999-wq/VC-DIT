@@ -53,7 +53,13 @@ interface MediaApi {
   removeFolder: (id: string) => Promise<void>;
   ingest: (request: import('../shared/media').IngestRequest) => Promise<import('../shared/media').IngestResult>;
   retry: (jobId: string, legId: string) => Promise<import('../shared/media').IngestResult>;
-  stopJob: (jobId: string) => Promise<{ ok: boolean; reason?: string }>;
+  /** Stop a card's transfer and its uploads, or with a leg named, just that upload. */
+  stopJob: (jobId: string, legId?: string) => Promise<{ ok: boolean; reason?: string }>;
+  /** Feed this destination from the backup (an upload) rather than the card. */
+  setRelay: (id: string, relay: boolean) => Promise<{ ok: boolean; reason?: string }>;
+  pauseRelays: (paused: boolean) => Promise<void>;
+  /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
+  icon: (path: string) => Promise<string | null>;
   show: (path: string) => Promise<void>;
 }
 
