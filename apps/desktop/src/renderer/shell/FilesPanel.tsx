@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { failedUploads, jobState, STEPS, summarize } from '../model/status';
 import type { ScreenId, Status, StepId } from '../model/types';
+import { engine } from '../state/engine';
 import { useStore, type Action, type AppState } from '../state/store';
+import { DriveBrowser } from './DriveBrowser';
 import { stepVar, statusVar, tone } from '../ui/kit';
 
 /**
@@ -220,25 +222,70 @@ function TreeRow({ node, depth, query }: { node: Node; depth: number; query: str
   );
 }
 
+const VIEW_KEY = 'vcdit.files.view';
+
+/**
+ * Two ways to look: the day's map (Overview: each folder, how far it has
+ * got, a click to the screen that fills it) and what is really on a drive
+ * (On drive: the production's folder as it is, read from the disk).
+ */
 export function FilesPanel() {
   const { state } = useStore();
   const [query, setQuery] = useState('');
+  const canBrowse = Boolean(state.engine && engine()?.browse);
+  const [view, setView] = useState<'overview' | 'drive'>(() => {
+    try {
+      return localStorage.getItem(VIEW_KEY) === 'drive' ? 'drive' : 'overview';
+    } catch {
+      return 'overview';
+    }
+  });
+  const pick = (next: 'overview' | 'drive') => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Private storage unavailable: the choice lasts this session.
+    }
+  };
+  const onDrive = canBrowse && view === 'drive';
   return (
     <aside className="files" aria-label="Project files">
       <div className="files-head">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <strong>Project files</strong>
-          <span className="mono faint" style={{ fontSize: 11 }}>
-            {state.project ? (state.media?.home ?? 'No drive yet') : 'RAID_01'}
-          </span>
+          {canBrowse ? (
+            <span className="files-views" role="group" aria-label="Files view">
+              <button type="button" aria-pressed={!onDrive} onClick={() => pick('overview')} title="The day's folders, how far each has got">
+                Overview
+              </button>
+              <button type="button" aria-pressed={onDrive} onClick={() => pick('drive')} title="What is really in the production's folder on a drive">
+                On drive
+              </button>
+            </span>
+          ) : (
+            <span className="mono faint" style={{ fontSize: 11 }}>
+              {state.project ? (state.media?.home ?? 'No drive yet') : 'RAID_01'}
+            </span>
+          )}
         </div>
-        <input className="input" placeholder="Search clips, scenes, takes…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search project files" />
+        <input
+          className="input"
+          placeholder={onDrive ? 'Search this drive…' : 'Search clips, scenes, takes…'}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          aria-label="Search project files"
+        />
       </div>
-      <div className="tree" role="tree">
-        {buildTree(state).map((node) => (
-          <TreeRow key={node.path} node={node} depth={0} query={query.trim().toLowerCase()} />
-        ))}
-      </div>
+      {onDrive ? (
+        <DriveBrowser query={query.trim()} />
+      ) : (
+        <div className="tree" role="tree">
+          {buildTree(state).map((node) => (
+            <TreeRow key={node.path} node={node} depth={0} query={query.trim().toLowerCase()} />
+          ))}
+        </div>
+      )}
       <div className="files-foot">
         <div className="legend">
           {STEPS.map((step) => (

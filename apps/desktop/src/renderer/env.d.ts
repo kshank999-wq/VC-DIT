@@ -62,6 +62,13 @@ interface MediaApi {
   setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
+  /** The Files panel: each destination, and whether the production's folder is on it. */
+  browseRoots: (production: string) => Promise<import('../shared/media').BrowseRoot[]>;
+  /** One folder under the production's folder on a destination (rel '' is the production's folder). */
+  browse: (id: string, production: string, rel: string) => Promise<import('../shared/media').BrowseListing>;
+  browseSearch: (id: string, production: string, query: string) => Promise<import('../shared/media').BrowseSearch>;
+  /** Show it in Finder or Explorer, or (open) open it with its app. */
+  reveal: (id: string, production: string, rel: string, open?: boolean) => Promise<void>;
   show: (path: string) => Promise<void>;
 }
 

@@ -77,3 +77,19 @@
 .dialog dd { margin: 0; }
 .code-input { font: 500 15px 'IBM Plex Mono'; letter-spacing: 0.06em; text-transform: uppercase; height: 40px; }
 .error { color: var(--s-problem); }
+
+/* Files: Overview or On drive. */
+.files-views { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 11px; }
+.files-views button { border: 0; background: transparent; color: var(--muted); padding: 3px 8px; cursor: pointer; font: inherit; }
+.files-views button[aria-pressed='true'] { background: var(--selected); color: var(--ink); font-weight: 600; }
+.drive-browser { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.drive-pick { gap: 6px; padding: 8px 14px 4px; }
+.drive-pick .select { flex: 1; min-width: 0; padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
+.drive-root { cursor: default; }
+.drive-root:hover { background: transparent; }
+.drive-row .tree-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.file-glyph { width: 10px; height: 12px; flex: none; border: 1.5px solid var(--faint); border-radius: 2px; }
+.tree-reveal { border: 0; background: transparent; color: var(--faint); cursor: pointer; padding: 0 2px; font-size: 12px; visibility: hidden; }
+.tree-row:hover .tree-reveal, .tree-row.selected .tree-reveal, .tree-row:focus-visible .tree-reveal { visibility: visible; }
+.tree-reveal:hover { color: var(--ink); }
+.files-note { padding: 6px 14px; font-size: 12px; }

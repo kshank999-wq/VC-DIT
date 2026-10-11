@@ -132,6 +132,34 @@ export interface JobSnapshot {
   finishedAt: string | null;
 }
 
+/** Something in a folder on a drive, as the Files panel shows it. */
+export interface BrowseEntry {
+  name: string;
+  /** Under the production's folder, with `/`. */
+  rel: string;
+  /** Where it is on this computer. */
+  path: string;
+  kind: 'folder' | 'file' | 'link';
+  size: number;
+  modified: string;
+  /** A folder's number of items, when it could be read. */
+  items: number | null;
+  /** Shares its data with another name (a hard-linked scene view or VFX mirror), or a link. */
+  linked: boolean;
+}
+
+export type BrowseListing = { ok: true; entries: BrowseEntry[]; more: number } | { ok: false; reason: string };
+export type BrowseSearch = { ok: true; entries: BrowseEntry[]; complete: boolean } | { ok: false; reason: string };
+
+/** A drive or folder the Files panel can show, and whether the production's folder is on it. */
+export interface BrowseRoot {
+  id: string;
+  name: string;
+  /** The production's folder there. */
+  path: string;
+  present: boolean;
+}
+
 /** Human sizes, decimal as drive makers and Finder count them. */
 export const formatBytes = (bytes: number): string => {
   const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];

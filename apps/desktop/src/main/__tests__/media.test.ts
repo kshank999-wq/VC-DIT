@@ -8,6 +8,8 @@ import { c4id, mhlHashList, writeReports } from '../media/reports';
 import { cardFolder, destinationProblem, isRemote, sameOrInside, segment } from '../media/rules';
 import { listSource, PART_SUFFIX, runTransfer, type LegPlan } from '../media/transfer';
 import { classifyVolume, fromDiskutil, fromWindows } from '../media/volumes';
+import { inside, listFolder, searchFolder } from '../media/browse';
+import { link, symlink } from 'node:fs/promises';
 
 let base: string;
 let card: string;
@@ -350,5 +352,48 @@ describe('what the device is', () => {
     expect(isRemote('\\\\nas\\prod')).toBe(true);
     expect(isRemote('Thunderbolt drive', 'APFS', 'HLC_RAID_01')).toBe(false);
     expect(isRemote('/Volumes/RAID/Boxes')).toBe(false);
+  });
+});
+
+describe('browsing a drive', () => {
+  it('lists a folder, folders first and in natural order, marks hard links, and hides clutter and unfinished copies', async () => {
+    const prod = join(base, 'HALCYON');
+    await mkdir(join(prod, 'DAY', 'A10'), { recursive: true });
+    await mkdir(join(prod, 'DAY', 'A2'), { recursive: true });
+    await writeFile(join(prod, 'DAY', 'clip.mxf'), 'abc');
+    await link(join(prod, 'DAY', 'clip.mxf'), join(prod, 'DAY', 'A2', 'clip.mxf'));
+    await writeFile(join(prod, 'DAY', '.DS_Store'), '');
+    await writeFile(join(prod, 'DAY', 'half.mxf.vcdit-part'), '');
+    await symlink('/etc', join(prod, 'DAY', 'out'));
+    const listing = await listFolder(prod, 'DAY');
+    if (!listing.ok) throw new Error(listing.reason);
+    expect(listing.entries.map((item) => [item.name, item.kind, item.linked, item.items])).toEqual([
+      ['A2', 'folder', false, 1],
+      ['A10', 'folder', false, 0],
+      ['clip.mxf', 'file', true, null],
+      ['out', 'link', true, null],
+    ]);
+    expect(listing.entries[2]).toMatchObject({ rel: 'DAY/clip.mxf', size: 3 });
+    expect(await listFolder(prod, 'NOT_YET')).toEqual({ ok: false, reason: 'Not on this drive (yet).' });
+  });
+
+  it('never leaves the production folder', async () => {
+    const prod = join(base, 'HALCYON');
+    await mkdir(prod, { recursive: true });
+    expect(inside(prod, '../secret')).toBeNull();
+    expect(inside(prod, 'DAY/../../x')).toBeNull();
+    expect(inside(prod, 'DAY/A2')).toBe(join(prod, 'DAY', 'A2'));
+    expect(await listFolder(prod, '..')).toEqual({ ok: false, reason: 'That folder is outside the production.' });
+  });
+
+  it('finds names anywhere under the production folder, nearest first', async () => {
+    const prod = join(base, 'HALCYON');
+    await mkdir(join(prod, 'D1', 'CAMERA_ORIGINALS', 'A015'), { recursive: true });
+    await writeFile(join(prod, 'D1', 'CAMERA_ORIGINALS', 'A015', 'A015C002.mxf'), 'x');
+    await writeFile(join(prod, 'D1', 'a015-notes.txt'), 'x');
+    const found = await searchFolder(prod, 'a015');
+    if (!found.ok) throw new Error(found.reason);
+    expect(found.entries.map((item) => item.rel)).toEqual(['D1/a015-notes.txt', 'D1/CAMERA_ORIGINALS/A015', 'D1/CAMERA_ORIGINALS/A015/A015C002.mxf']);
+    expect(found.complete).toBe(true);
   });
 });

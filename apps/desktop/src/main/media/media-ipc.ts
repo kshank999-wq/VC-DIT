@@ -1,5 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
-import type { IngestRequest, VolumeRole } from '../../shared/media';
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
+import type { BrowseRoot, IngestRequest, VolumeRole } from '../../shared/media';
+import { inside, listFolder, searchFolder } from './browse';
+import { segment } from './rules';
 import type { TransferRecord } from '../db/production-db';
 import { licensing } from '../licensing-ipc';
 import { MediaService } from './media-service';
@@ -60,6 +64,37 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
     }
     return icons.get(path) ?? null;
   });
+  // The Files panel: what is really in the production's folder on each destination. Read-only, and only there.
+  const productionRoot = (id: unknown, production: unknown): string | null => {
+    const destination = service.destinations().find((candidate) => candidate.id === id);
+    if (!destination || typeof production !== 'string' || !production.trim()) return null;
+    return join(destination.root, segment(production));
+  };
+  ipcMain.handle('vcdit:files-roots', async (_e, production: unknown): Promise<BrowseRoot[]> =>
+    Promise.all(
+      service.destinations().map(async (destination) => {
+        const path = typeof production === 'string' && production.trim() ? join(destination.root, segment(production)) : destination.root;
+        const present = await stat(path).then((info) => info.isDirectory(), () => false);
+        return { id: destination.id, name: destination.name, path, present };
+      }),
+    ),
+  );
+  ipcMain.handle('vcdit:files-list', (_e, id: unknown, production: unknown, rel: unknown) => {
+    const root = productionRoot(id, production);
+    return root ? listFolder(root, typeof rel === 'string' ? rel : '') : { ok: false, reason: 'That drive is no longer available.' };
+  });
+  ipcMain.handle('vcdit:files-search', (_e, id: unknown, production: unknown, query: unknown) => {
+    const root = productionRoot(id, production);
+    return root ? searchFolder(root, typeof query === 'string' ? query.slice(0, 120) : '') : { ok: false, reason: 'That drive is no longer available.' };
+  });
+  ipcMain.handle('vcdit:files-reveal', (_e, id: unknown, production: unknown, rel: unknown, open: unknown) => {
+    const root = productionRoot(id, production);
+    const path = root && typeof rel === 'string' ? inside(root, rel) : null;
+    if (!path) return;
+    if (open === true) void shell.openPath(path);
+    else shell.showItemInFolder(path);
+  });
+
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {
     // Only folders the engine wrote to.

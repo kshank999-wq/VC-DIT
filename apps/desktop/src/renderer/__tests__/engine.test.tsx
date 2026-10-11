@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IngestRequest, JobSnapshot, MediaState } from '../../shared/media';
 import { Intake } from '../screens/Intake';
+import { FilesPanel } from '../shell/FilesPanel';
 import { Verify } from '../screens/Verify';
 import { StoreProvider, useStore } from '../state/store';
 
@@ -66,6 +67,24 @@ const job = (patch: Partial<JobSnapshot['legs'][number]> = {}): JobSnapshot => (
   finishedAt: null,
 });
 
+const entry = (rel: string, kind: 'folder' | 'file', patch: Record<string, unknown> = {}) => ({
+  name: rel.split('/').pop()!,
+  rel,
+  path: `/Volumes/RAID/HALCYON/${rel}`,
+  kind,
+  size: kind === 'file' ? 4_200_000_000 : 0,
+  modified: '2026-10-05T18:00:00.000Z',
+  items: kind === 'folder' ? 2 : null,
+  linked: false,
+  ...patch,
+});
+const LISTINGS: Record<string, ReturnType<typeof entry>[]> = {
+  '': [entry('SHOOT_DAY_014_2026-10-05', 'folder')],
+  'SHOOT_DAY_014_2026-10-05': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS', 'folder'), entry('SHOOT_DAY_014_2026-10-05/REPORTS', 'folder')],
+  'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015', 'folder')],
+  'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari', 'file', { linked: true })],
+};
+
 let listener: ((state: MediaState) => void) | null;
 let media: { [K in keyof MediaApi]: ReturnType<typeof vi.fn> };
 
@@ -101,6 +120,10 @@ beforeEach(() => {
     setRelay: vi.fn(async () => ({ ok: true })),
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
+    browseRoots: vi.fn(async () => [{ id: raid.id, name: 'RAID', path: '/Volumes/RAID/HALCYON', present: true }]),
+    browse: vi.fn(async (_id: string, _production: string, rel: string) => ({ ok: true, more: 0, entries: LISTINGS[rel] ?? [] })),
+    browseSearch: vi.fn(async () => ({ ok: true, complete: true, entries: [LISTINGS['SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015']![0]!] })),
+    reveal: vi.fn(async () => undefined),
     icon: vi.fn(async () => null),
     show: vi.fn(async () => undefined),
   };
@@ -314,5 +337,40 @@ describe('what a source or destination looks like', () => {
     expect(brandOf('VENICE 2 · X-OCN ST')).toBe('sony');
     expect(brandOf('Blackmagic · BRAW')).toBe('blackmagic');
     expect(brandOf('Sound · 212 WAV')).toBeNull();
+  });
+});
+
+describe('the Files panel on the drives', () => {
+  it('browses the production folder on a destination, folder by folder, with the copy state of a card folder', async () => {
+    mount(<FilesPanel />);
+    fireEvent.click(await screen.findByRole('button', { name: 'On drive' }));
+    const tree = await screen.findByRole('tree', { name: 'HALCYON on RAID' });
+    expect(media.browseRoots).toHaveBeenCalledWith('HALCYON');
+    fireEvent.click(await within(tree).findByText('SHOOT_DAY_014_2026-10-05'));
+    fireEvent.click(await within(tree).findByText('CAMERA_ORIGINALS'));
+    // The card is copying to RAID: its folder says so.
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), legs: [{ ...leg, targetDir: '/Volumes/RAID/HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015' }] }] });
+    const a015 = await within(tree).findByText('A015');
+    expect(a015.closest('[role="treeitem"]')!.querySelector('.dot')!.getAttribute('title')).toBe('RAID: copying');
+    fireEvent.click(a015);
+    const clip = await within(tree).findByText('A015C002_261005_R1AB.ari');
+    const clipRow = clip.closest('[role="treeitem"]') as HTMLElement;
+    expect(clipRow.textContent).toContain('4.2 GB');
+    expect(within(clipRow).getByTitle(/Same data as another name/)).toBeTruthy();
+    expect(media.browse).toHaveBeenCalledWith(raid.id, 'HALCYON', 'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015');
+    // Show it in Finder, or open it with its app.
+    fireEvent.click(within(clipRow).getByRole('button', { name: 'Show A015C002_261005_R1AB.ari in Finder' }));
+    expect(media.reveal).toHaveBeenCalledWith(raid.id, 'HALCYON', 'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari', false);
+    fireEvent.doubleClick(clipRow);
+    expect(media.reveal).toHaveBeenLastCalledWith(raid.id, 'HALCYON', 'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari', true);
+  });
+
+  it('searches the whole drive folder', async () => {
+    localStorage.setItem('vcdit.files.view', 'drive');
+    mount(<FilesPanel />);
+    await screen.findByRole('tree', { name: 'HALCYON on RAID' });
+    fireEvent.change(screen.getByLabelText('Search project files'), { target: { value: 'C002' } });
+    expect(await screen.findByText('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari')).toBeTruthy();
+    expect(media.browseSearch).toHaveBeenCalledWith(raid.id, 'HALCYON', 'C002');
   });
 });
