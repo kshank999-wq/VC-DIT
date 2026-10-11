@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
@@ -34,6 +33,9 @@ import type { TransferRecord } from './production-db';
  * window. Neither happens while a transfer runs: its records belong to the
  * day it started on.
  */
+
+/** SQLite's WebAssembly, from the installed sql.js (a runtime dependency: inside the app archive when packaged). */
+const sqlWasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
 
 const CHECKSUMS: ChecksumMethod[] = ['xxHash64', 'MD5', 'SHA-1'];
 const text = (value: unknown, max = 200) => (typeof value === 'string' ? value.slice(0, max) : undefined);

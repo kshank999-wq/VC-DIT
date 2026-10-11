@@ -81,6 +81,12 @@ void app.whenReady().then(async () => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
+}).catch((cause: unknown) => {
+  // A start that fails must say so, not sit there with no window.
+  const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+  console.error('VC DIT could not start:', detail);
+  dialog.showErrorBox('VC DIT could not start', detail);
+  app.exit(1);
 });
 
 // Quitting mid-transfer leaves a card not safe to format: ask first. Then
