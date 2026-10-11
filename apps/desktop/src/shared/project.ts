@@ -472,3 +472,23 @@ export interface OrganizeState {
   problems: { clip: string; destination: string; error: string }[];
   activity: string | null;
 }
+
+// ------------------------------------------------ reports
+
+/** One report of the day, as the Reports screen lists it. */
+export interface ReportEntry {
+  id: string;
+  step: 'verify' | 'organize' | 'vfx' | 'sync' | 'output';
+  /** The screen it comes from. */
+  screen: 'verify' | 'match' | 'scenes' | 'vfx' | 'sync' | 'looks' | 'dailies' | 'delivery';
+  name: string;
+  covers: string;
+  /** ISO time it was last written, or null. */
+  time: string | null;
+  status: 'done' | 'needs' | 'problem' | 'working' | 'idle';
+  word: string;
+  /** For an ingest: the card, so a running transfer can show live. */
+  card?: string;
+  /** Its files on the drives (MHL, CSV, manifests), the first being the one to show. */
+  files: string[];
+}

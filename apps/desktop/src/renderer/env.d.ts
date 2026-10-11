@@ -90,5 +90,8 @@ interface ProjectApi {
   saveManifest: () => Promise<ProjectResult>;
   showManifest: (path: string) => Promise<void>;
   showSceneFolder: (path: string) => Promise<void>;
+  reports: () => Promise<import('../shared/project').ReportEntry[]>;
+  showReport: (path: string) => Promise<void>;
+  dayReport: (where: 'save' | 'drives') => Promise<{ ok: true; written: string[] } | { ok: false; reason: string }>;
   showDaily: (path: string) => Promise<void>;
 }

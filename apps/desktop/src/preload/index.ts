@@ -64,6 +64,9 @@ contextBridge.exposeInMainWorld('vcdit', {
     saveManifest: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-save-manifest'),
     showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
     showSceneFolder: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-organize-show', path),
+    reports: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-reports'),
+    showReport: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-report-show', path),
+    dayReport: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-day-report', where),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

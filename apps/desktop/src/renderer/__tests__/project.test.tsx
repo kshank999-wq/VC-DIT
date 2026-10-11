@@ -12,6 +12,7 @@ import { VfxHandoff } from '../screens/VfxHandoff';
 import { Looks } from '../screens/Looks';
 import { Dailies } from '../screens/Dailies';
 import { Delivery } from '../screens/Delivery';
+import { Reports } from '../screens/Reports';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -140,6 +141,9 @@ beforeEach(() => {
     saveManifest: vi.fn(async () => ok(current)),
     showManifest: vi.fn(async () => undefined),
     showSceneFolder: vi.fn(async () => undefined),
+    reports: vi.fn(async () => []),
+    showReport: vi.fn(async () => undefined),
+    dayReport: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/day_report/NJR_D001_REPORT.pdf'] })),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -501,5 +505,42 @@ describe('a production from the database', () => {
     expect(screen.getByText(/A001C002 on SHTL: A different file/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Open on RAID/ }));
     expect(api.showSceneFolder).toHaveBeenCalledWith('/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/_BY_SCENE');
+  });
+
+  it("lists the day's real reports, opens and shows them, and writes the day report", async () => {
+    api.reports.mockResolvedValue([
+      {
+        id: 'ingest:A001',
+        step: 'verify',
+        screen: 'verify',
+        name: 'Ingest verification — A001',
+        covers: 'ASC MHL · 12 files · 2 destinations · MD5',
+        time: '2026-10-06T14:31:00Z',
+        status: 'done',
+        word: 'Safe to format',
+        card: 'A001',
+        files: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/A001/ascmhl/0001_A001.mhl'],
+      },
+      { id: 'sync', step: 'sync', screen: 'sync', name: 'Picture and sound sync', covers: '12 clips', time: null, status: 'needs', word: '2 to review', files: [] },
+    ]);
+    render(
+      <StoreProvider>
+        <Reports />
+      </StoreProvider>,
+    );
+    expect(await screen.findByText('Ingest verification — A001')).toBeTruthy();
+    expect(screen.getByText('Safe to format')).toBeTruthy();
+    expect(screen.getByText('2 to review')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show the files of Ingest verification — A001' }));
+    expect(api.showReport).toHaveBeenCalledWith('/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/A001/ascmhl/0001_A001.mhl');
+    // The sync report has no file of its own.
+    expect(screen.queryByRole('button', { name: 'Show the files of Picture and sound sync' })).toBeNull();
+
+    fireEvent.click(screen.getByRole('group', { name: 'Filter by step' }).querySelector('button:nth-child(5)')!);
+    expect(screen.queryByText('Ingest verification — A001')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Write to drives' }));
+    expect(api.dayReport).toHaveBeenCalledWith('drives');
+    expect(await screen.findByText(/Day report written to 1 drive/)).toBeTruthy();
   });
 });

@@ -54,4 +54,5 @@ npm run dev -w @vcdit/web       # the site
 - Looks and dailies: LUT library with assignment rules and a real look preview; dailies rendered with FFmpeg (look, burn-ins, synced sound, ProRes/DNxHR/H.264) into SYNCED_DAILIES with a checksummed manifest (`apps/desktop/src/main/dailies`). Packaging fetches a pinned FFmpeg (`apps/desktop/scripts/fetch-ffmpeg.mjs`).
 - Delivery: packages (originals archive, editorial handoff with ALE, dailies, VFX, reports) to several drives or folders at once, with capacity preflight, verified copies, originals checked against their ingest checksums, ASC MHL and manifests on each destination, presets and per-file retry (`apps/desktop/src/main/delivery`).
 - Scene folders: every verified clip linked under CAMERA_ORIGINALS/_BY_SCENE/SCENE/SETUP/<take>, circle takes under SELECTS_CIRCLE_TAKES, named by the production's editable naming template, following the log; originals untouched (`apps/desktop/src/main/organize`).
-- Next: the Reports screen on real data; Frame.io and Google Drive as delivery destinations.
+- Reports: every step's record for the day with its files on the drives, and a day report PDF saved or written to REPORTS/day_report on each drive (`apps/desktop/src/main/reports`).
+- Next: Frame.io and Google Drive as delivery destinations.

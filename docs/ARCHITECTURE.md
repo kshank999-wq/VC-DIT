@@ -256,6 +256,22 @@ Deliveries copy the cards once (the camera part leaves `_BY_SCENE` out) and
 then lay the scene folders and selects out again on each destination as
 links to the copies it received.
 
+## Reports (`src/main/reports`)
+
+The Reports screen lists what each step recorded for the open day, read from
+the production database: each card's ingest verification, the script log,
+the scene folders, VFX mirroring and handoff, sync, looks, dailies and every
+delivery, each with its status and its files on the drives (ASC MHL, CSV
+logs, manifests), which **Show file** opens. A card still copying shows live
+from the media engine. Only files the list named can be opened.
+
+The **day report** puts it all on a few A4 pages: a summary, ingest per card
+and destination, scenes and takes, sync, dailies, VFX and delivery. It is
+HTML (everything typed by people escaped) printed to PDF in a hidden window
+that runs no scripts, and is saved where the DIT chooses, or written to
+`REPORTS/day_report/` on every drive holding the day, so the reports package
+delivers it.
+
 ## Delivery (`src/main/delivery`)
 
 A delivery copies chosen **packages** of the open day to chosen
@@ -345,6 +361,8 @@ because the media is there and must not pass through vc-dit.com.
    Done: the delivery manager to drives and folders: packages, preflight,
    verified copies, manifests and retries.
    Done: scene/setup folders and circle-take selects as links, named by an
-   editable naming template, following the log. Next: the Reports screen on real
+   editable naming template, following the log.
+   Done: the Reports screen on real data and the day report PDF; no screen
+   shows sample data in the desktop app any more. Next: the Reports screen on real
    data; raw camera formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.

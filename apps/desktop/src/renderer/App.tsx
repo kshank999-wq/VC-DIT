@@ -5,14 +5,8 @@ import { FilesPanel } from './shell/FilesPanel';
 import { FlowBar, SubTabs } from './shell/FlowBar';
 import { Header } from './shell/Header';
 import { LicenseDialog } from './shell/License';
-import type { ScreenId } from './model/types';
 import { useStore } from './state/store';
 import { useAccess } from './ui/kit';
-
-/** Screens still on the HALCYON sample day in the desktop app, and what they wait for. */
-const SAMPLE: Partial<Record<ScreenId, string>> = {
-  reports: 'This screen shows the HALCYON demo day until the reports list is built.',
-};
 
 /** Light, dark, or the system's, on the document so every token switches at once. */
 const useTheme = (choice: 'light' | 'dark' | 'system') => {
@@ -68,11 +62,6 @@ export function App() {
       <FlowBar />
       <main className="content" id="content">
         <SubTabs />
-        {state.project && SAMPLE[state.screen] ? (
-          <p className="sample-note" role="note">
-            <strong>Sample data.</strong> {SAMPLE[state.screen]}
-          </p>
-        ) : null}
         <Screen />
       </main>
       <FilesPanel />

@@ -1,12 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { randomUUID } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import sqlWasmPath from 'sql.js/dist/sql-wasm.wasm?asset';
 import type { ChecksumMethod } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
+import { dayEntries, dayReportHtml } from '../reports/day-report';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
@@ -152,6 +154,20 @@ const deliverySettings = (input: unknown, current: DeliverySettings): DeliverySe
         })
       : current.presets,
   };
+};
+
+/** A page of HTML as a PDF, through a hidden window that runs no scripts. */
+const htmlToPdf = async (page: string): Promise<Buffer> => {
+  const dir = await mkdtemp(join(tmpdir(), 'vcdit-report-'));
+  const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, javascript: false } });
+  try {
+    await writeFile(join(dir, 'report.html'), page, 'utf8');
+    await window.loadFile(join(dir, 'report.html'));
+    return await window.webContents.printToPDF({ landscape: true, pageSize: 'A4', printBackground: true });
+  } finally {
+    window.destroy();
+    await rm(dir, { recursive: true, force: true });
+  }
 };
 
 /** Sync's reading and comparing, in its own worker: one per batch of jobs. */
@@ -503,6 +519,65 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
     if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
     return answer(() => writeFile(picked.filePath!, manifestCsv(db.deliveries(day.number)), 'utf8'));
+  });
+  // ------------------------------------------------ reports
+  let shown = new Set<string>();
+  const pdfs = new Set<string>();
+  const reportsNow = async () => {
+    const db = library.current;
+    const entries = await dayEntries(db, db.currentDay().number, organizing.view());
+    shown = new Set([...entries.flatMap((entry) => entry.files), ...pdfs]);
+    return entries;
+  };
+  ipcMain.handle('vcdit:project-reports', async () => {
+    try {
+      return await reportsNow();
+    } catch {
+      return [];
+    }
+  });
+  ipcMain.handle('vcdit:project-report-show', async (_e, path: unknown) => {
+    // Only report files the list named.
+    if (typeof path !== 'string' || !shown.has(path)) return;
+    if ((await stat(path).catch(() => null))?.isDirectory()) void shell.openPath(path);
+    else shell.showItemInFolder(path);
+  });
+  /** The day report as a PDF: saved where the DIT chooses, or into REPORTS/day_report on every drive holding the day. */
+  ipcMain.handle('vcdit:project-day-report', async (e, where: unknown) => {
+    try {
+      const db = library.current;
+      const day = db.currentDay();
+      const name = `${(db.production().code || db.production().name || 'VCDIT').replace(/[^\w.-]+/g, '_')}_D${String(day.number).padStart(3, '0')}_REPORT`;
+      const pdf = await htmlToPdf(dayReportHtml(db, day.number, await reportsNow(), { name: 'VC DIT', version: app.getVersion() }));
+      if (where === 'drives') {
+        const days = [...new Set(db.transfers(day.number).flatMap((transfer) => transfer.destinations.map((leg) => dirname(dirname(leg.targetDir)))))];
+        const stamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '').replace('T', '_');
+        const written: string[] = [];
+        for (const dir of days) {
+          if (!(await stat(dir).catch(() => null))) continue;
+          const path = join(dir, 'REPORTS', 'day_report', `${name}_${stamp}.pdf`);
+          await mkdir(dirname(path), { recursive: true });
+          await writeFile(path, pdf);
+          written.push(path);
+        }
+        if (written.length === 0) return { ok: false, reason: 'No drive holding this day is connected. Save the report somewhere instead.' };
+        for (const path of written) {
+          pdfs.add(path);
+          shown.add(path);
+        }
+        return { ok: true, written };
+      }
+      const window = BrowserWindow.fromWebContents(e.sender);
+      const options = { title: 'Save the day report', defaultPath: `${name}.pdf`, filters: [{ name: 'PDF', extensions: ['pdf'] }] };
+      const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
+      await writeFile(picked.filePath, pdf);
+      pdfs.add(picked.filePath);
+      shown.add(picked.filePath);
+      return { ok: true, written: [picked.filePath] };
+    } catch (cause) {
+      return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
+    }
   });
   ipcMain.handle('vcdit:project-organize-show', (_e, path: unknown) => {
     // Only the scene folders VC DIT made.
