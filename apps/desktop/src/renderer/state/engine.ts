@@ -246,7 +246,7 @@ export const dailiesSettings = (options: AppState['dailies']): DailiesSettings =
 
 const pct = (used: number, total: number) => (total > 0 ? Math.round((used / total) * 100) : 0);
 
-export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs' | 'relaysPaused'> => {
+export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs' | 'relaysPaused' | 'relayLimit'> => {
   const volumes = media.volumes.map<Volume>((volume) => {
     const before = state.volumes.find((candidate) => candidate.id === volume.id);
     const used = Math.max(0, volume.totalBytes - volume.freeBytes);
@@ -314,7 +314,7 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
     bytesPerSecond: job.bytesPerSecond,
     etaSeconds: job.etaSeconds,
   }));
-  return { volumes, destinations, jobs, relaysPaused: media.relaysPaused ?? false };
+  return { volumes, destinations, jobs, relaysPaused: media.relaysPaused ?? false, relayLimit: media.relayLimit ?? null };
 };
 
 /** What Intake asks the engine for: the ticked cards to the ticked destinations. */

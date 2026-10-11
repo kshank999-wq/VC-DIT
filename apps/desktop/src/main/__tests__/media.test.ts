@@ -180,6 +180,38 @@ describe('the verified copy', () => {
   });
 });
 
+describe('a speed limit', () => {
+  it('holds writes to the limit, takes a new limit at once, and goes full speed without one', async () => {
+    const card = join(base, 'card');
+    await mkdir(card, { recursive: true });
+    await writeFile(join(card, 'a.mxf'), Buffer.alloc(600_000, 7));
+    const plan = (name: string): LegPlan => ({ id: name, name, root: join(base, name), targetDir: join(base, name, 'A015') });
+    await mkdir(join(base, 'slow'));
+    await mkdir(join(base, 'fast'));
+    await mkdir(join(base, 'changed'));
+    const { files } = await listSource(card);
+
+    let started = Date.now();
+    const slow = await runTransfer(card, files, [plan('slow')], 'xxHash64', { chunkBytes: 100_000, limit: () => 1_000_000 });
+    const slowMs = Date.now() - started;
+    expect(slow.legs['slow']!.error).toBeNull();
+    // 600 kB at 1 MB/s: the last chunk may go out as the time comes, so at least half a second.
+    expect(slowMs).toBeGreaterThanOrEqual(450);
+
+    started = Date.now();
+    await runTransfer(card, files, [plan('fast')], 'xxHash64', { chunkBytes: 100_000, limit: () => null });
+    expect(Date.now() - started).toBeLessThan(slowMs);
+
+    // Lifted part-way: the rest goes at full speed.
+    let limit: number | null = 200_000;
+    setTimeout(() => (limit = null), 150);
+    started = Date.now();
+    const changed = await runTransfer(card, files, [plan('changed')], 'xxHash64', { chunkBytes: 100_000, limit: () => limit });
+    expect(changed.files[0]!.legs['changed']!.state).toBe('verified');
+    expect(Date.now() - started).toBeLessThan(1500);
+  });
+});
+
 describe('transfer records', () => {
   it('writes an ASC MHL generation with its chain, and the CSV and JSON logs', async () => {
     const { files } = await listSource(card);

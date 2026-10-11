@@ -50,6 +50,8 @@ export interface AppState {
   engine: boolean;
   /** Uploads relayed from a backup are paused (media engine). */
   relaysPaused: boolean;
+  /** Most bytes a second uploads may write, or null for no limit (media engine). */
+  relayLimit: number | null;
   /** The open production's file, its days and the recent productions, when the database is in use. */
   project: { file: string; days: ShootDay[]; recent: { file: string; name: string }[] } | null;
   screen: ScreenId;
@@ -108,6 +110,7 @@ export interface AppState {
 export const initialState = (): AppState => ({
   engine: false,
   relaysPaused: false,
+  relayLimit: null,
   project: null,
   screen: 'today',
   filesOpen: true,

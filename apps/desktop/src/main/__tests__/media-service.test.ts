@@ -8,7 +8,7 @@ import type { TransferRecord } from '../db/production-db';
 import { MediaService, type TransferRunner } from '../media/media-service';
 import { writeReports } from '../media/reports';
 import { runTransfer } from '../media/transfer';
-import type { WorkerMessage, WorkerPlan } from '../media/transfer-worker';
+import type { WorkerCommand, WorkerMessage, WorkerPlan } from '../media/transfer-worker';
 
 /** The worker thread, run in-process: same messages, same order. */
 const inProcess = (plan: WorkerPlan, corrupt: { path: string; leg: string } | null): TransferRunner => {
@@ -18,6 +18,8 @@ const inProcess = (plan: WorkerPlan, corrupt: { path: string; leg: string } | nu
     const result = await runTransfer(plan.sourceRoot, plan.files, plan.legs, plan.method, {
       signal: controller.signal,
       sourceLost: plan.sourceLost,
+      chunkBytes: plan.chunkBytes,
+      limit: () => limit,
       onProgress: (progress) => events.emit('message', { type: 'progress', progress } satisfies WorkerMessage),
       afterCopy: async (legId, written, file) => {
         if (corrupt && legId === corrupt.leg && file.path === corrupt.path) await writeFile(written, 'damaged');
@@ -27,7 +29,13 @@ const inProcess = (plan: WorkerPlan, corrupt: { path: string; leg: string } | nu
     events.emit('message', { type: 'done', result, reports } satisfies WorkerMessage);
     events.emit('exit', 0);
   });
-  return Object.assign(events, { postMessage: () => controller.abort() }) as unknown as TransferRunner;
+  let limit = plan.limit ?? null;
+  const postMessage = (message: WorkerCommand) => {
+    commands.push(message);
+    if (message === 'stop') controller.abort();
+    else limit = message.bytesPerSecond;
+  };
+  return Object.assign(events, { postMessage }) as unknown as TransferRunner;
 };
 
 let base: string;
@@ -38,6 +46,7 @@ let service: MediaService;
 let states: MediaState[];
 let records: TransferRecord[];
 let plans: WorkerPlan[];
+let commands: WorkerCommand[];
 
 const settle = () =>
   vi.waitFor(
@@ -62,6 +71,7 @@ beforeEach(async () => {
   states = [];
   records = [];
   plans = [];
+  commands = [];
   const card = join(base, 'A015');
   await mkdir(join(card, 'A015R1AB'), { recursive: true });
   await writeFile(join(card, 'A015R1AB', 'A015C001_261005_R1AB.mxf'), 'take one');
@@ -336,5 +346,31 @@ describe('uploads relayed from the backup', () => {
     expect(service.state().folders[0]!.relay).toBe(false);
     expect(await service.setRelay(mounts[2]!, true)).toEqual({ ok: true });
     expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.relay).toBe(true);
+  });
+
+  it('holds uploads to the speed set, changing a running upload at once, and never limits a card copy', async () => {
+    const cloud = await addCloud();
+    // 400 kB of media, uploaded at most 1 MB/s: well under a second, but measurably held.
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C001_261005_R1AB.mxf'), Buffer.alloc(400_000, 1));
+    await service.setRelayLimit(1_000_000);
+    expect(service.state().relayLimit).toBe(1_000_000);
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    expect(plans[0]).toMatchObject({ limit: null });
+    const started = Date.now();
+    await service.pauseRelays(false);
+    expect(plans[1]).toMatchObject({ limit: 1_000_000, chunkBytes: 1024 * 1024 });
+    // Changed while the upload runs: the worker is told at once.
+    await service.setRelayLimit(800_000);
+    expect(commands).toContainEqual({ type: 'limit', bytesPerSecond: 800_000 });
+    await settle();
+    expect(Date.now() - started).toBeGreaterThanOrEqual(350);
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ failed: false, copyPct: 100, verifyPct: 100 });
+    // Nonsense is no limit; a tiny limit is raised to 100 kB/s, so an upload always moves.
+    await service.setRelayLimit(-5);
+    expect(service.state().relayLimit).toBeNull();
+    await service.setRelayLimit(10);
+    expect(service.state().relayLimit).toBe(100_000);
   });
 });

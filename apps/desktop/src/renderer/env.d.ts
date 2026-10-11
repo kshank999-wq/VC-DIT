@@ -58,6 +58,8 @@ interface MediaApi {
   /** Feed this destination from the backup (an upload) rather than the card. */
   setRelay: (id: string, relay: boolean) => Promise<{ ok: boolean; reason?: string }>;
   pauseRelays: (paused: boolean) => Promise<void>;
+  /** Most bytes a second uploads may write; null for no limit. */
+  setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
   show: (path: string) => Promise<void>;

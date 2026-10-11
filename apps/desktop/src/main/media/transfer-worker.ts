@@ -19,8 +19,14 @@ export interface WorkerPlan {
   method: ChecksumMethod;
   /** What a file says if the source goes away: the card, or (an upload) the backup it reads from. */
   sourceLost?: string;
+  /** Uploads: most bytes a second to write (null for none), and a smaller read size so the limit is smooth. Changed mid-run by a 'limit' message. */
+  limit?: number | null;
+  chunkBytes?: number;
   contexts: Record<string, ReportContext>;
 }
+
+/** What the service may tell a running worker. */
+export type WorkerCommand = 'stop' | { type: 'limit'; bytesPerSecond: number | null };
 
 export type WorkerMessage =
   | { type: 'progress'; progress: TransferProgress }
@@ -30,8 +36,10 @@ export type WorkerMessage =
 const port = parentPort!;
 const plan = workerData as WorkerPlan;
 const controller = new AbortController();
-port.on('message', (message) => {
+let limit = plan.limit ?? null;
+port.on('message', (message: WorkerCommand) => {
   if (message === 'stop') controller.abort();
+  else if (message && typeof message === 'object' && message.type === 'limit') limit = message.bytesPerSecond;
 });
 
 const post = (message: WorkerMessage) => port.postMessage(message);
@@ -41,6 +49,8 @@ void (async () => {
     const result = await runTransfer(plan.sourceRoot, plan.files, plan.legs, plan.method, {
       signal: controller.signal,
       sourceLost: plan.sourceLost,
+      chunkBytes: plan.chunkBytes,
+      limit: () => limit,
       onProgress: (progress) => post({ type: 'progress', progress }),
     });
     const reports = await writeReports(result, plan.legs, plan.contexts, plan.allLegs);

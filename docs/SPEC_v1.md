@@ -83,7 +83,8 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
   - **Every destination verified, uploads included.**
   Before that, a card whose local copies are done shows **Can come out · don't format yet**. A failed upload still shows as a problem to deal with.
 - Quitting with uploads unfinished asks first, and says they will carry on from the backup next time. The transfer record keeps each upload and the backup it came from.
-- Not yet: a bandwidth limit for uploads; uploads through a service's API (Frame.io, Google Drive), which will use the same queue when those integrations land.
+- **Upload speed** (beside Pause uploads): no limit, or 1 to 100 MB/s, shown with the Mbit/s an internet connection is sold in, so an upload can be held to a share of the set's connection. It applies to all uploads together, changes a running upload at once, is remembered on that computer, and never slows a card copy.
+- Not yet: uploads through a service's API (Frame.io, Google Drive), which will use the same queue when those integrations land.
 
 ### 4.4 Naming & Folder Automation
 

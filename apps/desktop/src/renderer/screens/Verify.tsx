@@ -3,6 +3,7 @@ import type { FormatRule } from '../../shared/project';
 import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
+import { UploadControls } from '../ui/UploadControls';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
 import './ingest.css';
 
@@ -73,11 +74,7 @@ export function Verify() {
         }
         actions={
           media ? (
-            uploads.length ? (
-              <button type="button" className="btn" aria-pressed={state.relaysPaused} onClick={() => void media.pauseRelays(!state.relaysPaused)}>
-                {state.relaysPaused ? 'Resume uploads' : 'Pause uploads'}
-              </button>
-            ) : null
+            uploads.length ? <UploadControls /> : null
           ) : (
             <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
               Export transfer logs

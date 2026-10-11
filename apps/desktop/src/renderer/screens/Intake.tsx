@@ -4,6 +4,7 @@ import type { ChecksumMethod, TransferJob, TransferLeg, Volume, VolumeRole } fro
 import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
+import { UploadControls } from '../ui/UploadControls';
 import { brandOf, DeviceIcon, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
@@ -188,11 +189,7 @@ export function Intake() {
         <section className="offload-col offload-transfers" aria-label="Transfers">
           <div className="offload-transfers-head">
             <h2 className="offload-head">Transfers</h2>
-            {media && anyUploads ? (
-              <button type="button" className="btn ghost small" aria-pressed={state.relaysPaused} onClick={() => void media.pauseRelays(!state.relaysPaused)}>
-                {state.relaysPaused ? 'Resume uploads' : 'Pause uploads'}
-              </button>
-            ) : null}
+            {anyUploads || picked.some((destination) => destination.relay) ? <UploadControls /> : null}
           </div>
           <div className="offload-plan">
             <div className="grow">

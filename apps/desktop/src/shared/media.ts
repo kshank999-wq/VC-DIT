@@ -67,6 +67,8 @@ export interface MediaState {
   jobs: JobSnapshot[];
   /** Uploads that relay from a backup are paused (they carry on when resumed, from the last verified file). */
   relaysPaused: boolean;
+  /** Most bytes a second uploads may write, or null for no limit. */
+  relayLimit: number | null;
 }
 
 export interface IngestRequest {

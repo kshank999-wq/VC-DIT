@@ -218,3 +218,7 @@
 .offload-transfers-head { display: flex; align-items: center; gap: 8px; }
 .offload-transfers-head .offload-head { flex: 1; }
 .offload-row.is-upload .offload-row-title .relay-hop { color: var(--muted); }
+
+.upload-controls { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.upload-limit { display: inline-flex; align-items: center; gap: 6px; }
+.upload-limit .select { width: auto; padding-top: 3px; padding-bottom: 3px; font-size: 12px; }

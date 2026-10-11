@@ -95,6 +95,8 @@ export interface TransferOptions {
   onProgress?: (progress: TransferProgress) => void;
   progressEveryMs?: number;
   chunkBytes?: number;
+  /** Most bytes a second to write, asked again as it goes (it can change mid-run); null or 0 for no limit. For uploads on set internet. */
+  limit?: () => number | null;
   /** What a file's failure says when the source disappears mid-run ("The card was removed."). */
   sourceLost?: string;
   /** Test seam: runs between the copy and the read-back of each destination file. */
@@ -290,6 +292,48 @@ export const runTransfer = async (
 
   const stopped = () => options.signal?.aborted === true;
 
+  // ------------------------------------------------ the speed limit, if any
+  let paceLimit: number | null = null;
+  let paceStart = 0;
+  let paceBytes = 0;
+  /** After writing `bytes`, wait until the limit allows them; a change of limit takes effect at once. */
+  const pace = async (bytes: number) => {
+    const allowed = () => {
+      const value = options.limit?.() ?? null;
+      return value && value > 0 ? value : null;
+    };
+    let limit = allowed();
+    if (!limit) {
+      paceLimit = null;
+      return;
+    }
+    const now = Date.now();
+    // A new limit, or time spent idle (a slow file open, a pause): start counting afresh, no saved-up burst.
+    if (limit !== paceLimit || paceStart + (paceBytes / limit) * 1000 < now - 1000) {
+      paceLimit = limit;
+      paceStart = now;
+      paceBytes = 0;
+    }
+    paceBytes += bytes;
+    for (;;) {
+      if (stopped()) return;
+      limit = allowed();
+      if (!limit) {
+        paceLimit = null;
+        return;
+      }
+      if (limit !== paceLimit) {
+        paceLimit = limit;
+        paceStart = Date.now();
+        paceBytes = bytes;
+      }
+      const wait = paceStart + (paceBytes / limit) * 1000 - Date.now();
+      if (wait <= 0) return;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(wait, 200)));
+      report();
+    }
+  };
+
   // ------------------------------------------------ copy: read the card once, write everywhere
   const buffers = [Buffer.allocUnsafe(chunkBytes), Buffer.allocUnsafe(chunkBytes)];
 
@@ -358,6 +402,7 @@ export const runTransfer = async (
         for (const [i, outcome] of [...settled.entries()].reverse()) {
           if (outcome.status === 'rejected') await dropWriter(writers[i]!, outcome.reason);
         }
+        if (writers.length) await pace(chunk.length);
         current = await next;
         report();
       }

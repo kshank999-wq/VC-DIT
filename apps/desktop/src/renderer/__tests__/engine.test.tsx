@@ -87,7 +87,7 @@ const push = (state: MediaState) => act(() => listener?.(state));
 beforeEach(() => {
   listener = null;
   media = {
-    state: vi.fn(async () => ({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [] })),
+    state: vi.fn(async () => ({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [] })),
     onChange: vi.fn((next: (state: MediaState) => void) => {
       listener = next;
       return () => (listener = null);
@@ -100,6 +100,7 @@ beforeEach(() => {
     stopJob: vi.fn(async () => ({ ok: true })),
     setRelay: vi.fn(async () => ({ ok: true })),
     pauseRelays: vi.fn(async () => undefined),
+    setRelayLimit: vi.fn(async () => undefined),
     icon: vi.fn(async () => null),
     show: vi.fn(async () => undefined),
   };
@@ -175,7 +176,7 @@ describe('Intake on the media engine', () => {
   });
 
   it('says what to do when nothing is plugged in', async () => {
-    media.state.mockResolvedValueOnce({ volumes: [], folders: [], relaysPaused: false, jobs: [] });
+    media.state.mockResolvedValueOnce({ volumes: [], folders: [], relaysPaused: false, relayLimit: null, jobs: [] });
     mount(<Intake />);
     expect(await screen.findByText(/No cards yet/)).toBeTruthy();
   });
@@ -185,7 +186,7 @@ describe('Verify on the media engine', () => {
   it('shows real progress, speed and time left', async () => {
     mount(<Verify />);
     await waitFor(() => expect(media.state).toHaveBeenCalled());
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [job()] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
     expect(screen.getByText('Copying 40%')).toBeTruthy();
     expect(screen.getByText(/850 MB\/s · 8 min left/)).toBeTruthy();
     expect(screen.getByText(/Not safe yet/)).toBeTruthy();
@@ -197,7 +198,7 @@ describe('Verify on the media engine', () => {
     push({
       volumes: [card, raid],
       folders: [],
-      relaysPaused: false,
+      relaysPaused: false, relayLimit: null,
       jobs: [{ ...job({ copyPct: 100, verifyPct: 100, failed: true, error: 'The destination was disconnected.' }), running: false }],
     });
     expect(screen.getByText(/Problem — don't format/)).toBeTruthy();
@@ -211,12 +212,12 @@ describe('Verify on the media engine', () => {
     await waitFor(() => expect(media.state).toHaveBeenCalled());
     const done = { copyPct: 100, verifyPct: 100 };
     // One local copy: it can come out, but it is not safe to format.
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), running: false, bytesPerSecond: 0 }] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(done), running: false, bytesPerSecond: 0 }] });
     expect(screen.getByText(/Can come out · only one local copy/)).toBeTruthy();
     expect(screen.queryByText('Safe to format')).toBeNull();
     // Two: safe.
     const shuttle = { ...leg, ...done, id: '/Volumes/SHTL', name: 'SHTL', targetDir: '/Volumes/SHTL/HALCYON/A015' };
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle], running: false, bytesPerSecond: 0 }] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle], running: false, bytesPerSecond: 0 }] });
     expect(screen.getByText('Safe to format')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Show' })[0]!);
     expect(media.show).toHaveBeenCalledWith('/Volumes/RAID/HALCYON/A015');
@@ -228,13 +229,20 @@ describe('Verify on the media engine', () => {
     const done = { copyPct: 100, verifyPct: 100 };
     const shuttle = { ...leg, ...done, id: '/Volumes/SHTL', name: 'SHTL' };
     const cloud = { ...leg, id: 'folder:/lucid', name: 'LucidLink', relay: true, relayFrom: 'RAID', copyPct: 30, verifyPct: 0, bytesPerSecond: 40e6, etaSeconds: 3600 };
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle, cloud], running: false, bytesPerSecond: 0 }] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle, cloud], running: false, bytesPerSecond: 0 }] });
     // Two local copies verified: safe, whatever the upload is doing.
     expect(screen.getByText('Safe to format')).toBeTruthy();
     expect(screen.getByText(/upload from RAID/)).toBeTruthy();
     expect(screen.getByText(/1 upload not finished/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Pause uploads' }));
     expect(media.pauseRelays).toHaveBeenCalledWith(true);
+    // Held to 10 MB/s (80 Mbit/s), so the upload leaves room on the set's connection.
+    fireEvent.change(screen.getByLabelText('Upload speed limit'), { target: { value: '10000000' } });
+    expect(media.setRelayLimit).toHaveBeenCalledWith(10_000_000);
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: 10_000_000, jobs: [{ ...job(done), legs: [{ ...leg, ...done }, shuttle, cloud], running: false, bytesPerSecond: 0 }] });
+    expect((screen.getByLabelText('Upload speed limit') as HTMLSelectElement).selectedOptions[0]!.textContent).toBe('10 MB/s (80 Mbit/s)');
+    fireEvent.change(screen.getByLabelText('Upload speed limit'), { target: { value: '' } });
+    expect(media.setRelayLimit).toHaveBeenLastCalledWith(null);
   });
 
   it('under the every-destination rule, waits for the upload before calling the card safe', async () => {
@@ -252,7 +260,7 @@ describe('Verify on the media engine', () => {
   it('shows each card to each destination as it copies, with the file, time left and speed, and stops a card', async () => {
     mount(<Intake />);
     await waitFor(() => screen.getByText('A015'));
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [job()] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
     const transfers = screen.getByRole('region', { name: 'Transfers' });
     expect(within(transfers).getByText('A015C002_261005_R1AB.ari')).toBeTruthy();
     expect(within(transfers).getByText(/min left \(850 MB\/s\)/)).toBeTruthy();
@@ -263,7 +271,7 @@ describe('Verify on the media engine', () => {
     expect(media.show).toHaveBeenCalledWith('/Volumes/RAID/HALCYON/A015');
 
     // Verified: the row says so, and there is nothing to stop.
-    push({ volumes: [card, raid], folders: [], relaysPaused: false, jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, bytesPerSecond: 0, etaSeconds: null, currentFile: null }] });
+    push({ volumes: [card, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, bytesPerSecond: 0, etaSeconds: null, currentFile: null }] });
     expect(within(transfers).getByText('Verified')).toBeTruthy();
     expect(within(transfers).queryByRole('button', { name: 'Stop A015' })).toBeNull();
   });

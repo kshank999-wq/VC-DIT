@@ -19,7 +19,7 @@ import type { TransferRecord } from '../db/production-db';
 import type { ReportContext } from './reports';
 import { cardFolder, destinationProblem, headroom, isRemote, reportsFolder } from './rules';
 import { isTransient, listSource, STOPPED, type FileOutcome, type LegPlan, type LegProgress, type SourceFile } from './transfer';
-import type { WorkerMessage, WorkerPlan } from './transfer-worker';
+import type { WorkerCommand, WorkerMessage, WorkerPlan } from './transfer-worker';
 import { capacityOf, classifyVolume, describeMount, listMounts, type Capacity, type Mount } from './volumes';
 
 /**
@@ -64,7 +64,7 @@ export interface TransferRunner {
   on(event: 'message', listener: (message: WorkerMessage) => void): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
   on(event: 'exit', listener: (code: number) => void): unknown;
-  postMessage(message: 'stop'): void;
+  postMessage(message: WorkerCommand): void;
 }
 
 interface Settings {
@@ -74,6 +74,8 @@ interface Settings {
   /** The operator's choice of relay or straight from the card, by volume (name and size) or folder id. */
   relay: Record<string, boolean>;
   relaysPaused: boolean;
+  /** Most bytes a second all uploads may write, or null for no limit. */
+  relayLimit: number | null;
 }
 
 interface Leg {
@@ -165,7 +167,7 @@ const reachable = (path: string): boolean => {
 
 export class MediaService {
   private readonly platform: NodeJS.Platform;
-  private settings: Settings = { roles: {}, folders: [], relay: {}, relaysPaused: false };
+  private settings: Settings = { roles: {}, folders: [], relay: {}, relaysPaused: false, relayLimit: null };
   private readonly volumes = new Map<string, VolumeEntry>();
   private readonly describing = new Set<string>();
   private folderCapacity = new Map<string, Capacity | null>();
@@ -266,6 +268,15 @@ export class MediaService {
     this.emit(true);
   }
 
+  /** Limit how fast uploads write (bytes a second), or null for no limit. A running upload changes speed at once. */
+  async setRelayLimit(bytesPerSecond: number | null): Promise<void> {
+    const limit = bytesPerSecond && Number.isFinite(bytesPerSecond) && bytesPerSecond > 0 ? Math.max(100_000, Math.round(bytesPerSecond)) : null;
+    this.settings.relayLimit = limit;
+    await this.saveSettings();
+    this.relayCurrent?.worker.postMessage({ type: 'limit', bytesPerSecond: limit });
+    this.emit(true);
+  }
+
   /** Pause or resume every upload. Paused, a running upload stops; its files are still to upload, from the last verified one. */
   async pauseRelays(paused: boolean): Promise<void> {
     this.settings.relaysPaused = paused;
@@ -308,6 +319,7 @@ export class MediaService {
       folders: this.folders(),
       jobs: this.jobs.map((job) => this.snapshot(job)),
       relaysPaused: this.settings.relaysPaused,
+      relayLimit: this.settings.relayLimit,
     };
   }
 
@@ -730,6 +742,9 @@ export class MediaService {
       allLegs: job.legs.map((leg) => leg.plan),
       method: job.checksum,
       sourceLost: backup ? backupLost(backup.plan.name) : undefined,
+      // Uploads go at the speed set for them, in small reads so the limit is smooth.
+      limit: relay ? this.settings.relayLimit : null,
+      chunkBytes: relay ? 1024 * 1024 : undefined,
       contexts,
     };
     const bytes = files.reduce((sum, file) => sum + file.size, 0);
