@@ -64,6 +64,7 @@ const dayPatch = (input: unknown): Partial<Omit<ShootDay, 'number'>> => {
   const date = text(value['date'], 10);
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) patch.date = date;
   if (text(value['locations']) !== undefined) patch.locations = text(value['locations'])!;
+  if (text(value['notes'], 8000) !== undefined) patch.notes = text(value['notes'], 8000)!;
   const operator = value['operator'] as Record<string, unknown> | undefined;
   if (operator) patch.operator = { name: text(operator['name'], 80) ?? '', initials: text(operator['initials'], 4) ?? '' };
   return patch;

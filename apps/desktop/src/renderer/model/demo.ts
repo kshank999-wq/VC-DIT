@@ -47,6 +47,7 @@ export const DAY: ShootDay = {
   date: '2026-10-05',
   locations: 'Hangar & Rooftop',
   operator: { name: 'Morgan Reyes', initials: 'MR' },
+  notes: 'Wind on the roof after lunch; sound flagged two takes for wild lines.',
 };
 
 const SCENE_PLAN: { id: string; description: string; status: Scene['status']; vfx?: boolean; setups: [string, string, number][] }[] = [

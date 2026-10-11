@@ -96,6 +96,8 @@ export interface AppState {
   delivery: DeliveryState | null;
   /** The desktop app's scene folders on the destinations. */
   organize: OrganizeState | null;
+  /** The desktop app's count of the day's media, for the Files panel. */
+  media: ProjectState['media'] | null;
   reportFilter: ReportFilter;
 }
 
@@ -142,6 +144,7 @@ export const initialState = (): AppState => ({
   delivered: [],
   delivery: null,
   organize: null,
+  media: null,
   reportFilter: 'all',
 });
 

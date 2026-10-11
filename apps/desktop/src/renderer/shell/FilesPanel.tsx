@@ -7,7 +7,8 @@ import { stepVar, statusVar, tone } from '../ui/kit';
 /**
  * The production's folders, numbered to mirror the flow (handoff "Files
  * Panel"). ↗ folders are views in the media index or hard links, never extra
- * physical copies (spec §5, §4.9).
+ * physical copies (spec §5, §4.9). In the desktop app the folders carry
+ * their real names on the drives and the counts come from the production.
  */
 
 interface Node {
@@ -24,6 +25,15 @@ interface Node {
 
 const pad3 = (id: string) => id.replace(/^(\d+)/, (digits) => digits.padStart(3, '0'));
 
+/** The REPORTS folder's own subfolders on the drives. */
+const REAL_REPORTS: [string, StepId, ScreenId][] = [
+  ['ingest_verification', 'verify', 'verify'],
+  ['vfx_mirror', 'vfx', 'vfx'],
+  ['dailies', 'output', 'dailies'],
+  ['delivery', 'output', 'delivery'],
+  ['day_report', 'output', 'reports'],
+];
+
 export const buildTree = (state: AppState): Node[] => {
   const steps = summarize(state);
   const go = (screen: ScreenId): Action => ({ type: 'go', screen });
@@ -38,6 +48,13 @@ export const buildTree = (state: AppState): Node[] => {
     ['delivery_manifests', 'output', 'delivery'],
   ];
   const takes = (n: number) => String(n);
+  const media = state.project ? state.media : null;
+  /** The demo numbers the folders to follow the flow; on the drives they have their own names. */
+  const label = (numbered: string, plain: string) => (media ? plain : numbered);
+  const count = (n: number) => n.toLocaleString('en-US');
+  const done = state.renders.filter((render) => render.state === 'done').length;
+  const records = state.delivery?.records ?? [];
+  const deliveredTo = [...new Set(records.map((record) => record.destination))];
 
   return [
     {
@@ -53,9 +70,9 @@ export const buildTree = (state: AppState): Node[] => {
           children: [
             {
               path: 'ocf',
-              name: '01_CAMERA_ORIGINALS',
+              name: label('01_CAMERA_ORIGINALS', 'CAMERA_ORIGINALS'),
               color: color('intake'),
-              count: '1,596',
+              count: media ? count(media.cameraFiles) : '1,596',
               // A failed check shows here too: nothing is green while a copy failed.
               status: failed ? 'problem' : steps.verify.status === 'done' ? 'done' : undefined,
               action: go('verify'),
@@ -74,10 +91,17 @@ export const buildTree = (state: AppState): Node[] => {
                 })),
               })),
             },
-            { path: 'snd', name: '02_SOUND_ORIGINALS', color: color('intake'), count: '96', status: 'done', action: go('verify') },
+            {
+              path: 'snd',
+              name: label('02_SOUND_ORIGINALS', 'SOUND_ORIGINALS'),
+              color: color('intake'),
+              count: media ? count(media.soundFiles) : '96',
+              status: media && media.soundFiles === 0 ? undefined : failed ? 'problem' : 'done',
+              action: go('verify'),
+            },
             {
               path: 'sel',
-              name: '03_SELECTS',
+              name: label('03_SELECTS', 'SELECTS_CIRCLE_TAKES'),
               color: color('organize'),
               linked: true,
               count: String(state.scenes.flatMap((scene) => scene.setups.flatMap((setup) => setup.takes)).filter((take) => take.circle).length),
@@ -85,7 +109,7 @@ export const buildTree = (state: AppState): Node[] => {
             },
             {
               path: 'vfx',
-              name: '04_VFX',
+              name: label('04_VFX', 'VFX'),
               color: color('vfx'),
               linked: true,
               count: String(state.vfx.length),
@@ -95,23 +119,50 @@ export const buildTree = (state: AppState): Node[] => {
                 return { path: `vfx/${key}`, name: `SCENE_${pad3(scene!)}/SETUP_${setup}`, color: color('vfx'), linked: true, action: go('vfx') };
               }),
             },
-            { path: 'syn', name: '05_SYNCED_DAILIES', color: color('sync'), count: steps.sync.metric.split(' ')[0], status: steps.sync.status === 'done' ? 'done' : 'needs', action: go('sync') },
-            { path: 'lut', name: '06_LUTS_LOOKS', color: color('output'), count: String(state.luts.length), action: go('looks') },
-            {
-              path: 'del',
-              name: '07_DELIVERY',
-              color: color('output'),
-              count: steps.output.metric.split(' ')[0],
-              action: go('delivery'),
-              children: ['EDITORIAL_HANDOFF', 'DAILIES_FRAMEIO', 'ARCHIVE'].map((name) => ({ path: `del/${name}`, name, color: color('output'), action: go('delivery') })),
-            },
+            media
+              ? {
+                  path: 'syn',
+                  name: 'SYNCED_DAILIES',
+                  color: color('sync'),
+                  count: count(done),
+                  status: state.renders.some((render) => render.state === 'failed') ? 'problem' : done > 0 ? 'done' : undefined,
+                  action: go('dailies'),
+                }
+              : { path: 'syn', name: '05_SYNCED_DAILIES', color: color('sync'), count: steps.sync.metric.split(' ')[0], status: steps.sync.status === 'done' ? 'done' : 'needs', action: go('sync') },
+            { path: 'lut', name: label('06_LUTS_LOOKS', 'LUTS_LOOKS'), color: color('output'), count: String(state.luts.length), action: go('looks') },
+            media
+              ? {
+                  // Not a folder of the day: where it went.
+                  path: 'del',
+                  name: 'DELIVERED',
+                  color: color('output'),
+                  count: count(records.length),
+                  status: records.some((record) => record.failed > 0) ? 'problem' : records.length ? 'done' : undefined,
+                  action: go('delivery'),
+                  children: deliveredTo.map((name) => ({
+                    path: `del/${name}`,
+                    name,
+                    color: color('output'),
+                    count: count(records.filter((record) => record.destination === name).length),
+                    status: records.some((record) => record.destination === name && record.failed > 0) ? ('problem' as const) : ('done' as const),
+                    action: go('delivery'),
+                  })),
+                }
+              : {
+                  path: 'del',
+                  name: '07_DELIVERY',
+                  color: color('output'),
+                  count: steps.output.metric.split(' ')[0],
+                  action: go('delivery'),
+                  children: ['EDITORIAL_HANDOFF', 'DAILIES_FRAMEIO', 'ARCHIVE'].map((name) => ({ path: `del/${name}`, name, color: color('output'), action: go('delivery') })),
+                },
             {
               path: 'rep',
-              name: '08_REPORTS',
+              name: label('08_REPORTS', 'REPORTS'),
               color: 'var(--faint)',
-              count: String(state.jobs.length + 5),
+              count: media ? undefined : String(state.jobs.length + 5),
               action: go('reports'),
-              children: reports.map(([name, step, screen]) => ({ path: `rep/${name}`, name, color: color(step), action: go(screen) })),
+              children: (media ? REAL_REPORTS : reports).map(([name, step, screen]) => ({ path: `rep/${name}`, name, color: color(step), action: go(screen) })),
             },
           ],
         },
@@ -178,7 +229,7 @@ export function FilesPanel() {
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <strong>Project files</strong>
           <span className="mono faint" style={{ fontSize: 11 }}>
-            RAID_01
+            {state.project ? (state.media?.home ?? 'No drive yet') : 'RAID_01'}
           </span>
         </div>
         <input className="input" placeholder="Search clips, scenes, takes…" value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Search project files" />

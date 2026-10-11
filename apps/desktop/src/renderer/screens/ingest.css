@@ -8,6 +8,8 @@
 .setup-row.wide { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
 .setup-row > .card { height: 100%; }
 .setup-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.setup-notes { grid-column: 1 / -1; }
+.setup-notes textarea { height: auto; min-height: 64px; padding: 8px 10px; resize: vertical; font: inherit; line-height: 1.4; }
 .setup-span { grid-column: 1 / -1; }
 .setup-day { gap: 8px; }
 .setup-day .input, .setup-day .select { width: auto; flex: 1; min-width: 0; }

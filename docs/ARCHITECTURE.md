@@ -363,6 +363,9 @@ because the media is there and must not pass through vc-dit.com.
    Done: scene/setup folders and circle-take selects as links, named by an
    editable naming template, following the log.
    Done: the Reports screen on real data and the day report PDF; no screen
-   shows sample data in the desktop app any more. Next: the Reports screen on real
+   shows sample data in the desktop app any more.
+   Done: the Files panel counts the day's real media under the folders' real
+   names; drop-frame timecode (29.97/59.94 DF) in the ALE, sync list and
+   dailies burn-ins; notes on each shoot day, carried into the day report. Next: the Reports screen on real
    data; raw camera formats (R3D, BRAW, ARRIRAW) through their makers' SDKs.
 5. Frame.io, then Google Drive, as destination adapters.

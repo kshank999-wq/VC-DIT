@@ -212,6 +212,16 @@ export function ProjectSetup() {
                 onChange={(event) => dispatch({ type: 'setDay', patch: { operator: { name: event.target.value, initials: initialsOf(event.target.value) } } })}
               />
             </label>
+            <label className="field setup-notes">
+              <span className="label">Day notes</span>
+              <textarea
+                className="input"
+                rows={3}
+                value={day.notes}
+                placeholder="Weather, problems, who took which drive…"
+                onChange={(event) => dispatch({ type: 'setDay', patch: { notes: event.target.value } })}
+              />
+            </label>
             <label className="field">
               <span className="label">Frame rate</span>
               <select

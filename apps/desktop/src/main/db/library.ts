@@ -129,6 +129,7 @@ export class Library {
         activity: null,
         error: null,
       },
+      media: db.mediaCounts(day.number),
       organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
       recent: this.index.recent,
     };

@@ -65,6 +65,12 @@ describe('the dailies command', () => {
     expect(graph).not.toContain('drawtext');
     expect(() => renderArgs(job({ choice: { ...job().choice, codec: 'H.264 · 10 Mb/s' } }), { encoders: new Set(), filters: new Set() })).toThrow(/no H\.264 encoder/);
     expect(timecodeLabel(1217772, 24)).toBe('14:05:40:12');
+    // Drop-frame: numbers skipped at each minute but every tenth, written with a semicolon.
+    expect(timecodeLabel(1799, 30, true)).toBe('00:00:59;29');
+    expect(timecodeLabel(1800, 30, true)).toBe('00:01:00;02');
+    expect(timecodeLabel(17982, 30, true)).toBe('00:10:00;00');
+    expect(timecodeLabel(3600, 60, true)).toBe('00:01:00;04');
+    expect(timecodeLabel(1800, 30)).toBe('00:01:00:00');
   });
 
   it.skipIf(!ffmpeg)('renders a ProRes daily: the look, burn-ins, the clip timecode, and the production sound in sync', async () => {

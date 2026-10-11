@@ -45,6 +45,7 @@ type FromProject = Pick<
   | 'ffmpeg'
   | 'delivery'
   | 'organize'
+  | 'media'
   | 'packages'
   | 'deliveryDestinations'
   | 'delivered'
@@ -107,6 +108,7 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     ffmpeg: project.ffmpeg,
     delivery: project.delivery,
     organize: project.organize,
+    media: project.media,
     packages: DELIVERY_PACKAGES.map((pkg) => ({
       id: pkg.id,
       name: pkg.name,

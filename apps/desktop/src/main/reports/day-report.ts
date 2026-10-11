@@ -247,6 +247,7 @@ export const dayReportHtml = (db: ProductionDb, day: number, entries: ReportEntr
     `<p>Shoot day ${String(shootDay.number).padStart(3, '0')} · ${html(shootDay.date)}${shootDay.locations ? ` · ${html(shootDay.locations)}` : ''}${
       shootDay.operator.name ? ` · DIT ${html(shootDay.operator.name)}` : ''
     }</p>`,
+    shootDay.notes ? `<p class="notes">${html(shootDay.notes).replace(/\n/g, '<br>')}</p>` : '',
     `<p class="muted">Day report written ${html(clock(now.toISOString()))} by ${html(tool.name)} ${html(tool.version)} · checksum ${html(production.checksum)} · ${html(production.frameRate)}</p></header>`,
     '<h2>Summary</h2>',
     `<table class="summary"><thead><tr><th>Report</th><th>Covers</th><th>Status</th></tr></thead><tbody>${entries
@@ -298,7 +299,7 @@ export const dayReportHtml = (db: ProductionDb, day: number, entries: ReportEntr
   @page { size: A4 landscape; margin: 14mm; }
   body { font: 10px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #111; margin: 0; }
   h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 12.5px; margin: 18px 0 6px; border-bottom: 1px solid #999; padding-bottom: 3px; }
-  p { margin: 2px 0; } .muted { color: #666; }
+  p { margin: 2px 0; } .muted { color: #666; } .notes { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #999; background: #f4f4f4; }
   table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
   th { font-weight: 600; color: #444; } tr { page-break-inside: avoid; }
   .ok { color: #13703a; font-weight: 600; } .needs { color: #8a5a00; font-weight: 600; } .problem { color: #b3261e; font-weight: 700; } .working { color: #0b57d0; }

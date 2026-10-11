@@ -64,10 +64,10 @@ describe('a production database', () => {
     const file = join(dir, 'p.vcdit');
     const db = await ProductionDb.open(file, { wasm, create: { name: 'HALCYON', code: 'HLC' }, saveDelayMs: 5 });
     expect(db.production()).toMatchObject({ name: 'HALCYON', code: 'HLC', checksum: 'xxHash64', devices: [] });
-    expect(db.days()).toEqual([{ number: 1, date: localDate(), locations: '', operator: { name: '', initials: '' } }]);
+    expect(db.days()).toEqual([{ number: 1, date: localDate(), locations: '', operator: { name: '', initials: '' }, notes: '' }]);
 
     db.updateProduction({ frameRate: '25 fps', devices: [{ slot: 'A', name: 'ALEXA 35', format: 'ARRIRAW' }] });
-    db.updateDay(1, { locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' } });
+    db.updateDay(1, { locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' }, notes: 'Wind on the roof.' });
     expect(db.addScene(1, { id: '14a', description: 'INT. HANGAR – DAY' })).toBe(true);
     expect(db.addScene(1, { id: '14A' })).toBe(false);
     db.addScene(1, { id: '21' });
@@ -78,7 +78,7 @@ describe('a production database', () => {
     expect((await readdir(dir)).sort()).toEqual(['p.vcdit']);
     const again = await ProductionDb.open(file, { wasm });
     expect(again.production()).toMatchObject({ name: 'HALCYON', frameRate: '25 fps', devices: [{ slot: 'A', name: 'ALEXA 35', format: 'ARRIRAW' }] });
-    expect(again.currentDay()).toMatchObject({ number: 1, locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' } });
+    expect(again.currentDay()).toMatchObject({ number: 1, locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' }, notes: 'Wind on the roof.' });
     expect(again.scenes(1)).toEqual([{ id: '14A', description: 'INT. HANGAR – DAY', status: 'Shot', notes: 'Circle T3', look: '' }]);
     // Opening kept the previous version alongside.
     expect((await readdir(dir)).sort()).toEqual(['p.vcdit', 'p.vcdit.bak']);

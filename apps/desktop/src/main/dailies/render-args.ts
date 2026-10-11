@@ -23,7 +23,7 @@ export interface RenderJob {
   rate: { num: number; den: number };
   durationSec: number;
   /** The clip's first frame as a timecode frame count, and its timebase. */
-  tc: { frames: number; base: number } | null;
+  tc: { frames: number; base: number; dropFrame?: boolean } | null;
   clipHasAudio: boolean;
   /** The synced sound file: where it starts relative to the clip, in frames, and its channels. */
   sound: { path: string; alignFrames: number; channels: number } | null;
@@ -50,11 +50,26 @@ export interface RenderCommand {
 
 export { DAILIES_AUDIO as AUDIO, DAILIES_CODECS as CODECS, DAILIES_RESOLUTIONS as RESOLUTIONS } from '../../shared/project';
 
-export const timecodeLabel = (frames: number, base: number): string => {
-  const ff = frames % base;
-  const total = Math.floor(frames / base);
+/**
+ * A frame count as a timecode label. Drop-frame (29.97 and 59.94 DF) skips
+ * frame numbers 00 and 01 (00–03 at 59.94) at the start of each minute
+ * except every tenth, so the label keeps to the clock; it is written with a
+ * semicolon before the frames, as editors expect.
+ */
+export const timecodeLabel = (frames: number, base: number, dropFrame = false): string => {
+  let count = Math.max(0, Math.round(frames));
+  const drop = dropFrame && base % 30 === 0 ? (base / 30) * 2 : 0;
+  if (drop) {
+    const perTenMinutes = base * 600 - drop * 9;
+    const perMinute = base * 60 - drop;
+    const tens = Math.floor(count / perTenMinutes);
+    const rest = count % perTenMinutes;
+    count += drop * 9 * tens + (rest > drop ? drop * Math.floor((rest - drop) / perMinute) : 0);
+  }
+  const ff = count % base;
+  const total = Math.floor(count / base);
   const pad = (value: number) => String(value).padStart(2, '0');
-  return `${pad(Math.floor(total / 3600) % 24)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}:${pad(ff)}`;
+  return `${pad(Math.floor(total / 3600) % 24)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}${drop ? ';' : ':'}${pad(ff)}`;
 };
 
 const size = (resolution: string) => {
@@ -124,7 +139,7 @@ export const renderArgs = (job: RenderJob, ffmpeg: Pick<Ffmpeg, 'encoders' | 'fi
     if (burn['Watermark']) text('watermark', `${job.production} · CONFIDENTIAL`, 'x=(w-tw)/2:y=(h-th)/2', ':alpha=0.25');
     if (burn['TC'] && job.tc) {
       // The clip's own timecode, counting with the picture.
-      const label = timecodeLabel(job.tc.frames, job.tc.base).replace(/:/g, '\\:');
+      const label = timecodeLabel(job.tc.frames, job.tc.base, job.tc.dropFrame).replace(/[:;]/g, (mark) => `\\${mark}`);
       video.push(`drawtext=fontfile=font.ttf:timecode='${label}':rate=${job.rate.num}/${job.rate.den}:fontsize=${fontSize}:fontcolor=white:${box}:x=${margin}:y=h-th-${margin}`);
     } else if (burn['TC']) warnings.push('No timecode in this clip to burn in.');
   }
@@ -153,7 +168,7 @@ export const renderArgs = (job: RenderJob, ffmpeg: Pick<Ffmpeg, 'encoders' | 'fi
   if (audio) args.push('-map', '[a]', ...codec.audio);
   else args.push('-an');
   args.push(...codec.args, '-r', `${job.rate.num}/${job.rate.den}`, '-t', job.durationSec.toFixed(4));
-  if (job.tc) args.push('-timecode', timecodeLabel(job.tc.frames, job.tc.base));
+  if (job.tc) args.push('-timecode', timecodeLabel(job.tc.frames, job.tc.base, job.tc.dropFrame));
   // The look travels in the file's metadata (spec §4.7).
   args.push('-metadata', `comment=VC DIT daily · ${job.label} · ${job.clip} · look: ${job.look?.name ?? 'none (LOG)'}`);
   args.push('-f', codec.extension);

@@ -154,7 +154,7 @@ export class DailiesService {
         clipPath,
         rate: plan.meta.rate,
         durationSec: plan.meta.durationSec,
-        tc: plan.meta.tc ? { frames: plan.meta.tc.frames, base: plan.meta.tc.base } : null,
+        tc: plan.meta.tc ? { frames: plan.meta.tc.frames, base: plan.meta.tc.base, dropFrame: plan.meta.tc.dropFrame } : null,
         clipHasAudio: plan.meta.hasAudio,
         sound: plan.sound && soundPath ? { path: soundPath, alignFrames: plan.sound.alignFrames, channels: plan.sound.channels } : null,
         look: plan.lut ? { name: plan.lut.name, extension: plan.lut.format } : null,

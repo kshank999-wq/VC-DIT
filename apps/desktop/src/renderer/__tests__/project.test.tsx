@@ -13,6 +13,7 @@ import { Looks } from '../screens/Looks';
 import { Dailies } from '../screens/Dailies';
 import { Delivery } from '../screens/Delivery';
 import { Reports } from '../screens/Reports';
+import { FilesPanel } from '../shell/FilesPanel';
 import { StoreProvider, useStore } from '../state/store';
 
 /**
@@ -26,8 +27,8 @@ const LICENSED = { plan: 'dit', state: 'licensed', email: null, serial: null, pa
 const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   file: '/data/productions/nightjar.vcdit',
   production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link' },
-  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
-  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
+  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' }, notes: '' },
+  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' }, notes: '' }],
   scenes: [],
   log: null,
   matches: [],
@@ -43,6 +44,7 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   dailiesActivity: null,
   ffmpeg: null,
   organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
+  media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
   delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
@@ -107,7 +109,7 @@ beforeEach(() => {
     addScene: vi.fn(async () => ok(current)),
     updateScene: vi.fn(async () => ok(current)),
     removeScene: vi.fn(async () => ok(current)),
-    addDay: vi.fn(async () => ok(fresh({ day: { number: 2, date: '2026-10-07', locations: '', operator: { name: '', initials: '' } } }))),
+    addDay: vi.fn(async () => ok(fresh({ day: { number: 2, date: '2026-10-07', locations: '', operator: { name: '', initials: '' }, notes: '' } }))),
     openDay: vi.fn(async () => ok(current)),
     create: vi.fn(async () => ok(current)),
     open: vi.fn(async () => ({ ok: false, reason: 'A transfer is running. Wait for it to finish first.' })),
@@ -542,5 +544,35 @@ describe('a production from the database', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Write to drives' }));
     expect(api.dayReport).toHaveBeenCalledWith('drives');
     expect(await screen.findByText(/Day report written to 1 drive/)).toBeTruthy();
+  });
+
+  it("counts the day's real media in the Files panel, under the folders' real names", () => {
+    current = fresh({
+      ...logged,
+      media: { cameraFiles: 1284, soundFiles: 42, cards: 3, home: 'RAID_07' },
+      renders: [{ takeId: '4|A|2', label: '4A-02', clip: 'A001C002', output: '/RAID/x.mov', state: 'done', error: null, lut: null, codec: 'ProRes 422 Proxy', bytes: 1, warnings: [] }],
+    });
+    render(
+      <StoreProvider>
+        <FilesPanel />
+      </StoreProvider>,
+    );
+    const row = (name: string) => screen.getByText(name).closest('[role="treeitem"]')!.textContent;
+    expect(screen.getByText('RAID_07')).toBeTruthy();
+    expect(row('CAMERA_ORIGINALS')).toContain('1,284');
+    expect(row('SOUND_ORIGINALS')).toContain('42');
+    expect(row('SYNCED_DAILIES')).toContain('1');
+    expect(screen.queryByText('01_CAMERA_ORIGINALS')).toBeNull();
+    expect(screen.queryByText('1,596')).toBeNull();
+  });
+
+  it('keeps the day notes with the shoot day', () => {
+    render(
+      <StoreProvider>
+        <ProjectSetup />
+      </StoreProvider>,
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'Day notes' }), { target: { value: 'Rain at 15:00; B camera down 40 min.' } });
+    expect(api.updateDay).toHaveBeenLastCalledWith({ notes: 'Rain at 15:00; B camera down 40 min.' });
   });
 });

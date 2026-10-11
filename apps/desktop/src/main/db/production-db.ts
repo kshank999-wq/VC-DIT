@@ -409,6 +409,9 @@ const MIGRATION_7 = `
 `;
 MIGRATIONS.push(MIGRATION_7);
 
+// The shoot day's notes (spec §6 "Shoot Day: notes").
+MIGRATIONS.push(`alter table shoot_day add column notes text not null default '';`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -448,7 +451,7 @@ export interface EditorialRow {
   clip: string;
   card: string;
   file: string;
-  tc: { frames: number; base: number } | null;
+  tc: { frames: number; base: number; dropFrame?: boolean } | null;
   rate: { num: number; den: number } | null;
   durationSec: number | null;
   scene: string;
@@ -740,6 +743,7 @@ export class ProductionDb {
       date: String(row['date']),
       locations: String(row['locations']),
       operator: { name: String(row['operator_name']), initials: String(row['operator_initials']) },
+      notes: String(row['notes'] ?? ''),
     };
   }
 
@@ -787,11 +791,12 @@ export class ProductionDb {
     if (!day) throw new Error('No such shoot day.');
     const next = { ...day, ...patch, operator: { ...day.operator, ...patch.operator } };
     this.transaction(() =>
-      this.run('update shoot_day set date = ?, locations = ?, operator_name = ?, operator_initials = ? where number = ?', [
+      this.run('update shoot_day set date = ?, locations = ?, operator_name = ?, operator_initials = ?, notes = ? where number = ?', [
         next.date,
         next.locations,
         next.operator.name,
         next.operator.initials,
+        next.notes,
         number,
       ]),
     );
@@ -1954,7 +1959,7 @@ export class ProductionDb {
           clip: picture.key,
           card: picture.card,
           file: files.get(id) ?? picture.key,
-          tc: picture.meta?.tc ? { frames: picture.meta.tc.frames, base: picture.meta.tc.base } : null,
+          tc: picture.meta?.tc ? { frames: picture.meta.tc.frames, base: picture.meta.tc.base, dropFrame: picture.meta.tc.dropFrame } : null,
           rate: picture.meta?.rate ?? null,
           durationSec: picture.meta?.durationSec ?? null,
           scene: entry?.scene ?? '',
@@ -1971,6 +1976,21 @@ export class ProductionDb {
         };
       })
       .sort((a, b) => a.card.localeCompare(b.card) || a.clip.localeCompare(b.clip));
+  }
+
+  /** How many camera and sound files the day has, from how many cards, and the drive its first card went to. */
+  mediaCounts(day: number): ProjectState['media'] {
+    const count = (kind: string) => this.value<number>('select count(*) from clip where day = ? and kind = ?', [day, kind]) ?? 0;
+    return {
+      cameraFiles: count('camera'),
+      soundFiles: count('sound'),
+      cards: this.value<number>('select count(distinct card) from clip where day = ?', [day]) ?? 0,
+      home: this.value<string>(
+        `select d.name from transfer_destination d join transfer t on t.day = d.day and t.id = d.transfer_id
+         where d.day = ? order by t.started_at, t.id, d.position limit 1`,
+        [day],
+      ),
+    };
   }
 
   // ------------------------------------------------ the scene view

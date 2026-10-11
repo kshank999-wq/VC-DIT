@@ -34,6 +34,8 @@ export interface ShootDay {
   /** "Hangar & Rooftop". */
   locations: string;
   operator: { name: string; initials: string };
+  /** The DIT's notes for the day: weather, problems, who took what. */
+  notes: string;
 }
 
 export type SceneStatus = 'Scheduled' | 'Shooting' | 'Shot' | 'Dropped';
@@ -244,6 +246,8 @@ export interface ProjectState {
   delivery: DeliveryState;
   /** The scene view and the selects on the destinations. */
   organize: OrganizeState;
+  /** The day's media in the production: what the Files panel counts. */
+  media: { cameraFiles: number; soundFiles: number; cards: number; home: string | null };
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
 }

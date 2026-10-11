@@ -39,8 +39,8 @@ const span = (row: EditorialRow): { start: string; end: string } => {
   // ALE's End is the frame after the last, as Avid writes it.
   const frames = row.durationSec !== null ? Math.round(row.durationSec * fps) : 0;
   return {
-    start: timecodeLabel(row.tc.frames, row.tc.base),
-    end: timecodeLabel(row.tc.frames + frames, row.tc.base),
+    start: timecodeLabel(row.tc.frames, row.tc.base, row.tc.dropFrame),
+    end: timecodeLabel(row.tc.frames + frames, row.tc.base, row.tc.dropFrame),
   };
 };
 

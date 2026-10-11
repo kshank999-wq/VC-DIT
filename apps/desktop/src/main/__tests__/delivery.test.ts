@@ -219,7 +219,14 @@ describe('the editorial lists', () => {
     expect(data[1]).toMatchObject({ Name: 'B007C001', Tracks: 'V', Start: '', 'Sync Method': 'None' });
   });
 
-  it('writes the same as a CSV', () => {
+  it('writes drop-frame timecode the way editors expect', () => {
+    // 29.97 DF: frame 1800 is the first frame after 00:00:59;29, and 01 does not exist at a minute that is not a tenth.
+    const ale = editorialAle([row({ tc: { frames: 1800, base: 30, dropFrame: true }, rate: { num: 30000, den: 1001 }, durationSec: 60.06 })], '29.97 fps');
+    expect(ale).toContain('FPS\t29.97');
+    expect(ale).toMatch(/\t00:01:00;02\t00:02:00;04\t/);
+  });
+
+    it('writes the same as a CSV', () => {
     const csv = editorialCsv([row()]);
     expect(csv.split('\n')[0]).toBe('clip,card,file,scene,setup,take,circled,tc_start,tc_end,fps,sound_roll,sound_file,sync,sync_offset_frames,look,notes');
     expect(csv).toContain('A015C002,A015,A015C002_261007_R1AB.mov,14,B,3,yes,14:05:40:12,14:05:50:12,23.976,S004,14B-03.WAV,Timecode,-12.5,NJR_Show_v3.cube,"great\tperformance\nhold"');
