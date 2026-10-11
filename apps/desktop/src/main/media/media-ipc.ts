@@ -39,6 +39,7 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
   });
   ipcMain.handle('vcdit:media-remove-folder', (_e, id: unknown) => service.removeFolder(String(id)));
   ipcMain.handle('vcdit:media-ingest', (_e, request: unknown) => service.ingest(request as IngestRequest));
+  ipcMain.handle('vcdit:media-stop', (_e, jobId: unknown) => service.stopJob(String(jobId)));
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {
     // Only folders the engine wrote to.

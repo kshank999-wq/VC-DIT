@@ -79,6 +79,10 @@ export interface LegSnapshot {
 
 export interface JobSnapshot {
   id: string;
+  /** The card's name: "A015". */
+  card: string;
+  /** Camera or sound. */
+  sound: boolean;
   label: string;
   sourceId: string;
   totalBytes: number;
@@ -91,6 +95,8 @@ export interface JobSnapshot {
   bytesPerSecond: number;
   /** Seconds left in the copy, when known. */
   etaSeconds: number | null;
+  /** The file being copied now (relative to the card), while copying. */
+  currentFile: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }

@@ -283,6 +283,9 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
   });
   const jobs = media.jobs.map<TransferJob>((job) => ({
     id: job.id,
+    card: job.card,
+    sound: job.sound,
+    currentFile: job.currentFile,
     label: job.label,
     size: formatBytes(job.totalBytes),
     files: `${job.fileCount.toLocaleString('en-US')} file${job.fileCount === 1 ? '' : 's'}`,

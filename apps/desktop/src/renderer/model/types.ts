@@ -87,6 +87,10 @@ export interface TransferLeg {
 
 export interface TransferJob {
   id: string;
+  /** From the media engine: the card's name, camera or sound, and the file being copied now. */
+  card?: string;
+  sound?: boolean;
+  currentFile?: string | null;
   label: string;
   size: string;
   files: string;

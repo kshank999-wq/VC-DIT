@@ -76,6 +76,8 @@ export interface TransferProgress {
   totalBytes: number;
   sourceBytesRead: number;
   bytesPerSecond: number;
+  /** The file being read from the card now; null once every copy is being checked. */
+  currentFile: string | null;
   legs: Record<string, LegProgress>;
 }
 
@@ -233,6 +235,7 @@ export const runTransfer = async (
 
   // ------------------------------------------------ progress
   let sourceBytesRead = 0;
+  let currentFile: string | null = null;
   let bytesPerSecond = 0;
   let lastAt = Date.now();
   let lastBytes = 0;
@@ -247,7 +250,7 @@ export const runTransfer = async (
     }
     lastAt = now;
     lastBytes = sourceBytesRead;
-    options.onProgress({ totalBytes, sourceBytesRead, bytesPerSecond, legs: Object.fromEntries(legs.map((leg) => [leg.plan.id, { ...leg.progress }])) });
+    options.onProgress({ totalBytes, sourceBytesRead, bytesPerSecond, currentFile, legs: Object.fromEntries(legs.map((leg) => [leg.plan.id, { ...leg.progress }])) });
   };
 
   const finish = (leg: LegRun, index: number, outcome: FileOutcome) => {
@@ -283,6 +286,7 @@ export const runTransfer = async (
   for (const [index, file] of files.entries()) {
     if (stopped()) break;
     const record = records[index]!;
+    currentFile = file.path;
 
     if ((await deviceOf(sourceRoot)) !== sourceDevice) {
       for (const leg of legs) if (leg.files[index]!.kind === 'pending') finish(leg, index, { state: 'failed', error: 'The card was removed.' });
@@ -388,6 +392,7 @@ export const runTransfer = async (
   }
 
   // ------------------------------------------------ verify: read every copy back, all destinations at once
+  currentFile = null;
   for (const leg of legs) leg.progress.phase = 'verifying';
   report(true);
 

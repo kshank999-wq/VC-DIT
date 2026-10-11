@@ -45,6 +45,7 @@ interface MediaApi {
   removeFolder: (id: string) => Promise<void>;
   ingest: (request: import('../shared/media').IngestRequest) => Promise<import('../shared/media').IngestResult>;
   retry: (jobId: string, legId: string) => Promise<import('../shared/media').IngestResult>;
+  stopJob: (jobId: string) => Promise<{ ok: boolean; reason?: string }>;
   show: (path: string) => Promise<void>;
 }
 

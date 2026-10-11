@@ -85,6 +85,7 @@ interface Job {
   legs: Leg[];
   bytesPerSecond: number;
   etaSeconds: number | null;
+  currentFile: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -137,6 +138,29 @@ export class MediaService {
     if (this.timer) clearInterval(this.timer);
     this.queue.length = 0;
     this.current?.worker.postMessage('stop');
+  }
+
+  /**
+   * Stop one card's transfer. Running: the copy stops and cleans up its
+   * unverified files, which are recorded as stopped. Waiting: it leaves the
+   * queue, and nothing of it is copied. Either way it can be retried.
+   */
+  stopJob(jobId: string): { ok: boolean; reason?: string } {
+    const job = this.jobs.find((candidate) => candidate.id === jobId);
+    if (!job) return { ok: false, reason: 'That transfer is no longer in the list.' };
+    const waiting = this.queue.filter((work) => work.job === job);
+    for (const work of waiting) this.queue.splice(this.queue.indexOf(work), 1);
+    if (waiting.length && this.current?.work.job !== job) {
+      for (const leg of job.legs) {
+        if (leg.outcomes.size === 0) leg.error = 'Stopped before it started.';
+        for (const file of job.files) if (!leg.outcomes.has(file.path)) leg.outcomes.set(file.path, { state: 'failed', error: 'Stopped before it started.' });
+      }
+      job.finishedAt = new Date().toISOString();
+      this.record(job);
+      this.emit(true);
+    }
+    if (this.current?.work.job === job) this.current.worker.postMessage('stop');
+    return { ok: true };
   }
 
   /** Resolves once nothing is running, or after `timeoutMs`. */
@@ -369,6 +393,7 @@ export class MediaService {
         })),
         bytesPerSecond: 0,
         etaSeconds: null,
+        currentFile: null,
         startedAt: null,
         finishedAt: null,
       };
@@ -440,6 +465,7 @@ export class MediaService {
       }
       job.bytesPerSecond = 0;
       job.etaSeconds = null;
+      job.currentFile = null;
       if (!this.queue.some((queued) => queued.job === job)) job.finishedAt = new Date().toISOString();
       this.current = null;
       this.record(job);
@@ -456,6 +482,7 @@ export class MediaService {
         job.bytesPerSecond = legs.some((leg) => leg.live?.phase === 'copying') ? message.progress.bytesPerSecond : 0;
         const left = message.progress.totalBytes - message.progress.sourceBytesRead;
         job.etaSeconds = job.bytesPerSecond > 0 ? Math.round(left / job.bytesPerSecond) : null;
+        job.currentFile = message.progress.currentFile ?? null;
         this.emit();
       } else if (message.type === 'done') {
         finished = true;
@@ -538,6 +565,7 @@ export class MediaService {
         }),
         bytesPerSecond: 0,
         etaSeconds: null,
+        currentFile: null,
         startedAt: record.startedAt,
         finishedAt: record.finishedAt ?? record.startedAt ?? new Date(0).toISOString(),
       });
@@ -552,6 +580,8 @@ export class MediaService {
     const runningLegs = this.current?.work.job === job ? this.current.work.legIds : [];
     return {
       id: job.id,
+      card: job.card,
+      sound: job.sound,
       label: job.label,
       sourceId: job.sourceId,
       totalBytes: job.totalBytes,
@@ -562,6 +592,7 @@ export class MediaService {
       legs: job.legs.map((leg) => this.legSnapshot(job, leg)),
       bytesPerSecond: job.bytesPerSecond,
       etaSeconds: job.etaSeconds,
+      currentFile: job.currentFile,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
     };
