@@ -74,6 +74,10 @@ contextBridge.exposeInMainWorld('vcdit', {
     showReport: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-report-show', path),
     dayReport: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-day-report', where),
     filmStudio: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-film-studio', where),
+    sendToFilmStudio: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-film-studio', 'send'),
+    filmStudioLink: (): Promise<unknown> => ipcRenderer.invoke('vcdit:film-studio-link'),
+    setFilmStudioKey: (key: string): Promise<unknown> => ipcRenderer.invoke('vcdit:film-studio-link-set', key),
+    clearFilmStudioKey: (): Promise<unknown> => ipcRenderer.invoke('vcdit:film-studio-link-clear'),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

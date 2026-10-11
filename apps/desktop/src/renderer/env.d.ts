@@ -13,6 +13,14 @@ interface Access {
   message: string | null;
 }
 
+/** Whether the open production can send its day to VC Film Studio (src/main/film-studio-link.ts). */
+interface FilmStudioLink {
+  linked: boolean;
+  /** "vcdit_…x9Qa": the key's last four characters, never the key. */
+  hint: string | null;
+  endpoint: string;
+}
+
 /** What the preload exposes (src/preload/index.ts). Absent in a test or a plain browser. */
 interface Window {
   vcdit?: {
@@ -100,5 +108,11 @@ interface ProjectApi {
   showReport: (path: string) => Promise<void>;
   dayReport: (where: 'save' | 'drives') => Promise<{ ok: true; written: string[] } | { ok: false; reason: string }>;
   filmStudio: (where: 'save' | 'drives') => Promise<{ ok: true; written: string[] } | { ok: false; reason: string }>;
+  /** Post the day's log to the production in VC Film Studio with its upload key. */
+  sendToFilmStudio: () => Promise<{ ok: true; text: string; warnings: string[] } | { ok: false; reason: string }>;
+  /** Whether the open production can send its day to VC Film Studio. Never the key itself. */
+  filmStudioLink: () => Promise<FilmStudioLink>;
+  setFilmStudioKey: (key: string) => Promise<{ ok: true; link: FilmStudioLink } | { ok: false; reason: string }>;
+  clearFilmStudioKey: () => Promise<FilmStudioLink>;
   showDaily: (path: string) => Promise<void>;
 }

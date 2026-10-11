@@ -153,6 +153,18 @@ beforeEach(() => {
     showReport: vi.fn(async () => undefined),
     dayReport: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/day_report/NJR_D001_REPORT.pdf'] })),
     filmStudio: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/vc_film_studio/NJR_D001_VC_FILM_STUDIO.json'] })),
+    sendToFilmStudio: vi.fn(async () => ({
+      ok: true,
+      text: 'Day 1 sent to VC Film Studio (NIGHTJAR). 3 rolls added, 6 copies added.',
+      warnings: ['No shoot day in the schedule is dated 2026-10-06; the rolls and notes are recorded without a day.'],
+    })),
+    filmStudioLink: vi.fn(async () => ({ linked: false, hint: null, endpoint: 'https://www.vcfilmstudio.com/api/dit/upload' })),
+    setFilmStudioKey: vi.fn(async (key: string) =>
+      key.startsWith('vcdit_')
+        ? { ok: true, link: { linked: true, hint: `vcdit_…${key.slice(-4)}`, endpoint: 'https://www.vcfilmstudio.com/api/dit/upload' } }
+        : { ok: false, reason: 'That is not a Film Studio upload key — they start with “vcdit_”. Copy it again from the data desk.' },
+    ),
+    clearFilmStudioKey: vi.fn(async () => ({ linked: false, hint: null, endpoint: 'https://www.vcfilmstudio.com/api/dit/upload' })),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -555,6 +567,45 @@ describe('a production from the database', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export to VC Film Studio…' }));
     expect(api.filmStudio).toHaveBeenLastCalledWith('save');
     expect(await screen.findByText(/Day log saved for VC Film Studio/)).toBeTruthy();
+
+    // Straight to Film Studio: what arrived, then anything Film Studio warned about.
+    fireEvent.click(screen.getByRole('button', { name: 'Send to VC Film Studio' }));
+    expect(api.sendToFilmStudio).toHaveBeenCalled();
+    expect(await screen.findByText(/Day 1 sent to VC Film Studio \(NIGHTJAR\)\. 3 rolls added, 6 copies added\. No shoot day in the schedule/)).toBeTruthy();
+    api.sendToFilmStudio.mockResolvedValueOnce({ ok: false, reason: 'This production has no Film Studio upload key yet. Paste one in Project setup → VC Film Studio.' });
+    fireEvent.click(screen.getByRole('button', { name: 'Send to VC Film Studio' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/no Film Studio upload key yet/);
+  });
+
+  it('keeps the Film Studio upload key out of sight: saved, shown by its last four characters, replaced and removed', async () => {
+    render(
+      <StoreProvider>
+        <ProjectSetup />
+      </StoreProvider>,
+    );
+    const field = (await screen.findByLabelText('Film Studio upload key')) as HTMLInputElement;
+    expect(field.type).toBe('password');
+    expect(screen.getByText('Sends to https://www.vcfilmstudio.com/api/dit/upload')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'Save key' }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(field, { target: { value: 'not-a-key' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/start with “vcdit_”/);
+
+    const key = 'vcdit_' + 'k'.repeat(39) + 'x9Qa';
+    fireEvent.change(field, { target: { value: key } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save key' }));
+    expect(api.setFilmStudioKey).toHaveBeenLastCalledWith(key);
+    expect(await screen.findByText('vcdit_…x9Qa')).toBeTruthy();
+    expect(screen.getByText('Linked')).toBeTruthy();
+    // The field is emptied, and the key is nowhere on the screen.
+    expect(field.value).toBe('');
+    expect(document.body.textContent).not.toContain(key);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove key' }));
+    expect(api.clearFilmStudioKey).toHaveBeenCalled();
+    expect(await screen.findByText(/Key removed from this computer/)).toBeTruthy();
+    expect(screen.queryByText('vcdit_…x9Qa')).toBeNull();
   });
 
   it("counts the day's real media in the Files panel, under the folders' real names", () => {

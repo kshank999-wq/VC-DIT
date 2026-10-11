@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { NAMING_FIELDS, applyNaming, parseNaming, type ProjectResult } from '../../shared/project';
 import type { ChecksumMethod, SceneStatus, Status } from '../model/types';
 import { projectApi } from '../state/engine';
@@ -418,6 +418,12 @@ export function ProjectSetup() {
           )}
         </section>
       </div>
+
+      {api ? (
+        <div className="setup-row">
+          <FilmStudioCard api={api} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -501,5 +507,91 @@ function Stat({ value, label, color }: { value: number; label: string; color?: s
       </span>
       <span className="muted">{label}</span>
     </div>
+  );
+}
+
+/**
+ * Which production in VC Film Studio this one sends its day to: the upload key
+ * made on that production's data desk. The key is kept on this computer and
+ * never comes back to the screen once saved; only its last four characters do.
+ */
+function FilmStudioCard({ api }: { api: ProjectApi }) {
+  const { state } = useStore();
+  const [link, setLink] = useState<FilmStudioLink | null>(null);
+  const [key, setKey] = useState('');
+  const [notice, setNotice] = useState<{ text: string; problem?: boolean } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const file = state.project?.file;
+
+  // Asked again when another production is opened: each has its own key.
+  useEffect(() => {
+    let live = true;
+    setNotice(null);
+    void api.filmStudioLink().then((answer) => live && setLink(answer));
+    return () => {
+      live = false;
+    };
+  }, [api, file]);
+
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    void api.setFilmStudioKey(key).then((result) => {
+      setSaving(false);
+      if (result.ok) {
+        setLink(result.link);
+        setKey('');
+        setNotice({ text: 'Key saved. Reports → Send to VC Film Studio sends the day.' });
+      } else setNotice({ text: result.reason, problem: true });
+    });
+  };
+  const remove = () =>
+    void api.clearFilmStudioKey().then((answer) => {
+      setLink(answer);
+      setNotice({ text: 'Key removed from this computer. Revoke it on the data desk too if it is no longer wanted.' });
+    });
+
+  return (
+    <section className="card" aria-labelledby="setup-film-studio">
+      <div className="card-head">
+        <h3 id="setup-film-studio">VC Film Studio</h3>
+        {link?.linked ? <StatusText status="done" word="Linked" /> : null}
+      </div>
+      <div className="card-body stack">
+        <p className="muted setup-note">
+          Send the day straight to this production in VC Film Studio. On its data desk, open From VC DIT → Send from the cart, make an upload key for this
+          cart and paste it here. The key stays on this computer and never goes into the production file.
+        </p>
+        {link?.linked ? (
+          <div className="row setup-log-actions">
+            <span className="mono">{link.hint}</span>
+            <button type="button" className="btn small" onClick={remove}>
+              Remove key
+            </button>
+          </div>
+        ) : null}
+        <form className="row setup-log-actions" onSubmit={save}>
+          <input
+            className="input mono grow"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Film Studio upload key"
+            placeholder={link?.linked ? 'Paste a new key to replace it' : 'vcdit_…'}
+            value={key}
+            onChange={(event) => setKey(event.target.value)}
+          />
+          <button type="submit" className="btn" disabled={saving || !key.trim()}>
+            {link?.linked ? 'Replace key' : 'Save key'}
+          </button>
+        </form>
+        {notice ? (
+          <p className="small" role={notice.problem ? 'alert' : 'status'} style={{ color: statusVar(notice.problem ? 'problem' : 'done') }}>
+            {notice.text}
+          </p>
+        ) : null}
+        {link ? <p className="muted small">Sends to {link.endpoint}</p> : null}
+      </div>
+    </section>
   );
 }
