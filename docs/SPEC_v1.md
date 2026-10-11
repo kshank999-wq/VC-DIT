@@ -209,7 +209,13 @@ Implementation note: the visible folder model should be configurable. Internally
 ## 8. Safety / Data Integrity Requirements
 
 - Camera and sound originals are treated as protected source media.
-- No delete/format action should occur as part of V1; VC DIT may display 'Safe to Format' only after required verified copies succeed.
+- VC DIT never formats a card, and shows 'Safe to Format' only after the required verified copies succeed (the production's format rule, §4.3.1).
+- **Clearing a card for camera** is the one erase it offers, and only on the operator's say-so:
+  - When a card that is still plugged in becomes safe, VC DIT says so (a notice in the app, and the system notification when the window is in the background). Its tile in Sources turns green; while copying it is blue, a problem red, cleared grey.
+  - **Clear card…** (on the tile, the notice, and Verify) first makes a fresh check: the card holds exactly the files that were copied (a new or changed clip stops it), and every copy the production's rule relies on verified at ingest and is still there now at the same size; under the two-local rule there must be at least two.
+  - Then two confirmations: "All of this is backed up. Clear the card?" and "Are you sure? This permanently erases …". The check is made once more immediately before anything is erased.
+  - Only the ingested files are erased, then any folders left empty; nothing else on the card is touched. The camera department formats the card in the camera before shooting on it again.
+  - The clearing is recorded with the transfer, and a note (`<CARD>_cleared_<time>.json`) is written beside the transfer log on each copy relied on.
 - All automatic organization should be reversible/non-destructive.
 - Every transfer should be auditable through logs and checksums.
 - Failed verification must be obvious and must prevent a green/completed status.

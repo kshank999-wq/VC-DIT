@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from 'react';
 import { jobState, legProgress, legState, legWord } from '../model/status';
-import type { ChecksumMethod, TransferJob, TransferLeg, Volume, VolumeRole } from '../model/types';
+import type { ChecksumMethod, Status, TransferJob, TransferLeg, Volume, VolumeRole } from '../model/types';
 import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
+import { cardStage, ClearCardDialog, clearedWord, jobOfVolume, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
@@ -49,6 +50,7 @@ export function Intake() {
   const { state, dispatch } = useStore();
   const media = state.engine ? engine() : null;
   const px = ICON_PX[state.prefs.iconSize];
+  const [clearing, setClearing] = useState<TransferJob | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const answer = (result: { ok: boolean; reason?: string }) => setNotice(result.ok ? null : (result.reason ?? null));
@@ -134,8 +136,11 @@ export function Intake() {
             {sourceVolumes.map((volume) => {
               const look = volumeLook(volume);
               const picked = volume.included && !volume.ingested;
+              // The card's colour follows its copy: copying, safe to clear, a problem, cleared.
+              const job = jobOfVolume(state, volume);
+              const stage = job ? cardStage(state, job) : null;
               return (
-                <div key={volume.id} className={`offload-tile${picked ? ' picked' : ''}${volume.ingested ? ' done' : ''}`}>
+                <div key={volume.id} className={`offload-tile${picked ? ' picked' : ''}${stage ? ` stage-${stage}` : ''}`} data-stage={stage ?? undefined}>
                   <label className="offload-tile-main" title={`${KIND_WORD[look.kind]} · ${volume.detected}`}>
                     {!volume.ingested ? (
                       <span className="offload-check">
@@ -158,8 +163,19 @@ export function Intake() {
                         <option key={role}>{role}</option>
                       ))}
                     </select>
-                    {volume.ingested ? <StatusText status="done" word="Ingested" /> : <span className="offload-ro mono" style={{ color: statusVar('done') }}>Read-only</span>}
+                    {stage ? (
+                      <StatusText status={STAGE[stage].status} word={STAGE[stage].word(job!)} />
+                    ) : (
+                      <span className="offload-ro mono" style={{ color: statusVar('done') }}>
+                        Read-only
+                      </span>
+                    )}
                   </div>
+                  {stage === 'safe' ? (
+                    <button type="button" className="btn small offload-clear" onClick={() => setClearing(job!)}>
+                      Clear card…
+                    </button>
+                  ) : null}
                 </div>
               );
             })}
@@ -308,9 +324,20 @@ export function Intake() {
           </button>
         </section>
       </div>
+      {clearing ? <ClearCardDialog job={clearing} onClose={() => setClearing(null)} /> : null}
     </div>
   );
 }
+
+/** How a card's tile reads at each stage. */
+const STAGE: Record<CardStage, { status: Status; word: (job: TransferJob) => string }> = {
+  waiting: { status: 'idle', word: () => 'Waiting to copy' },
+  copying: { status: 'working', word: () => 'Copying' },
+  eject: { status: 'needs', word: () => "Can come out · don't clear" },
+  safe: { status: 'done', word: () => 'Safe to clear' },
+  problem: { status: 'problem', word: () => "Problem · don't clear" },
+  cleared: { status: 'idle', word: (job) => clearedWord(job) },
+};
 
 function TransferRow({
   job,

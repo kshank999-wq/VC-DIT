@@ -115,6 +115,9 @@ export interface TransferJob {
   /** From the media engine, while copying. */
   bytesPerSecond?: number;
   etaSeconds?: number | null;
+  /** The card's volume (its mount path), and when it was cleared for camera. */
+  sourceId?: string;
+  clearedAt?: string | null;
 }
 
 export type SyncMethod = 'Timecode' | 'Waveform' | 'Manual' | 'None';

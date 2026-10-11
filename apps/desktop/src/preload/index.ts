@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('vcdit', {
     pauseRelays: (paused: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:media-pause-relays', paused),
     setRelayLimit: (bytesPerSecond: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:media-relay-limit', bytesPerSecond),
     icon: (path: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-icon', path),
+    checkClear: (jobId: string, rule: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-check-clear', jobId, rule),
+    clearCard: (jobId: string, rule: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-clear', jobId, rule),
     browseRoots: (production: string): Promise<unknown> => ipcRenderer.invoke('vcdit:files-roots', production),
     browse: (id: string, production: string, rel: string): Promise<unknown> => ipcRenderer.invoke('vcdit:files-list', id, production, rel),
     browseSearch: (id: string, production: string, query: string): Promise<unknown> => ipcRenderer.invoke('vcdit:files-search', id, production, query),

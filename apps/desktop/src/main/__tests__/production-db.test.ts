@@ -29,6 +29,7 @@ const transfer = (patch: Partial<TransferRecord> = {}): TransferRecord => ({
   checksum: 'xxHash64',
   startedAt: '2026-10-06T18:00:00.000Z',
   finishedAt: '2026-10-06T18:10:00.000Z',
+  clearedAt: null,
   files: [
     { path: 'A015R1AB/A015C001_261005_R1AB.mxf', size: 100, mtimeMs: 1_700_000_000_000, hash: 'aaaaaaaaaaaaaaaa', hashedAt: '2026-10-06T18:01:00.000Z' },
     { path: 'A015R1AB/A015C002_261005_R1AB.mxf', size: 200, mtimeMs: 1_700_000_000_500, hash: 'bbbbbbbbbbbbbbbb', hashedAt: '2026-10-06T18:02:00.000Z' },

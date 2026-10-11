@@ -65,6 +65,7 @@ const job = (patch: Partial<JobSnapshot['legs'][number]> = {}): JobSnapshot => (
   etaSeconds: 500,
   startedAt: '2026-10-06T18:00:00Z',
   finishedAt: null,
+  clearedAt: null,
 });
 
 const entry = (rel: string, kind: 'folder' | 'file', patch: Record<string, unknown> = {}) => ({
@@ -83,6 +84,19 @@ const LISTINGS: Record<string, ReturnType<typeof entry>[]> = {
   'SHOOT_DAY_014_2026-10-05': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS', 'folder'), entry('SHOOT_DAY_014_2026-10-05/REPORTS', 'folder')],
   'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015', 'folder')],
   'SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015': [entry('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari', 'file', { linked: true })],
+};
+
+const CHECK = {
+  ok: true,
+  card: 'A015',
+  files: 1284,
+  bytes: 7e11,
+  copies: [
+    { name: 'RAID', ok: true, problem: null, files: 1284 },
+    { name: 'SHTL', ok: true, problem: null, files: 1284 },
+  ],
+  problems: [] as string[],
+  checkedAt: '2026-10-06T19:00:00Z',
 };
 
 let listener: ((state: MediaState) => void) | null;
@@ -120,6 +134,8 @@ beforeEach(() => {
     setRelay: vi.fn(async () => ({ ok: true })),
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
+    checkClear: vi.fn(async () => CHECK),
+    clearCard: vi.fn(async () => ({ ok: true, removed: 1284, check: CHECK })),
     browseRoots: vi.fn(async () => [{ id: raid.id, name: 'RAID', path: '/Volumes/RAID/HALCYON', present: true }]),
     browse: vi.fn(async (_id: string, _production: string, rel: string) => ({ ok: true, more: 0, entries: LISTINGS[rel] ?? [] })),
     browseSearch: vi.fn(async () => ({ ok: true, complete: true, entries: [LISTINGS['SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015']![0]!] })),
@@ -372,5 +388,66 @@ describe('the Files panel on the drives', () => {
     fireEvent.change(screen.getByLabelText('Search project files'), { target: { value: 'C002' } });
     expect(await screen.findByText('SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015C002_261005_R1AB.ari')).toBeTruthy();
     expect(media.browseSearch).toHaveBeenCalledWith(raid.id, 'HALCYON', 'C002');
+  });
+});
+
+describe('clearing a card for camera', () => {
+  const done = { copyPct: 100, verifyPct: 100 };
+  const safeJob = () => ({ ...job(done), legs: [{ ...leg, ...done }, { ...leg, ...done, id: '/Volumes/SHTL', name: 'SHTL' }], running: false, bytesPerSecond: 0, currentFile: null });
+
+  it('colours the card as it goes, and clears it only after a check and two yeses', async () => {
+    mount(<Intake />);
+    await waitFor(() => screen.getByText('A015'));
+    const sources = screen.getByRole('region', { name: 'Sources' });
+    const tile = () => within(sources).getByText('A015').closest('.offload-tile') as HTMLElement;
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
+    expect(tile().dataset['stage']).toBe('copying');
+    expect(within(tile()).queryByRole('button', { name: 'Clear card…' })).toBeNull();
+
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [safeJob()] });
+    expect(tile().dataset['stage']).toBe('safe');
+    expect(within(tile()).getByText('Safe to clear')).toBeTruthy();
+    fireEvent.click(within(tile()).getByRole('button', { name: 'Clear card…' }));
+
+    // 1. The check, fresh.
+    const dialog = await screen.findByRole('dialog', { name: 'Clear A015 for camera?' });
+    expect(await within(dialog).findByText(/All of this is backed up/)).toBeTruthy();
+    expect(within(dialog).getAllByText(/all 1,284 verified copies there now/, { selector: 'span' })).toHaveLength(2);
+    expect(media.checkClear).toHaveBeenCalledWith('A015', 'two-local');
+    // 2. First yes.
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear A015…' }));
+    expect(media.clearCard).not.toHaveBeenCalled();
+    // 3. Second yes.
+    const sure = screen.getByRole('dialog', { name: 'Are you sure?' });
+    expect(sure.textContent).toContain('They stay on RAID and SHTL');
+    fireEvent.click(within(sure).getByRole('button', { name: 'Yes, clear A015' }));
+    expect(media.clearCard).toHaveBeenCalledWith('A015', 'two-local');
+    expect(await screen.findByRole('dialog', { name: 'A015 is clear' })).toBeTruthy();
+
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...safeJob(), clearedAt: '2026-10-06T19:01:00Z' }] });
+    expect(tile().dataset['stage']).toBe('cleared');
+  });
+
+  it('says why when the check fails, and offers no way to clear', async () => {
+    media.checkClear.mockResolvedValueOnce({ ...CHECK, ok: false, copies: [CHECK.copies[0]!, { name: 'SHTL', ok: false, problem: '3 copies missing or a different size now. Is the drive plugged in?', files: 1281 }], problems: ['SHTL: 3 copies missing or a different size now. Is the drive plugged in?'] });
+    mount(<Verify />);
+    await waitFor(() => expect(media.state).toHaveBeenCalled());
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [safeJob()] });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear card…' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Clear A015 for camera?' });
+    expect((await within(dialog).findByRole('alert')).textContent).toMatch(/SHTL: 3 copies missing/);
+    expect(within(dialog).queryByRole('button', { name: 'Clear A015…' })).toBeNull();
+  });
+
+  it('tells you once when a plugged-in card becomes safe to clear', async () => {
+    const { SafeToClearNotices } = await import('../ui/ClearCard');
+    mount(<SafeToClearNotices />);
+    await waitFor(() => expect(media.state).toHaveBeenCalled());
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
+    expect(screen.queryByText('A015 is safe to clear')).toBeNull();
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [safeJob()] });
+    expect(await screen.findByText('A015 is safe to clear')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss the notice for A015' }));
+    expect(screen.queryByText('A015 is safe to clear')).toBeNull();
   });
 });

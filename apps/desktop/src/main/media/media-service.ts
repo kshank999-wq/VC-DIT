@@ -8,6 +8,8 @@ import {
   formatBytes,
   type FolderDestination,
   type IngestRequest,
+  type ClearCheck,
+  type ClearResult,
   type IngestResult,
   type JobSnapshot,
   type LegSnapshot,
@@ -18,6 +20,8 @@ import {
 import type { TransferRecord } from '../db/production-db';
 import type { ReportContext } from './reports';
 import { cardFolder, destinationProblem, headroom, isRemote, reportsFolder } from './rules';
+import type { FormatRule } from '../../shared/project';
+import { checkClear, clearCardFiles } from './clear';
 import { isTransient, listSource, STOPPED, type FileOutcome, type LegPlan, type LegProgress, type SourceFile } from './transfer';
 import type { WorkerCommand, WorkerMessage, WorkerPlan } from './transfer-worker';
 import { capacityOf, classifyVolume, describeMount, listMounts, type Capacity, type Mount } from './volumes';
@@ -117,6 +121,7 @@ interface Job {
   currentFile: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  clearedAt: string | null;
 }
 
 interface Work {
@@ -562,6 +567,7 @@ export class MediaService {
         currentFile: null,
         startedAt: null,
         finishedAt: null,
+        clearedAt: null,
       };
       this.jobs.push(job);
       this.record(job);
@@ -827,6 +833,7 @@ export class MediaService {
         checksum: job.checksum,
         startedAt: job.startedAt,
         finishedAt: job.finishedAt,
+        clearedAt: job.clearedAt,
         files: job.files.map((file) => ({ ...file, hash: job.hashes.get(file.path)?.hash ?? null, hashedAt: job.hashes.get(file.path)?.hashedAt ?? null })),
         destinations: job.legs.map((leg) => ({
           id: leg.plan.id,
@@ -888,11 +895,86 @@ export class MediaService {
         currentFile: null,
         startedAt: record.startedAt,
         finishedAt: record.finishedAt ?? record.startedAt ?? new Date(0).toISOString(),
+        clearedAt: record.clearedAt ?? null,
       });
     }
     for (const job of this.jobs) if (job.legs.some((leg) => leg.relay)) this.queueRelays(job);
     this.emit(true);
     return true;
+  }
+
+  // ------------------------------------------------ clearing a card for camera
+
+  /** Why this card cannot be checked for clearing at all (not mounted, still copying…), or null. */
+  private clearBlocker(job: Job): string | null {
+    if (job.clearedAt) return `${job.card} was already cleared.`;
+    const volume = this.volumes.get(job.sourceId)?.volume;
+    if (!volume || volume.mountPath !== job.sourceRoot) return `${job.card} is not plugged in.`;
+    if (volume.name !== job.card) return `The card plugged in at ${job.sourceRoot} is ${volume.name}, not ${job.card}.`;
+    if (!SOURCE_ROLES.includes(volume.role)) return `${volume.name} is not marked as a camera or sound card.`;
+    const busy = [...(this.current ? [this.current.work] : []), ...this.queue].some((work) => work.job.sourceRoot === job.sourceRoot);
+    if (busy) return `${job.card} is still being copied.`;
+    if (job.legs.some((leg) => leg.live)) return `${job.card} is still being checked.`;
+    return null;
+  }
+
+  private clearInput(job: Job, rule: FormatRule) {
+    return {
+      card: job.card,
+      sourceRoot: job.sourceRoot,
+      files: job.files,
+      legs: job.legs.map((leg) => ({ name: leg.plan.name, targetDir: leg.plan.targetDir, relay: leg.relay, outcomes: leg.outcomes })),
+      rule,
+    };
+  }
+
+  /** Is everything on this card safely elsewhere, checked now? Nothing is changed. */
+  async checkClear(jobId: string, rule: FormatRule): Promise<ClearCheck | { ok: false; problems: string[] }> {
+    const job = this.jobs.find((candidate) => candidate.id === jobId);
+    if (!job) return { ok: false, problems: ['That card is no longer in the list.'] };
+    const blocker = this.clearBlocker(job);
+    if (blocker) return { ok: false, problems: [blocker] };
+    return checkClear(this.clearInput(job, rule));
+  }
+
+  /**
+   * Erase the card's ingested files so it can go back to camera: checked
+   * again first, whatever was checked before, and only if all is well.
+   * Each copy relied on gets a note of it beside its transfer log.
+   */
+  async clearCard(jobId: string, rule: FormatRule): Promise<ClearResult> {
+    if (!this.deps.canStartTransfers()) return { ok: false, reason: 'Activate VC DIT to clear cards.' };
+    const job = this.jobs.find((candidate) => candidate.id === jobId);
+    if (!job) return { ok: false, reason: 'That card is no longer in the list.' };
+    const blocker = this.clearBlocker(job);
+    if (blocker) return { ok: false, reason: blocker };
+    const check = await checkClear(this.clearInput(job, rule));
+    if (!check.ok) return { ok: false, reason: `Not cleared: ${check.problems[0]}`, check };
+    const result = await clearCardFiles(job.sourceRoot, job.files);
+    if (result.failed.length) {
+      return { ok: false, reason: `${result.failed.length} file(s) could not be erased (${result.failed[0]!.error}). The card may be locked or read-only; ${result.removed} were erased.`, check };
+    }
+    job.clearedAt = new Date().toISOString();
+    this.record(job);
+    const counted = rule === 'every' ? job.legs : job.legs.filter((leg) => !leg.relay);
+    const note = {
+      card: job.card,
+      clearedAt: job.clearedAt,
+      filesErased: result.removed,
+      bytes: check.bytes,
+      copiesCheckedFirst: check.copies.map((copy) => copy.name),
+      rule,
+      tool: this.deps.tool,
+    };
+    const stamp = job.clearedAt.replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+    for (const leg of counted) {
+      await mkdir(leg.reportsDir, { recursive: true })
+        .then(() => writeFile(join(leg.reportsDir, `${job.card}_cleared_${stamp}.json`), JSON.stringify(note, null, 2), 'utf8'))
+        .catch(() => undefined);
+    }
+    void this.poll();
+    this.emit(true);
+    return { ok: true, removed: result.removed, check };
   }
 
   // ------------------------------------------------ what the screens see
@@ -916,6 +998,7 @@ export class MediaService {
       currentFile: job.currentFile,
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
+      clearedAt: job.clearedAt,
     };
   }
 

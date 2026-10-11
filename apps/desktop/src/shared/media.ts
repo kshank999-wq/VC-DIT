@@ -130,7 +130,25 @@ export interface JobSnapshot {
   currentFile: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  /** When the card's ingested files were erased so it could go back to camera; null until then. */
+  clearedAt: string | null;
 }
+
+/** The check made before a card is cleared, and again just before anything is erased. */
+export interface ClearCheck {
+  ok: boolean;
+  card: string;
+  /** What is on the card now that was ingested. */
+  files: number;
+  bytes: number;
+  /** Each copy the production's rule relies on, checked just now. */
+  copies: { name: string; ok: boolean; problem: string | null; files: number }[];
+  /** Why it cannot be cleared; empty when it can. */
+  problems: string[];
+  checkedAt: string;
+}
+
+export type ClearResult = { ok: true; removed: number; check: ClearCheck } | { ok: false; reason: string; check?: ClearCheck };
 
 /** Something in a folder on a drive, as the Files panel shows it. */
 export interface BrowseEntry {

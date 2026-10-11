@@ -70,6 +70,8 @@ export interface TransferRecord {
   checksum: ChecksumMethod;
   startedAt: string | null;
   finishedAt: string | null;
+  /** When the card's ingested files were erased so it could go back to camera. */
+  clearedAt?: string | null;
   files: (SourceFile & { hash: string | null; hashedAt: string | null })[];
   destinations: {
     id: string;
@@ -447,6 +449,9 @@ MIGRATIONS.push(`
   alter table transfer_destination add column relay_from text;
   alter table production add column format_rule text not null default 'two-local';
 `);
+
+// A card cleared for camera after a fresh check (spec §8): when.
+MIGRATIONS.push(`alter table transfer add column cleared_at text;`);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
@@ -899,7 +904,7 @@ export class ProductionDb {
       this.run('delete from clip where day = ? and transfer_id = ?', key);
       this.run('delete from transfer_destination where day = ? and transfer_id = ?', key);
       this.run('delete from transfer where day = ? and id = ?', key);
-      this.run('insert into transfer (id, day, card, label, source_root, sound, checksum, started_at, finished_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+      this.run('insert into transfer (id, day, card, label, source_root, sound, checksum, started_at, finished_at, cleared_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
         record.id,
         record.day,
         record.card,
@@ -909,6 +914,7 @@ export class ProductionDb {
         record.checksum,
         record.startedAt,
         record.finishedAt,
+        record.clearedAt ?? null,
       ]);
       for (const [position, destination] of record.destinations.entries()) {
         this.run(
@@ -1003,6 +1009,7 @@ export class ProductionDb {
         checksum: row['checksum'] as ChecksumMethod,
         startedAt: (row['started_at'] as string | null) ?? null,
         finishedAt: (row['finished_at'] as string | null) ?? null,
+        clearedAt: (row['cleared_at'] as string | null) ?? null,
         files: clips.map((clip) => ({
           path: String(clip['path']),
           size: Number(clip['size']),

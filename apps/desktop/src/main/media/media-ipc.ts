@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { BrowseRoot, IngestRequest, VolumeRole } from '../../shared/media';
+import { FORMAT_RULES, type FormatRule } from '../../shared/project';
 import { inside, listFolder, searchFolder } from './browse';
 import { segment } from './rules';
 import type { TransferRecord } from '../db/production-db';
@@ -94,6 +95,10 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
     if (open === true) void shell.openPath(path);
     else shell.showItemInFolder(path);
   });
+
+  const rule = (value: unknown): FormatRule => (FORMAT_RULES.includes(value as FormatRule) ? (value as FormatRule) : 'two-local');
+  ipcMain.handle('vcdit:media-check-clear', (_e, jobId: unknown, value: unknown) => service.checkClear(String(jobId), rule(value)));
+  ipcMain.handle('vcdit:media-clear', (_e, jobId: unknown, value: unknown) => service.clearCard(String(jobId), rule(value)));
 
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {

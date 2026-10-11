@@ -374,3 +374,71 @@ describe('uploads relayed from the backup', () => {
     expect(service.state().relayLimit).toBe(100_000);
   });
 });
+
+describe('clearing a card for camera', () => {
+  const onCard = () => readdir(join(mounts[0]!, 'A015R1AB')).catch(() => null);
+  const ingestBoth = async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    await settle();
+  };
+
+  it('checks, then erases only what was ingested, leaving both copies and a note beside each log', async () => {
+    await ingestBoth();
+    const check = await service.checkClear('A015', 'two-local');
+    expect(check).toMatchObject({ ok: true, files: 2, bytes: 16, problems: [] });
+    expect('copies' in check && check.copies.map((copy) => [copy.name, copy.ok])).toEqual([
+      ['RAID', true],
+      ['SHUTTLE', true],
+    ]);
+    expect(await onCard()).toHaveLength(2);
+
+    const result = await service.clearCard('A015', 'two-local');
+    expect(result).toMatchObject({ ok: true, removed: 2 });
+    // The card's media is gone (its emptied folder too); the copies are not.
+    expect(await onCard()).toBeNull();
+    expect(await readFile(join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C001_261005_R1AB.mxf'), 'utf8')).toBe('take one');
+    expect(await readFile(join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    const reports = join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'REPORTS', 'ingest_verification');
+    expect((await readdir(reports)).some((name) => /^A015_cleared_\d{8}T\d{6}Z\.json$/.test(name))).toBe(true);
+    expect(service.state().jobs[0]!.clearedAt).not.toBeNull();
+    expect(records.at(-1)!.clearedAt).toBe(service.state().jobs[0]!.clearedAt);
+    // Once is enough.
+    expect(await service.clearCard('A015', 'two-local')).toEqual({ ok: false, reason: 'A015 was already cleared.' });
+  });
+
+  it('will not clear a card with a new clip on it, and erases nothing', async () => {
+    await ingestBoth();
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'), 'take three');
+    const result = await service.clearCard('A015', 'two-local');
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toMatch(/1 file on the card was not part of this ingest \(new clips\?\), e\.g\. A015R1AB\/A015C003/);
+    expect(await onCard()).toHaveLength(3);
+  });
+
+  it('will not clear when a copy it relies on has gone, or there is only one', async () => {
+    await ingestBoth();
+    await rm(join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C002_261005_R1AB.mxf'));
+    const check = await service.checkClear('A015', 'two-local');
+    expect(check.problems).toEqual(['SHUTTLE: 1 copy missing or a different size now. Is the drive plugged in?']);
+    expect((await service.clearCard('A015', 'two-local')).ok).toBe(false);
+    expect(await onCard()).toHaveLength(2);
+  });
+
+  it('needs two local copies under the default rule; one will do only under every-destination', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    expect((await service.checkClear('A015', 'two-local')).problems).toEqual([
+      'Only one local copy. This production needs two verified local copies before a card is cleared.',
+    ]);
+    expect(await service.checkClear('A015', 'every')).toMatchObject({ ok: true });
+  });
+
+  it('will not check a card that is not plugged in, or one still copying', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    expect(await service.checkClear('A015', 'two-local')).toEqual({ ok: false, problems: ['A015 is still being copied.'] });
+    await settle();
+    mounts = mounts.slice(1);
+    await service.poll();
+    expect(await service.checkClear('A015', 'two-local')).toEqual({ ok: false, problems: ['A015 is not plugged in.'] });
+  });
+});

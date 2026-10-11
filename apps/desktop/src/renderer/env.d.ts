@@ -62,6 +62,10 @@ interface MediaApi {
   setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
+  /** Is everything on this card safely elsewhere, checked now (nothing changes)? */
+  checkClear: (jobId: string, rule: import('../shared/project').FormatRule) => Promise<import('../shared/media').ClearCheck | { ok: false; problems: string[] }>;
+  /** Erase the card's ingested files, after checking again. */
+  clearCard: (jobId: string, rule: import('../shared/project').FormatRule) => Promise<import('../shared/media').ClearResult>;
   /** The Files panel: each destination, and whether the production's folder is on it. */
   browseRoots: (production: string) => Promise<import('../shared/media').BrowseRoot[]>;
   /** One folder under the production's folder on a destination (rel '' is the production's folder). */

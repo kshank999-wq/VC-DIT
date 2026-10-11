@@ -313,6 +313,8 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
     })),
     bytesPerSecond: job.bytesPerSecond,
     etaSeconds: job.etaSeconds,
+    sourceId: job.sourceId,
+    clearedAt: job.clearedAt ?? null,
   }));
   return { volumes, destinations, jobs, relaysPaused: media.relaysPaused ?? false, relayLimit: media.relayLimit ?? null };
 };

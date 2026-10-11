@@ -225,3 +225,12 @@
 .upload-controls { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .upload-limit { display: inline-flex; align-items: center; gap: 6px; }
 .upload-limit .select { width: auto; padding-top: 3px; padding-bottom: 3px; font-size: 12px; }
+
+/* A card's tile takes the colour of where it stands. */
+.offload-tile[data-stage] { border-width: 1.5px; border-style: solid; }
+.offload-tile.stage-copying, .offload-tile.stage-waiting { border-color: color-mix(in oklch, var(--s-working) 70%, transparent); background: color-mix(in oklch, var(--s-working) 7%, var(--card)); }
+.offload-tile.stage-safe { border-color: var(--s-done); background: color-mix(in oklch, var(--s-done) 12%, var(--card)); }
+.offload-tile.stage-eject { border-color: var(--s-needs); background: color-mix(in oklch, var(--s-needs) 10%, var(--card)); }
+.offload-tile.stage-problem { border-color: var(--s-problem); background: color-mix(in oklch, var(--s-problem) 11%, var(--card)); }
+.offload-tile.stage-cleared { border-color: var(--border); opacity: 0.6; }
+.offload-clear { justify-self: center; }

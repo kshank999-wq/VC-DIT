@@ -4,6 +4,8 @@ import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { UploadControls } from '../ui/UploadControls';
+import { ClearCardDialog, clearedWord, volumeOfJob } from '../ui/ClearCard';
+import { useState } from 'react';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
 import './ingest.css';
 
@@ -11,7 +13,8 @@ import './ingest.css';
  * Verify: every card's copy to every destination, and the one thing the
  * DIT needs to know about each card: can it be formatted. Spec rules: "Safe
  * to format" only when every destination is verified, never while one has
- * failed (§4.3, §8); V1 never offers to format or delete a card.
+ * failed (§4.3, §8). VC DIT never formats a card; it clears one for camera
+ * only after a fresh check and two confirmations (see ui/ClearCard.tsx).
  */
 
 const ORDER: Record<JobState, number> = { problem: 0, running: 1, waiting: 2, eject: 3, safe: 4 };
@@ -52,6 +55,7 @@ export function Verify() {
   };
   // Problems first, then what is moving, then the queue, then the finished cards.
   const rule = state.production.formatRule;
+  const [clearing, setClearing] = useState<TransferJob | null>(null);
   const jobs = state.jobs.map((job, index) => ({ job, index })).sort((a, b) => ORDER[jobState(a.job, rule)] - ORDER[jobState(b.job, rule)] || a.index - b.index);
   const count = (which: JobState) => state.jobs.filter((job) => jobState(job, rule) === which).length;
   const uploads = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.relay));
@@ -117,6 +121,13 @@ export function Verify() {
                 {job.checksum}
               </span>
               <span className="grow" />
+              {job.clearedAt ? (
+                <span className="muted small">{clearedWord(job)}</span>
+              ) : head.status === 'done' && volumeOfJob(state, job) ? (
+                <button type="button" className="btn small" onClick={() => setClearing(job)}>
+                  Clear card…
+                </button>
+              ) : null}
               <Pill status={head.status}>{head.word}</Pill>
             </div>
             <div className="verify-legs">
@@ -154,6 +165,7 @@ export function Verify() {
           </section>
         );
       })}
+      {clearing ? <ClearCardDialog job={clearing} onClose={() => setClearing(null)} /> : null}
     </div>
   );
 }

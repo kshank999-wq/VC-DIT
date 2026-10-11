@@ -120,3 +120,13 @@ body.resizing { cursor: col-resize; user-select: none; }
 .prefs-size.picked { border-color: var(--st-intake); color: var(--ink); box-shadow: 0 0 0 1px var(--st-intake); }
 .prefs-size-icons { display: flex; align-items: flex-end; gap: 4px; }
 .prefs input[type='range'] { width: 100%; }
+
+/* Clearing a card for camera */
+.clear-dialog { width: 560px; }
+.clear-dialog p { margin: 0; }
+.clear-check { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.clear-check li { display: flex; gap: 8px; align-items: baseline; }
+.clear-problems { border: 1px solid var(--s-problem); background: color-mix(in oklch, var(--s-problem) 10%, var(--card)); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.clear-actions { justify-content: flex-end; gap: 8px; }
+.clear-notices { position: fixed; right: 18px; bottom: 18px; z-index: 15; display: grid; gap: 8px; width: min(520px, calc(100vw - 36px)); }
+.clear-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--s-done); background: var(--card); box-shadow: var(--shadow, 0 6px 24px rgb(0 0 0 / .3)); }
