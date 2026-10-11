@@ -5,6 +5,7 @@ import { FilesPanel } from './shell/FilesPanel';
 import { FlowBar, SubTabs } from './shell/FlowBar';
 import { Header } from './shell/Header';
 import { LicenseDialog } from './shell/License';
+import { PreferencesDialog } from './shell/Preferences';
 import { useStore } from './state/store';
 import { useAccess } from './ui/kit';
 
@@ -27,12 +28,19 @@ export function App() {
   const access = useAccess();
   // An unactivated copy asks once at start; after that the header's chip opens it.
   const [licenseOpen, setLicenseOpen] = useState(() => access.plan === 'none');
+  const [prefsOpen, setPrefsOpen] = useState(false);
   useTheme(state.theme);
 
   // Ctrl/⌘ 1–6 jump to the steps, 0 to Today.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+      // ⌘, / Ctrl+, : Preferences, as in every desktop app.
+      if (event.key === ',') {
+        event.preventDefault();
+        setPrefsOpen(true);
+        return;
+      }
       if (event.key === '0') {
         event.preventDefault();
         dispatch({ type: 'go', screen: 'today' });
@@ -57,8 +65,11 @@ export function App() {
 
   const Screen = SCREENS[state.screen];
   return (
-    <div className={`app${state.filesOpen ? '' : ' files-closed'}`}>
-      <Header onLicense={() => setLicenseOpen(true)} />
+    <div
+      className={`app${state.filesOpen ? '' : ' files-closed'} icons-${state.prefs.iconSize}`}
+      style={state.filesOpen ? ({ '--files-col': `${state.prefs.filesWidth}px` } as React.CSSProperties) : undefined}
+    >
+      <Header onLicense={() => setLicenseOpen(true)} onPrefs={() => setPrefsOpen(true)} />
       <FlowBar />
       <main className="content" id="content">
         <SubTabs />
@@ -66,6 +77,7 @@ export function App() {
       </main>
       <FilesPanel />
       {licenseOpen ? <LicenseDialog onClose={() => setLicenseOpen(false)} /> : null}
+      {prefsOpen ? <PreferencesDialog onClose={() => setPrefsOpen(false)} /> : null}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
-import { brandOf, DeviceIcon, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
+import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
 /**
@@ -48,6 +48,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 export function Intake() {
   const { state, dispatch } = useStore();
   const media = state.engine ? engine() : null;
+  const px = ICON_PX[state.prefs.iconSize];
   const [notice, setNotice] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const answer = (result: { ok: boolean; reason?: string }) => setNotice(result.ok ? null : (result.reason ?? null));
@@ -141,7 +142,7 @@ export function Intake() {
                         <Check checked={volume.included} onChange={() => dispatch({ type: 'toggleVolume', volume: volume.id })} label={`Include ${volume.name}`} />
                       </span>
                     ) : null}
-                    <DeviceIcon look={look} size={72} brand={volume.role === 'Camera' ? brandOf(volume.detected) : null} />
+                    <DeviceIcon look={look} size={px.tile} brand={volume.role === 'Camera' ? brandOf(volume.detected) : null} />
                     <span className="offload-name mono">{volume.name}</span>
                     <span className="offload-sub">
                       {KIND_WORD[look.kind]} · {sizeOf(volume)}
@@ -168,7 +169,7 @@ export function Intake() {
               <span className="label">Not used</span>
               {unused.map((volume) => (
                 <div key={volume.id} className="row offload-unused-row">
-                  <DeviceIcon look={volumeLook(volume)} size={28} path={volume.mountPath} />
+                  <DeviceIcon look={volumeLook(volume)} size={px.list} path={volume.mountPath} />
                   <span className="grow">
                     <span className="mono">{volume.name}</span>
                     <span className="faint small"> · {volume.detected}</span>
@@ -328,6 +329,7 @@ function TransferRow({
   onShow?: () => void;
   onOpen: () => void;
 }) {
+  const px = ICON_PX[useStore().state.prefs.iconSize];
   const stateNow = legState(leg);
   const status = stateNow === 'verified' ? 'done' : stateNow === 'failed' ? 'problem' : stateNow === 'waiting' ? 'idle' : 'working';
   // An upload reports its own speed and file; a card's copy reports them on the card.
@@ -343,7 +345,7 @@ function TransferRow({
   const card = job.card ?? job.id;
   return (
     <div className={`offload-row is-${stateNow}${leg.relay ? ' is-upload' : ''}`}>
-      <DeviceIcon look={look} size={40} path={path} />
+      <DeviceIcon look={look} size={px.row} path={path} />
       <div className="grow offload-row-body">
         <div className="offload-row-title">
           <span className="strong mono">{card}</span>
@@ -417,13 +419,14 @@ function DestinationTile({
   onRemove?: () => void;
   role?: ReactNode;
 }) {
+  const px = ICON_PX[useStore().state.prefs.iconSize];
   return (
     <div className={`offload-tile${selected ? ' picked' : ''}`}>
       <label className="offload-tile-main" title={look.service ? `${look.service} folder` : KIND_WORD[look.kind]}>
         <span className="offload-check">
           <Check checked={selected} onChange={onToggle} label={`Write to ${name}`} />
         </span>
-        <DeviceIcon look={look} size={72} path={path} />
+        <DeviceIcon look={look} size={px.tile} path={path} />
         {look.service ? <span className="offload-service">{look.service}</span> : null}
         <span className="offload-name mono">{name}</span>
         <span className="offload-sub ellipsis" title={sub}>

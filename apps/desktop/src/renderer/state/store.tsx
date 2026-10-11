@@ -57,6 +57,8 @@ export interface AppState {
   screen: ScreenId;
   filesOpen: boolean;
   theme: ThemeChoice;
+  /** This computer's preferences: how big drives, cards and folders are drawn, and how wide the Files panel is. */
+  prefs: Prefs;
   openFolders: string[];
   production: Production;
   day: ShootDay;
@@ -114,7 +116,8 @@ export const initialState = (): AppState => ({
   project: null,
   screen: 'today',
   filesOpen: true,
-  theme: 'system',
+  theme: 'dark',
+  prefs: DEFAULT_PREFS,
   openFolders: ['root', 'day', 'ocf', 'ocf/14', 'vfx', 'rep'],
   production: structuredClone(demo.PRODUCTION),
   day: structuredClone(demo.DAY),
@@ -161,6 +164,7 @@ export type Action =
   | { type: 'go'; screen: ScreenId }
   | { type: 'toggleFiles' }
   | { type: 'setTheme'; theme: ThemeChoice }
+  | { type: 'setPrefs'; prefs: Partial<Prefs> }
   | { type: 'toggleFolder'; path: string }
   // Project setup
   | { type: 'setProduction'; patch: Partial<Production> }
@@ -263,6 +267,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
       return { ...state, filesOpen: !state.filesOpen };
     case 'setTheme':
       return { ...state, theme: action.theme };
+    case 'setPrefs':
+      return { ...state, prefs: cleanPrefs({ ...state.prefs, ...action.prefs }) };
     case 'toggleFolder':
       return { ...state, openFolders: toggle(state.openFolders, action.path) };
 
@@ -512,13 +518,39 @@ export const reducer = (state: AppState, action: Action): AppState => {
 };
 
 const THEME_KEY = 'vcdit.theme';
+const PREFS_KEY = 'vcdit.prefs';
+
+export type IconSize = 'small' | 'medium' | 'large';
+export interface Prefs {
+  iconSize: IconSize;
+  /** The Files panel's width, in pixels. */
+  filesWidth: number;
+}
+export const FILES_WIDTH = { min: 260, max: 720, default: 480 };
+export const DEFAULT_PREFS: Prefs = { iconSize: 'medium', filesWidth: FILES_WIDTH.default };
+
+export const cleanPrefs = (value: Partial<Prefs> | null | undefined): Prefs => ({
+  iconSize: value?.iconSize === 'small' || value?.iconSize === 'large' ? value.iconSize : 'medium',
+  filesWidth:
+    typeof value?.filesWidth === 'number' && Number.isFinite(value.filesWidth)
+      ? Math.round(Math.min(FILES_WIDTH.max, Math.max(FILES_WIDTH.min, value.filesWidth)))
+      : FILES_WIDTH.default,
+});
+
+const readPrefs = (): Prefs => {
+  try {
+    return cleanPrefs(JSON.parse(localStorage.getItem(PREFS_KEY) ?? 'null') as Partial<Prefs> | null);
+  } catch {
+    return DEFAULT_PREFS;
+  }
+};
 
 const readTheme = (): ThemeChoice => {
   try {
     const value = localStorage.getItem(THEME_KEY);
-    return value === 'light' || value === 'dark' || value === 'system' ? value : 'system';
+    return value === 'light' || value === 'dark' || value === 'system' ? value : 'dark';
   } catch {
-    return 'system';
+    return 'dark';
   }
 };
 
@@ -527,7 +559,7 @@ const StoreContext = createContext<{ state: AppState; dispatch: Dispatch<Action>
 export function StoreProvider({ children, initial, simulate = true }: { children: ReactNode; initial?: AppState; simulate?: boolean }) {
   const [state, dispatch] = useReducer(reducer, undefined, () => {
     if (initial) return initial;
-    let start: AppState = { ...initialState(), theme: readTheme() };
+    let start: AppState = { ...initialState(), theme: readTheme(), prefs: readPrefs() };
     // With the real engine, no demo cards or transfers: only what is plugged in.
     if (engine()) start = { ...start, engine: true, volumes: [], destinations: [], jobs: [] };
     // With the database, the production open on this cart, from the first frame.
@@ -579,6 +611,14 @@ export function StoreProvider({ children, initial, simulate = true }: { children
       // Private storage unavailable: the choice lasts this session.
     }
   }, [state.theme]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs));
+    } catch {
+      // Private storage unavailable: the choice lasts this session.
+    }
+  }, [state.prefs]);
 
   return <StoreContext.Provider value={{ state, dispatch: send }}>{children}</StoreContext.Provider>;
 }

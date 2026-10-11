@@ -84,3 +84,38 @@ describe('the app shell', () => {
     expect(screen.queryByLabelText('Authorization code')).toBeNull();
   });
 });
+
+describe('preferences', () => {
+  it('opens with ⌘, and sets the icon size and the Files panel width, kept within bounds', async () => {
+    host(access({ plan: 'dit', state: 'licensed' }));
+    const { container } = mount();
+    const app = container.querySelector('.app') as HTMLElement;
+    expect(app.className).toContain('icons-medium');
+    expect(app.style.getPropertyValue('--files-col')).toBe('480px');
+    // Dark unless this computer chose otherwise.
+    expect(document.documentElement.dataset['theme']).toBe('dark');
+
+    fireEvent.keyDown(window, { key: ',', metaKey: true });
+    const dialog = screen.getByRole('dialog', { name: 'Preferences' });
+    fireEvent.click(within(dialog).getByRole('radio', { name: /Large/ }));
+    expect(app.className).toContain('icons-large');
+    fireEvent.change(within(dialog).getByLabelText('Files panel width'), { target: { value: '560' } });
+    expect(app.style.getPropertyValue('--files-col')).toBe('560px');
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog', { name: 'Preferences' })).toBeNull();
+
+    // The panel's edge: arrow keys widen and narrow it, never past its limits; double-click resets.
+    const edge = screen.getByRole('separator', { name: 'Files panel width' });
+    for (let i = 0; i < 20; i += 1) fireEvent.keyDown(edge, { key: 'ArrowLeft' });
+    expect(app.style.getPropertyValue('--files-col')).toBe('720px');
+    fireEvent.doubleClick(edge);
+    expect(app.style.getPropertyValue('--files-col')).toBe('480px');
+
+    // Kept on this computer.
+    expect(JSON.parse(localStorage.getItem('vcdit.prefs')!)).toEqual({ iconSize: 'large', filesWidth: 480 });
+    fireEvent.click(screen.getByRole('button', { name: 'Preferences' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Preferences' })).getByRole('button', { name: 'Reset to defaults' }));
+    expect(app.className).toContain('icons-medium');
+  });
+});

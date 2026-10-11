@@ -4,7 +4,7 @@ import { useStore, type ThemeChoice } from '../state/store';
 import { Pill, useAccess } from '../ui/kit';
 
 /** The 52px bar: production and day, Today / Project setup, the one status that matters, and the tools. */
-export function Header({ onLicense }: { onLicense: () => void }) {
+export function Header({ onLicense, onPrefs }: { onLicense: () => void; onPrefs?: () => void }) {
   const { state, dispatch } = useStore();
   const access = useAccess();
   const summary = overall(state);
@@ -52,10 +52,15 @@ export function Header({ onLicense }: { onLicense: () => void }) {
         value={state.theme}
         onChange={(event) => dispatch({ type: 'setTheme', theme: event.target.value as ThemeChoice })}
       >
-        <option value="system">Auto theme</option>
-        <option value="light">Light</option>
         <option value="dark">Dark</option>
+        <option value="light">Light</option>
+        <option value="system">Auto theme</option>
       </select>
+      {onPrefs ? (
+        <button type="button" className="btn icon-btn" aria-label="Preferences" title="Preferences (⌘, / Ctrl+,)" onClick={onPrefs}>
+          ⚙
+        </button>
+      ) : null}
       <button type="button" className={`btn${state.screen === 'reports' ? ' primary' : ''}`} onClick={() => dispatch({ type: 'go', screen: 'reports' })}>
         Reports
       </button>

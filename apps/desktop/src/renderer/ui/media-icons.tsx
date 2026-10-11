@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { DeviceInfo } from '../../shared/media';
+import type { IconSize } from '../state/store';
+
+/** Pixel sizes for each preference (Preferences → Icon size): a source or destination tile, a transfer row, a list line. */
+export const ICON_PX: Record<IconSize, { tile: number; row: number; list: number }> = {
+  small: { tile: 48, row: 28, list: 22 },
+  medium: { tile: 72, row: 40, list: 28 },
+  large: { tile: 104, row: 56, list: 36 },
+};
 
 /**
  * What a source or destination is, at a glance (as offload tools show it):

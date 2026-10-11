@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { failedUploads, jobState, STEPS, summarize } from '../model/status';
 import type { ScreenId, Status, StepId } from '../model/types';
 import { engine } from '../state/engine';
-import { useStore, type Action, type AppState } from '../state/store';
+import { FILES_WIDTH, useStore, type Action, type AppState } from '../state/store';
 import { DriveBrowser } from './DriveBrowser';
 import { stepVar, statusVar, tone } from '../ui/kit';
 
@@ -249,8 +249,42 @@ export function FilesPanel() {
     }
   };
   const onDrive = canBrowse && view === 'drive';
+
+  // Drag the left edge to make the panel wider or narrower; double-click it for the default.
+  const { dispatch } = useStore();
+  const startResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = state.prefs.filesWidth;
+    const move = (next: PointerEvent) => dispatch({ type: 'setPrefs', prefs: { filesWidth: startWidth + (startX - next.clientX) } });
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      document.body.classList.remove('resizing');
+    };
+    document.body.classList.add('resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
   return (
     <aside className="files" aria-label="Project files">
+      <div
+        className="files-resize"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Files panel width"
+        aria-valuemin={FILES_WIDTH.min}
+        aria-valuemax={FILES_WIDTH.max}
+        aria-valuenow={state.prefs.filesWidth}
+        tabIndex={0}
+        title="Drag to resize · double-click for the default"
+        onPointerDown={startResize}
+        onDoubleClick={() => dispatch({ type: 'setPrefs', prefs: { filesWidth: FILES_WIDTH.default } })}
+        onKeyDown={(event) => {
+          if (event.key === 'ArrowLeft') dispatch({ type: 'setPrefs', prefs: { filesWidth: state.prefs.filesWidth + 20 } });
+          if (event.key === 'ArrowRight') dispatch({ type: 'setPrefs', prefs: { filesWidth: state.prefs.filesWidth - 20 } });
+        }}
+      />
       <div className="files-head">
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <strong>Project files</strong>
