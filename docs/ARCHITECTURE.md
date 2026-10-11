@@ -296,9 +296,14 @@ holding the day ("Write to drives" writes it with the day report). It holds:
 - the timecoded **notes** with their source and shot;
 - the takes, sync, dailies, VFX shots, deliveries and the day's reports.
 
-Film Studio matches the production by code and the day by date. Taking it
-in on Film Studio's side (an import in its DIT section, and later a direct
-upload) is work in that repository.
+Film Studio takes it in on its data desk (**From VC DIT → Import day log**;
+`lib/dit-import.ts` in the VC_Film_Studio repository, branch
+`claude/vc-dit-import`): cards become rolls with their copies, the day is
+matched by date, notes keep their timecode. An import only adds: a roll
+entered there keeps what it says, a copy verified there is never changed, a
+failed copy never arrives as verified, and the same day imported twice adds
+nothing twice. Its test reads a real export from this app. A direct upload
+from VC DIT is the next step.
 
 ## Reports (`src/main/reports`)
 
