@@ -64,10 +64,11 @@ describe('a production database', () => {
     const file = join(dir, 'p.vcdit');
     const db = await ProductionDb.open(file, { wasm, create: { name: 'HALCYON', code: 'HLC' }, saveDelayMs: 5 });
     expect(db.production()).toMatchObject({ name: 'HALCYON', code: 'HLC', checksum: 'xxHash64', devices: [] });
-    expect(db.days()).toEqual([{ number: 1, date: localDate(), locations: '', operator: { name: '', initials: '' }, notes: '' }]);
+    expect(db.days()).toEqual([{ number: 1, date: localDate(), locations: '', operator: { name: '', initials: '' } }]);
 
     db.updateProduction({ frameRate: '25 fps', devices: [{ slot: 'A', name: 'ALEXA 35', format: 'ARRIRAW' }] });
-    db.updateDay(1, { locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' }, notes: 'Wind on the roof.' });
+    db.updateDay(1, { locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' } });
+    db.addNote(1, { tc: '14:05:40:12', tcSource: 'ltc', rate: '23.976', at: '2026-10-07T14:05:41.000Z', scope: 'shot', scene: '14', setup: 'B', take: '3', clip: 'A015C002', text: 'Boom in the top of frame.', screen: 'verify' });
     expect(db.addScene(1, { id: '14a', description: 'INT. HANGAR – DAY' })).toBe(true);
     expect(db.addScene(1, { id: '14A' })).toBe(false);
     db.addScene(1, { id: '21' });
@@ -78,7 +79,8 @@ describe('a production database', () => {
     expect((await readdir(dir)).sort()).toEqual(['p.vcdit']);
     const again = await ProductionDb.open(file, { wasm });
     expect(again.production()).toMatchObject({ name: 'HALCYON', frameRate: '25 fps', devices: [{ slot: 'A', name: 'ALEXA 35', format: 'ARRIRAW' }] });
-    expect(again.currentDay()).toMatchObject({ number: 1, locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' }, notes: 'Wind on the roof.' });
+    expect(again.currentDay()).toMatchObject({ number: 1, locations: 'Hangar', operator: { name: 'Morgan Reyes', initials: 'MR' } });
+    expect(again.notes(1)).toMatchObject([{ tc: '14:05:40:12', tcSource: 'ltc', scope: 'shot', take: '3', text: 'Boom in the top of frame.' }]);
     expect(again.scenes(1)).toEqual([{ id: '14A', description: 'INT. HANGAR – DAY', status: 'Shot', notes: 'Circle T3', look: '' }]);
     // Opening kept the previous version alongside.
     expect((await readdir(dir)).sort()).toEqual(['p.vcdit', 'p.vcdit.bak']);

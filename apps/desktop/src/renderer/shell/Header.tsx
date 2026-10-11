@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { overall, timecodeNow } from '../model/status';
+import { overall } from '../model/status';
+import { NoteButton, TimecodeButton } from './DayNotes';
 import { useStore, type ThemeChoice } from '../state/store';
 import { Pill, useAccess } from '../ui/kit';
 
@@ -8,11 +8,6 @@ export function Header({ onLicense }: { onLicense: () => void }) {
   const { state, dispatch } = useStore();
   const access = useAccess();
   const summary = overall(state);
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000 / 24);
-    return () => clearInterval(timer);
-  }, []);
   const date = new Date(`${state.day.date}T12:00:00`);
   const dayLabel = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).replace(',', '');
 
@@ -67,9 +62,8 @@ export function Header({ onLicense }: { onLicense: () => void }) {
       <button type="button" className={`btn${state.filesOpen ? ' primary' : ''}`} aria-pressed={state.filesOpen} onClick={() => dispatch({ type: 'toggleFiles' })}>
         Files
       </button>
-      <span className="mono clock" aria-label="Time of day">
-        {timecodeNow(now)}
-      </span>
+      <NoteButton />
+      <TimecodeButton />
       <button type="button" className="avatar" title={`${state.day.operator.name} · license`} onClick={onLicense}>
         {state.day.operator.initials}
       </button>

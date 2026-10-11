@@ -34,9 +34,34 @@ export interface ShootDay {
   /** "Hangar & Rooftop". */
   locations: string;
   operator: { name: string; initials: string };
-  /** The DIT's notes for the day: weather, problems, who took what. */
-  notes: string;
 }
+
+/**
+ * A note the DIT makes during the day (weather, a problem on a card, a look
+ * question), stamped with the timecode it was made at and tied to a shot or
+ * to the day in general. Exported with the day log to VC Film Studio.
+ */
+export interface DayNote {
+  id: number;
+  /** "14:05:40:12", or null when no timecode was available. */
+  tc: string | null;
+  /** Read live off the sync box, free-running from a reading or a hand jam, or the computer's clock. */
+  tcSource: 'ltc' | 'free-run' | 'jam' | 'clock' | 'none';
+  /** The rate the timecode counts in: "23.976", "29.97df"… */
+  rate: string;
+  /** When it was written, ISO. */
+  at: string;
+  scope: 'general' | 'shot';
+  scene: string;
+  setup: string;
+  take: string;
+  clip: string;
+  text: string;
+  /** The screen the DIT was on: "intake", "verify"… */
+  screen: string;
+}
+
+export type NoteInput = Omit<DayNote, 'id'>;
 
 export type SceneStatus = 'Scheduled' | 'Shooting' | 'Shot' | 'Dropped';
 export const SCENE_STATUSES: SceneStatus[] = ['Scheduled', 'Shooting', 'Shot', 'Dropped'];
@@ -246,6 +271,8 @@ export interface ProjectState {
   delivery: DeliveryState;
   /** The scene view and the selects on the destinations. */
   organize: OrganizeState;
+  /** The day's timecoded notes, oldest first. */
+  notes: DayNote[];
   /** The day's media in the production: what the Files panel counts. */
   media: { cameraFiles: number; soundFiles: number; cards: number; home: string | null };
   /** Productions opened before, newest first, for switching. */

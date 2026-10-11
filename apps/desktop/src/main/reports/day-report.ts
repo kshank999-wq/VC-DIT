@@ -247,12 +247,22 @@ export const dayReportHtml = (db: ProductionDb, day: number, entries: ReportEntr
     `<p>Shoot day ${String(shootDay.number).padStart(3, '0')} · ${html(shootDay.date)}${shootDay.locations ? ` · ${html(shootDay.locations)}` : ''}${
       shootDay.operator.name ? ` · DIT ${html(shootDay.operator.name)}` : ''
     }</p>`,
-    shootDay.notes ? `<p class="notes">${html(shootDay.notes).replace(/\n/g, '<br>')}</p>` : '',
     `<p class="muted">Day report written ${html(clock(now.toISOString()))} by ${html(tool.name)} ${html(tool.version)} · checksum ${html(production.checksum)} · ${html(production.frameRate)}</p></header>`,
     '<h2>Summary</h2>',
     `<table class="summary"><thead><tr><th>Report</th><th>Covers</th><th>Status</th></tr></thead><tbody>${entries
       .map((entry) => `<tr><td>${html(entry.name)}</td><td>${html(entry.covers)}</td><td class="${WORD[entry.status]}">${html(entry.word)}</td></tr>`)
       .join('')}</tbody></table>`,
+    '<h2>Notes</h2>',
+    table(
+      ['Timecode', 'Time', 'About', 'Note'],
+      db.notes(day).map((note) => [
+        note.tc ? `${note.tc}${note.tcSource === 'clock' ? ' (clock)' : note.tcSource === 'free-run' || note.tcSource === 'jam' ? ' (free run)' : ''}` : '—',
+        clock(note.at),
+        note.scope === 'shot' ? [note.scene && `Sc ${note.scene}`, note.setup && `Setup ${note.setup}`, note.take && `T${note.take}`, note.clip].filter(Boolean).join(' / ') : 'General',
+        note.text,
+      ]),
+      'No notes today.',
+    ),
     '<h2>Ingest verification</h2>',
     table(['Card', 'Destination', 'Files', 'Size', 'Verified', 'Already there', 'Failed', 'Checksum', 'Finished'], ingest, 'No cards ingested.'),
     '<h2>Scenes and takes</h2>',

@@ -55,4 +55,6 @@ npm run dev -w @vcdit/web       # the site
 - Delivery: packages (originals archive, editorial handoff with ALE, dailies, VFX, reports) to several drives or folders at once, with capacity preflight, verified copies, originals checked against their ingest checksums, ASC MHL and manifests on each destination, presets and per-file retry (`apps/desktop/src/main/delivery`).
 - Scene folders: every verified clip linked under CAMERA_ORIGINALS/_BY_SCENE/SCENE/SETUP/<take>, circle takes under SELECTS_CIRCLE_TAKES, named by the production's editable naming template, following the log; originals untouched (`apps/desktop/src/main/organize`).
 - Reports: every step's record for the day with its files on the drives, and a day report PDF saved or written to REPORTS/day_report on each drive (`apps/desktop/src/main/reports`).
+- Timecode and day notes: the station's timecode in the toolbar from the sync box (LTC on an audio input, with VC Film Studio's reader), a hand jam, or the computer clock; **+ Note** stamps each note with it, about a shot or the day (`apps/desktop/src/renderer/timecode`).
+- Export to VC Film Studio: the day's DIT log (cards as rolls with verified copies, timecoded notes, takes, sync, dailies, VFX, deliveries) as JSON with the day report PDF (`apps/desktop/src/main/reports/film-studio.ts`).
 - Next: Frame.io and Google Drive as delivery destinations.

@@ -12,6 +12,9 @@
          volumes (privacy prompts), which the app explains on first run. -->
     <key>com.apple.security.files.user-selected.read-write</key>
     <true/>
+    <!-- Timecode: the sync box's LTC arrives on an audio input. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
     <!-- License checks with vc-dit.com, and Frame.io / cloud destinations. -->
     <key>com.apple.security.network.client</key>
     <true/>

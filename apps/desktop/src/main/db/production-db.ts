@@ -39,6 +39,8 @@ import { segment } from '../media/rules';
 import {
   DEFAULT_DELIVERY,
   DELIVERY_PACKAGES,
+  type DayNote,
+  type NoteInput,
   type DeliveryPackageId,
   type DeliveryRecord,
   type DeliverySettings,
@@ -409,8 +411,30 @@ const MIGRATION_7 = `
 `;
 MIGRATIONS.push(MIGRATION_7);
 
-// The shoot day's notes (spec §6 "Shoot Day: notes").
+// The shoot day's notes (spec §6 "Shoot Day: notes"); superseded by day_note below.
 MIGRATIONS.push(`alter table shoot_day add column notes text not null default '';`);
+
+// Timecoded notes through the day; a day's earlier free-text notes become its first general note.
+MIGRATIONS.push(`
+  create table day_note (
+    id integer primary key,
+    day integer not null,
+    tc text,
+    tc_source text not null check (tc_source in ('ltc', 'free-run', 'jam', 'clock', 'none')),
+    rate text not null default '',
+    at text not null,
+    scope text not null check (scope in ('general', 'shot')),
+    scene text not null default '',
+    setup text not null default '',
+    take text not null default '',
+    clip text not null default '',
+    body text not null,
+    screen text not null default ''
+  );
+  create index day_note_day_idx on day_note (day, at);
+  insert into day_note (day, tc, tc_source, at, scope, body)
+    select number, null, 'none', created_at, 'general', notes from shoot_day where trim(notes) != '';
+`);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
@@ -743,7 +767,6 @@ export class ProductionDb {
       date: String(row['date']),
       locations: String(row['locations']),
       operator: { name: String(row['operator_name']), initials: String(row['operator_initials']) },
-      notes: String(row['notes'] ?? ''),
     };
   }
 
@@ -791,12 +814,11 @@ export class ProductionDb {
     if (!day) throw new Error('No such shoot day.');
     const next = { ...day, ...patch, operator: { ...day.operator, ...patch.operator } };
     this.transaction(() =>
-      this.run('update shoot_day set date = ?, locations = ?, operator_name = ?, operator_initials = ?, notes = ? where number = ?', [
+      this.run('update shoot_day set date = ?, locations = ?, operator_name = ?, operator_initials = ? where number = ?', [
         next.date,
         next.locations,
         next.operator.name,
         next.operator.initials,
-        next.notes,
         number,
       ]),
     );
@@ -1976,6 +1998,70 @@ export class ProductionDb {
         };
       })
       .sort((a, b) => a.card.localeCompare(b.card) || a.clip.localeCompare(b.clip));
+  }
+
+  // ------------------------------------------------ notes
+
+  notes(day: number): DayNote[] {
+    return this.rows<Record<string, SqlValue>>('select * from day_note where day = ? order by at, id', [day]).map((row) => ({
+      id: Number(row['id']),
+      tc: (row['tc'] as string | null) ?? null,
+      tcSource: row['tc_source'] as DayNote['tcSource'],
+      rate: String(row['rate']),
+      at: String(row['at']),
+      scope: row['scope'] as DayNote['scope'],
+      scene: String(row['scene']),
+      setup: String(row['setup']),
+      take: String(row['take']),
+      clip: String(row['clip']),
+      text: String(row['body']),
+      screen: String(row['screen']),
+    }));
+  }
+
+  addNote(day: number, note: NoteInput): number {
+    let id = 0;
+    this.transaction(() => {
+      this.run('insert into day_note (day, tc, tc_source, rate, at, scope, scene, setup, take, clip, body, screen) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', [
+        day,
+        note.tc,
+        note.tcSource,
+        note.rate,
+        note.at,
+        note.scope,
+        note.scene,
+        note.setup,
+        note.take,
+        note.clip,
+        note.text,
+        note.screen,
+      ]);
+      id = this.value<number>('select last_insert_rowid()') ?? 0;
+    });
+    return id;
+  }
+
+  /** What the note says and what it is about; when and at what timecode it was made stay as they were. */
+  updateNote(day: number, id: number, patch: Partial<Pick<DayNote, 'text' | 'scope' | 'scene' | 'setup' | 'take' | 'clip'>>) {
+    const note = this.notes(day).find((candidate) => candidate.id === id);
+    if (!note) throw new Error('That note is no longer there.');
+    const next = { ...note, ...patch };
+    this.transaction(() =>
+      this.run('update day_note set body = ?, scope = ?, scene = ?, setup = ?, take = ?, clip = ? where id = ? and day = ?', [
+        next.text,
+        next.scope,
+        next.scene,
+        next.setup,
+        next.take,
+        next.clip,
+        id,
+        day,
+      ]),
+    );
+  }
+
+  removeNote(day: number, id: number) {
+    this.transaction(() => this.run('delete from day_note where id = ? and day = ?', [id, day]));
   }
 
   /** How many camera and sound files the day has, from how many cards, and the drive its first card went to. */

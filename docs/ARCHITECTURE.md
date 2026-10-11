@@ -256,6 +256,50 @@ Deliveries copy the cards once (the camera part leaves `_BY_SCENE` out) and
 then lay the scene folders and selects out again on each destination as
 links to the copies it received.
 
+## Timecode and day notes (`src/renderer/timecode`, `src/renderer/shell/DayNotes.tsx`)
+
+The toolbar shows the DIT station's timecode, from one of three sources:
+
+- **Sync box:** LTC from a Lockit, Tentacle or UltraSync into an audio input
+  (a USB audio adapter works). The reader is VC Film Studio's own
+  (`lib/ltc.ts`, `lib/ltc-reader.ts`, `lib/timecode.ts`, `public/ltc-worklet.js`),
+  ported unchanged apart from non-null marks for stricter type checks, so
+  both products read a box the same way. It shows LOCKED only while frames
+  decode; if the cable comes out the clock free-runs from the last reading at
+  the rate the box was measured to keep, marked FREE RUN, never as live.
+- **Jam by hand:** type what the box shows and press Jam; it free-runs.
+- **This computer's clock:** time of day at the production's rate, marked CLOCK.
+
+**+ Note** (Ctrl/⌘ Shift N) stamps the timecode when it opens, i.e. when
+something was seen, not when the typing ends. A note is about a shot (the
+day's takes, or one typed in) or the day in general, and records the screen
+the DIT was on. Notes are kept per shoot day (`day_note`), editable, and
+printed in the day report. Earlier free-text day notes became each day's
+first general note.
+
+The app may use one device: an audio input (a permission handler refuses
+everything else). On macOS the signed app carries the audio-input
+entitlement and a microphone usage notice; macOS asks the DIT once.
+
+## Export to VC Film Studio (`src/main/reports/film-studio.ts`)
+
+VC DIT is the companion on the cart to VC Film Studio's DIT section ("Media/
+data tracking"). **Export to VC Film Studio** (Reports) writes the day's log
+as `vc-film-studio.dit-day/1` JSON with the day report PDF beside it, saved
+where the DIT chooses or into `REPORTS/vc_film_studio/` on every drive
+holding the day ("Write to drives" writes it with the day report). It holds:
+
+- each card as a **roll** with its **copies** in the shape of Film Studio's
+  `media_roll` / `media_copy` (destination kind and label, checksum method,
+  verified when, files, bytes, what did not match). A copy counts as verified
+  only when every file on it verified;
+- the timecoded **notes** with their source and shot;
+- the takes, sync, dailies, VFX shots, deliveries and the day's reports.
+
+Film Studio matches the production by code and the day by date. Taking it
+in on Film Studio's side (an import in its DIT section, and later a direct
+upload) is work in that repository.
+
 ## Reports (`src/main/reports`)
 
 The Reports screen lists what each step recorded for the open day, read from

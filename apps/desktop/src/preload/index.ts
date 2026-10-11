@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('vcdit', {
     deactivate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:license-deactivate'),
     open: (page: string): Promise<void> => ipcRenderer.invoke('vcdit:license-open', page),
   },
+  /** May the app listen to an audio input (the sync box's timecode)? Asks on macOS. */
+  microphone: (): Promise<boolean> => ipcRenderer.invoke('vcdit:microphone'),
   /** The production database (src/main/db): settings, shoot days, scene lists. */
   project: {
     now: (): unknown => ipcRenderer.sendSync('vcdit:project-now'),
@@ -65,9 +67,13 @@ contextBridge.exposeInMainWorld('vcdit', {
     showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
     showSceneFolder: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-organize-show', path),
     reports: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-reports'),
+    addNote: (note: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-note-add', note),
+    updateNote: (id: number, patch: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-note-update', id, patch),
+    removeNote: (id: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-note-remove', id),
     thumbnail: (clip: string, options: { look: boolean; size: 'small' | 'large' }): Promise<unknown> => ipcRenderer.invoke('vcdit:project-thumbnail', clip, options),
     showReport: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-report-show', path),
     dayReport: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-day-report', where),
+    filmStudio: (where: 'save' | 'drives'): Promise<unknown> => ipcRenderer.invoke('vcdit:project-film-studio', where),
   },
   /** The media engine (src/main/media): volumes, destination folders, transfers. */
   media: {

@@ -8,8 +8,9 @@ import type { ChecksumMethod } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
+import { filmStudioDay } from '../reports/film-studio';
 import { Thumbnails } from '../thumbs/thumbnails';
-import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DEFAULT_DAILIES, DELIVERY_PACKAGES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type DeliverySettings, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
 import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
@@ -67,7 +68,6 @@ const dayPatch = (input: unknown): Partial<Omit<ShootDay, 'number'>> => {
   const date = text(value['date'], 10);
   if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) patch.date = date;
   if (text(value['locations']) !== undefined) patch.locations = text(value['locations'])!;
-  if (text(value['notes'], 8000) !== undefined) patch.notes = text(value['notes'], 8000)!;
   const operator = value['operator'] as Record<string, unknown> | undefined;
   if (operator) patch.operator = { name: text(operator['name'], 80) ?? '', initials: text(operator['initials'], 4) ?? '' };
   return patch;
@@ -533,6 +533,43 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
     return answer(() => writeFile(picked.filePath!, manifestCsv(db.deliveries(day.number)), 'utf8'));
   });
+  // ------------------------------------------------ the day's notes
+  const NOTE_SOURCES: DayNote['tcSource'][] = ['ltc', 'free-run', 'jam', 'clock', 'none'];
+  /** What a note says and is about, each of the right kind. */
+  const noteAbout = (value: Record<string, unknown>) => ({
+    scope: value['scope'] === 'shot' ? ('shot' as const) : ('general' as const),
+    scene: text(value['scene'], 12) ?? '',
+    setup: text(value['setup'], 12) ?? '',
+    take: text(value['take'], 12) ?? '',
+    clip: text(value['clip'], 60) ?? '',
+  });
+  ipcMain.handle('vcdit:project-note-add', (_e, input: unknown) =>
+    answer(() => {
+      const value = (input ?? {}) as Record<string, unknown>;
+      const body = (text(value['text'], 8000) ?? '').trim();
+      if (!body) throw new Error('Write the note first.');
+      const tc = text(value['tc'], 16);
+      library.current.addNote(library.current.currentDay().number, {
+        tc: tc && /^\d{2}:\d{2}:\d{2}[:;]\d{2}$/.test(tc) ? tc : null,
+        tcSource: tc && NOTE_SOURCES.includes(value['tcSource'] as DayNote['tcSource']) ? (value['tcSource'] as DayNote['tcSource']) : 'none',
+        rate: text(value['rate'], 12) ?? '',
+        at: new Date().toISOString(),
+        ...noteAbout(value),
+        text: body,
+        screen: text(value['screen'], 24) ?? '',
+      });
+    }),
+  );
+  ipcMain.handle('vcdit:project-note-update', (_e, id: unknown, patch: unknown) =>
+    answer(() => {
+      const value = (patch ?? {}) as Record<string, unknown>;
+      const body = text(value['text'], 8000)?.trim();
+      if (body === '') throw new Error('A note cannot be empty. Delete it instead.');
+      library.current.updateNote(library.current.currentDay().number, Number(id), { ...noteAbout(value), ...(body !== undefined ? { text: body } : {}) });
+    }),
+  );
+  ipcMain.handle('vcdit:project-note-remove', (_e, id: unknown) => answer(() => library.current.removeNote(library.current.currentDay().number, Number(id))));
+
   // ------------------------------------------------ reports
   let shown = new Set<string>();
   const pdfs = new Set<string>();
@@ -556,28 +593,44 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     else shell.showItemInFolder(path);
   });
   /** The day report as a PDF: saved where the DIT chooses, or into REPORTS/day_report on every drive holding the day. */
+  /** Files written for a day into REPORTS/<folder> on every connected drive holding it. */
+  const writeToDrives = async (dayNumber: number, folder: string, files: { name: string; body: Buffer | string }[]) => {
+    const db = library.current;
+    const days = [...new Set(db.transfers(dayNumber).flatMap((transfer) => transfer.destinations.map((leg) => dirname(dirname(leg.targetDir)))))];
+    const written: string[] = [];
+    for (const dir of days) {
+      if (!(await stat(dir).catch(() => null))) continue;
+      await mkdir(join(dir, 'REPORTS', folder), { recursive: true });
+      for (const file of files) await writeFile(join(dir, 'REPORTS', folder, file.name), file.body);
+      written.push(join(dir, 'REPORTS', folder, files[0]!.name));
+    }
+    return written;
+  };
+  const fileStamp = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '').replace('T', '_');
+  const dayName = (suffix: string) => {
+    const db = library.current;
+    return `${(db.production().code || db.production().name || 'VCDIT').replace(/[^\w.-]+/g, '_')}_D${String(db.currentDay().number).padStart(3, '0')}_${suffix}`;
+  };
+  const remember = (paths: string[]) => {
+    for (const path of paths) {
+      pdfs.add(path);
+      shown.add(path);
+    }
+  };
+  const dayReportPdf = async () => {
+    const db = library.current;
+    return htmlToPdf(dayReportHtml(db, db.currentDay().number, await reportsNow(), { name: 'VC DIT', version: app.getVersion() }));
+  };
+
+  /** The day report as a PDF: saved where the DIT chooses, or into REPORTS/day_report on every drive holding the day. */
   ipcMain.handle('vcdit:project-day-report', async (e, where: unknown) => {
     try {
-      const db = library.current;
-      const day = db.currentDay();
-      const name = `${(db.production().code || db.production().name || 'VCDIT').replace(/[^\w.-]+/g, '_')}_D${String(day.number).padStart(3, '0')}_REPORT`;
-      const pdf = await htmlToPdf(dayReportHtml(db, day.number, await reportsNow(), { name: 'VC DIT', version: app.getVersion() }));
+      const name = dayName('REPORT');
+      const pdf = await dayReportPdf();
       if (where === 'drives') {
-        const days = [...new Set(db.transfers(day.number).flatMap((transfer) => transfer.destinations.map((leg) => dirname(dirname(leg.targetDir)))))];
-        const stamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[-:]/g, '').replace('T', '_');
-        const written: string[] = [];
-        for (const dir of days) {
-          if (!(await stat(dir).catch(() => null))) continue;
-          const path = join(dir, 'REPORTS', 'day_report', `${name}_${stamp}.pdf`);
-          await mkdir(dirname(path), { recursive: true });
-          await writeFile(path, pdf);
-          written.push(path);
-        }
+        const written = await writeToDrives(library.current.currentDay().number, 'day_report', [{ name: `${name}_${fileStamp()}.pdf`, body: pdf }]);
         if (written.length === 0) return { ok: false, reason: 'No drive holding this day is connected. Save the report somewhere instead.' };
-        for (const path of written) {
-          pdfs.add(path);
-          shown.add(path);
-        }
+        remember(written);
         return { ok: true, written };
       }
       const window = BrowserWindow.fromWebContents(e.sender);
@@ -585,8 +638,37 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
       if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
       await writeFile(picked.filePath, pdf);
-      pdfs.add(picked.filePath);
-      shown.add(picked.filePath);
+      remember([picked.filePath]);
+      return { ok: true, written: [picked.filePath] };
+    } catch (cause) {
+      return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
+
+  /** The day's DIT log for VC Film Studio (JSON), with the day report PDF beside it. */
+  ipcMain.handle('vcdit:project-film-studio', async (e, where: unknown) => {
+    try {
+      const db = library.current;
+      const day = db.currentDay().number;
+      const log = `${JSON.stringify(filmStudioDay(db, day, await reportsNow(), { name: 'VC DIT', version: app.getVersion() }), null, 2)}\n`;
+      const pdf = await dayReportPdf();
+      if (where === 'drives') {
+        const base = `${dayName('VC_FILM_STUDIO')}_${fileStamp()}`;
+        const written = await writeToDrives(day, 'vc_film_studio', [
+          { name: `${base}.json`, body: log },
+          { name: `${base}.pdf`, body: pdf },
+        ]);
+        if (written.length === 0) return { ok: false, reason: 'No drive holding this day is connected. Save the log somewhere instead.' };
+        remember(written);
+        return { ok: true, written };
+      }
+      const window = BrowserWindow.fromWebContents(e.sender);
+      const options = { title: 'Export the day for VC Film Studio', defaultPath: `${dayName('VC_FILM_STUDIO')}.json`, filters: [{ name: 'VC Film Studio DIT log', extensions: ['json'] }] };
+      const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+      if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
+      await writeFile(picked.filePath, log, 'utf8');
+      await writeFile(picked.filePath.replace(/\.json$/i, '') + '.pdf', pdf);
+      remember([picked.filePath]);
       return { ok: true, written: [picked.filePath] };
     } catch (cause) {
       return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };

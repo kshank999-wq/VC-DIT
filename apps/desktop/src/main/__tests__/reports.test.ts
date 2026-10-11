@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
+import { destinationKind, filmStudioDay, FILM_STUDIO_SCHEMA } from '../reports/film-studio';
 import { cardFolder } from '../media/rules';
 import { listSource, runTransfer, type LegPlan } from '../media/transfer';
 import { OrganizeService } from '../organize/organize-service';
@@ -127,5 +128,48 @@ describe('the day\'s reports', () => {
     expect(page).toMatch(/<td>A015<\/td><td>RAID<\/td><td>4<\/td>/);
     expect(page).toContain('<td>A015C002</td>');
     expect(page).toContain('Nothing delivered.');
+  });
+
+  it('lists the timecoded notes in the day report', async () => {
+    db.addNote(1, { tc: '14:05:40:12', tcSource: 'ltc', rate: '23.976', at: '2026-10-07T14:05:41Z', scope: 'shot', scene: '14', setup: 'B', take: '3', clip: 'A015C002', text: 'Boom <in> frame.', screen: 'verify' });
+    db.addNote(1, { tc: '16:00:00:00', tcSource: 'clock', rate: '23.976', at: '2026-10-07T16:00:00Z', scope: 'general', scene: '', setup: '', take: '', clip: '', text: 'Wrap.', screen: 'today' });
+    const page = dayReportHtml(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1' });
+    expect(page).toContain('<td>14:05:40:12</td>');
+    expect(page).toContain('Sc 14 / Setup B / T3 / A015C002');
+    expect(page).toContain('Boom &lt;in&gt; frame.');
+    expect(page).toContain('<td>16:00:00:00 (clock)</td>');
+  });
+});
+
+describe('the day log for VC Film Studio', () => {
+  it("gives each card as a roll with its copies, and the DIT's timecoded notes, in Film Studio's shape", async () => {
+    db.addNote(1, { tc: '14:05:40:12', tcSource: 'ltc', rate: '23.976', at: '2026-10-07T14:05:41Z', scope: 'shot', scene: '14', setup: 'B', take: '3', clip: 'A015C002', text: 'Boom in frame.', screen: 'verify' });
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' }, new Date('2026-10-07T22:00:00Z'));
+    expect(log).toMatchObject({
+      schema: FILM_STUDIO_SCHEMA,
+      production: { name: 'HALCYON', code: 'HLC' },
+      shootDay: { number: 1, date: '2026-10-07', dit: { name: 'Sam Reyes' } },
+      rolls: [
+        {
+          label: 'A015',
+          kind: 'camera',
+          cameraDesignation: 'A',
+          recordedOn: '2026-10-07',
+          clips: 4,
+          copies: [
+            { destinationKind: 'primary', destinationLabel: 'RAID', checksumMethod: 'xxhash64', files: 4, mismatchNote: null, verifiedAt: expect.any(String) },
+            { destinationKind: 'shuttle', destinationLabel: 'SHUTTLE', verifiedAt: expect.any(String) },
+          ],
+        },
+      ],
+      notes: [{ timecode: '14:05:40:12', timecodeSource: 'ltc', scope: 'shot', scene: '14', setup: 'B', take: '3', clip: 'A015C002', text: 'Boom in frame.', during: 'verify' }],
+      takes: expect.arrayContaining([expect.objectContaining({ scene: '14', setup: 'B', take: '03', circle: true, vfx: true })]),
+    });
+    // It is plain data that survives the trip as JSON.
+    expect(JSON.parse(JSON.stringify(log))).toEqual(log);
+  });
+
+  it("names Film Studio's destination kinds from the drive", () => {
+    expect([destinationKind('RAID_01', 0), destinationKind('RAID_02', 1), destinationKind('SHTL_03', 1), destinationKind('ARCHIVE_NAS', 2)]).toEqual(['primary', 'backup', 'shuttle', 'archive']);
   });
 });

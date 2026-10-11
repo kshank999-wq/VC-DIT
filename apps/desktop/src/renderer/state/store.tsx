@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { DailyRender, DeliveryPackageId, DeliveryState, OrganizeState, ProjectState } from '../../shared/project';
+import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, NoteInput, OrganizeState, ProjectState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -98,6 +98,8 @@ export interface AppState {
   organize: OrganizeState | null;
   /** The desktop app's count of the day's media, for the Files panel. */
   media: ProjectState['media'] | null;
+  /** The day's timecoded notes. */
+  notes: DayNote[];
   reportFilter: ReportFilter;
 }
 
@@ -145,6 +147,7 @@ export const initialState = (): AppState => ({
   delivery: null,
   organize: null,
   media: null,
+  notes: structuredClone(demo.DAY_NOTES),
   reportFilter: 'all',
 });
 
@@ -203,6 +206,10 @@ export type Action =
   | { type: 'toggleDeliveryDestination'; id: string }
   | { type: 'deliver' }
   | { type: 'setDeliveryChoice'; packages: DeliveryPackageId[]; destinations: string[] }
+  // Notes
+  | { type: 'addNote'; note: NoteInput }
+  | { type: 'updateNote'; id: number; patch: Partial<Pick<DayNote, 'text' | 'scope' | 'scene' | 'setup' | 'take' | 'clip'>> }
+  | { type: 'removeNote'; id: number }
   // Reports
   | { type: 'setReportFilter'; filter: ReportFilter };
 
@@ -469,6 +476,14 @@ export const reducer = (state: AppState, action: Action): AppState => {
       };
     case 'deliver':
       return { ...state, delivered: state.packages.filter((pkg) => pkg.selected).map((pkg) => pkg.id) };
+
+    // Applied at once; in the desktop app the database's answer then replaces them (with its ids).
+    case 'addNote':
+      return { ...state, notes: [...state.notes, { ...action.note, id: Math.max(0, ...state.notes.map((note) => note.id)) + 1 }] };
+    case 'updateNote':
+      return { ...state, notes: state.notes.map((note) => (note.id === action.id ? { ...note, ...action.patch } : note)) };
+    case 'removeNote':
+      return { ...state, notes: state.notes.filter((note) => note.id !== action.id) };
 
     case 'setReportFilter':
       return { ...state, reportFilter: action.filter };

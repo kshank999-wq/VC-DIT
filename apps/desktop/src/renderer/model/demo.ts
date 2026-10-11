@@ -18,6 +18,7 @@ import type {
   VfxShot,
   Volume,
 } from './types';
+import type { DayNote } from '../../shared/project';
 
 /**
  * The HALCYON demo day from the UI handoff (design_handoff_vc_dit), so every
@@ -47,8 +48,15 @@ export const DAY: ShootDay = {
   date: '2026-10-05',
   locations: 'Hangar & Rooftop',
   operator: { name: 'Morgan Reyes', initials: 'MR' },
-  notes: 'Wind on the roof after lunch; sound flagged two takes for wild lines.',
 };
+
+/** The demo day's notes, stamped from the sync box as the DIT made them. */
+export const DAY_NOTES: DayNote[] = [
+  { id: 1, tc: '08:12:04:10', tcSource: 'ltc', rate: '23.976', at: '2026-10-05T08:12:05.000Z', scope: 'general', scene: '', setup: '', take: '', clip: '', text: 'Call 07:00. A and B cams on ARRI LF, sound on 888. Lockit jammed at 07:40.', screen: 'today' },
+  { id: 2, tc: '11:20:31:02', tcSource: 'ltc', rate: '23.976', at: '2026-10-05T11:20:32.000Z', scope: 'general', scene: '', setup: '', take: '', clip: '', text: 'A013 failed verify on SHTL_06 (2 files). Re-copied to SHTL_07; SHTL_06 pulled from service.', screen: 'verify' },
+  { id: 3, tc: '14:05:40:12', tcSource: 'ltc', rate: '23.976', at: '2026-10-05T14:05:41.000Z', scope: 'shot', scene: '14', setup: 'B', take: '3', clip: 'A014C018', text: 'Boom dips into the top of frame at the end of the take. Circle take anyway per director.', screen: 'scenes' },
+  { id: 4, tc: '16:48:09:20', tcSource: 'free-run', rate: '23.976', at: '2026-10-05T16:48:10.000Z', scope: 'general', scene: '', setup: '', take: '', clip: '', text: 'Wind on the roof after lunch; sound flagged two takes for wild lines.', screen: 'sync' },
+];
 
 const SCENE_PLAN: { id: string; description: string; status: Scene['status']; vfx?: boolean; setups: [string, string, number][] }[] = [
   { id: '12', description: 'INT. CONTROL ROOM – DAY', status: 'Shot', setups: [['A', '32mm', 5], ['B', '50mm', 4]] },

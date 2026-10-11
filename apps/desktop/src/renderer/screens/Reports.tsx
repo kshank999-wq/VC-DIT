@@ -192,15 +192,26 @@ function ProjectReports() {
     };
   }, [api, state.project?.file, state.day.number, state.jobs, state.matches, state.sync, state.vfx, state.renders, state.luts, state.delivery?.records, state.organize]);
 
-  const exportReport = (where: 'save' | 'drives') => {
+  const exportReport = (what: 'report' | 'film-studio' | 'drives') => {
     setBusy(true);
-    void api.dayReport(where).then((result) => {
+    const work =
+      what === 'report'
+        ? api.dayReport('save').then((result) => (result.ok ? { ok: true as const, text: 'Day report saved.', path: result.written[0] } : result))
+        : what === 'film-studio'
+          ? api.filmStudio('save').then((result) =>
+              result.ok ? { ok: true as const, text: 'Day log saved for VC Film Studio, with the day report PDF beside it.', path: result.written[0] } : result,
+            )
+          : // To the drives: the day report and the VC Film Studio log together.
+            api.dayReport('drives').then(async (result) => {
+              if (!result.ok) return result;
+              const log = await api.filmStudio('drives');
+              if (!log.ok) return log;
+              const count = result.written.length;
+              return { ok: true as const, text: `Day report and VC Film Studio log written to ${count} drive${count === 1 ? '' : 's'} (REPORTS/day_report, REPORTS/vc_film_studio).`, path: result.written[0] };
+            });
+    void work.then((result) => {
       setBusy(false);
-      if (result.ok)
-        setNotice({
-          text: where === 'drives' ? `Day report written to ${result.written.length} drive${result.written.length === 1 ? '' : 's'} (REPORTS/day_report).` : 'Day report saved.',
-          path: result.written[0],
-        });
+      if (result.ok) setNotice({ text: result.text, path: result.path });
       else if (result.reason) setNotice({ text: result.reason, problem: true });
     });
   };
@@ -215,11 +226,14 @@ function ProjectReports() {
         description="Every copy, match, sync and delivery is recorded. The day report puts it all on a few pages for production and post."
         actions={
           <div className="row gap-8">
-            <button type="button" className="btn" disabled={busy} title="Writes the day report PDF into REPORTS/day_report on every drive holding this day" onClick={() => exportReport('drives')}>
+            <button type="button" className="btn" disabled={busy} title="Writes the day report and the VC Film Studio log onto every drive holding this day" onClick={() => exportReport('drives')}>
               Write to drives
             </button>
-            <button type="button" className="btn primary" disabled={busy} onClick={() => exportReport('save')}>
-              {busy ? 'Writing…' : 'Save day report (PDF)…'}
+            <button type="button" className="btn" disabled={busy} onClick={() => exportReport('report')}>
+              Save day report (PDF)…
+            </button>
+            <button type="button" className="btn primary" disabled={busy} title="The day's DIT log (cards, copies, notes, takes, sync, dailies, VFX, deliveries) for VC Film Studio's DIT section" onClick={() => exportReport('film-studio')}>
+              {busy ? 'Writing…' : 'Export to VC Film Studio…'}
             </button>
           </div>
         }

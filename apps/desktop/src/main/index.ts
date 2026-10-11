@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
 import { join } from 'node:path';
 import { registerLicensing } from './licensing-ipc';
 import type { Library } from './db/library';
@@ -56,7 +56,24 @@ let dailies: DailiesService | null = null;
 let delivery: DeliveryService | null = null;
 let organize: OrganizeService | null = null;
 
+/**
+ * The one device the app may use: an audio input, for a sync box's LTC
+ * (notes are stamped with its timecode). No camera, screen or anything else.
+ */
+const allowAudioInputOnly = () => {
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, grant, details) => {
+    const types = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
+    grant(permission === 'media' && types.length > 0 && types.every((type) => type === 'audio'));
+  });
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'media');
+  // macOS asks the person once; elsewhere the input is simply there.
+  ipcMain.handle('vcdit:microphone', async () =>
+    process.platform === 'darwin' ? systemPreferences.askForMediaAccess('microphone') : true,
+  );
+};
+
 void app.whenReady().then(async () => {
+  allowAudioInputOnly();
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
   await registerLicensing();
   const project = await registerProject({

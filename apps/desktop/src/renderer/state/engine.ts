@@ -46,6 +46,7 @@ type FromProject = Pick<
   | 'delivery'
   | 'organize'
   | 'media'
+  | 'notes'
   | 'packages'
   | 'deliveryDestinations'
   | 'delivered'
@@ -109,6 +110,7 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     delivery: project.delivery,
     organize: project.organize,
     media: project.media,
+    notes: project.notes,
     packages: DELIVERY_PACKAGES.map((pkg) => ({
       id: pkg.id,
       name: pkg.name,
@@ -195,6 +197,17 @@ export const persist = (action: Action, before: AppState, dispatch: Dispatch<Act
       } else void api.saveDelivery({ destinations: destinations.includes(action.id) ? destinations.filter((id) => id !== action.id) : [...destinations, action.id] });
       return;
     }
+    case 'addNote': {
+      const { at: _at, ...note } = action.note;
+      apply(api.addNote(note));
+      return;
+    }
+    case 'updateNote':
+      apply(api.updateNote(action.id, action.patch));
+      return;
+    case 'removeNote':
+      apply(api.removeNote(action.id));
+      return;
     case 'setProduction':
       void api.update(action.patch);
       return;

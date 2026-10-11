@@ -26,6 +26,8 @@ interface Window {
       deactivate: () => Promise<Access>;
       open: (page: 'pricing' | 'download' | 'account') => Promise<void>;
     };
+    /** May the app listen to an audio input (the sync box's timecode)? Asks on macOS. Absent in the browser preview. */
+    microphone?: () => Promise<boolean>;
     /** The production database (src/main/db). Absent in the browser preview, which runs on the demo day. */
     project?: ProjectApi;
     /** The media engine (src/main/media). Absent in the browser preview. */
@@ -91,8 +93,12 @@ interface ProjectApi {
   showManifest: (path: string) => Promise<void>;
   showSceneFolder: (path: string) => Promise<void>;
   reports: () => Promise<import('../shared/project').ReportEntry[]>;
+  addNote: (note: Omit<import('../shared/project').NoteInput, 'at'>) => Promise<ProjectResult>;
+  updateNote: (id: number, patch: Partial<Pick<import('../shared/project').DayNote, 'text' | 'scope' | 'scene' | 'setup' | 'take' | 'clip'>>) => Promise<ProjectResult>;
+  removeNote: (id: number) => Promise<ProjectResult>;
   thumbnail: (clip: string, options: { look: boolean; size: 'small' | 'large' }) => Promise<{ ok: true; url: string } | { ok: false; reason: string }>;
   showReport: (path: string) => Promise<void>;
   dayReport: (where: 'save' | 'drives') => Promise<{ ok: true; written: string[] } | { ok: false; reason: string }>;
+  filmStudio: (where: 'save' | 'drives') => Promise<{ ok: true; written: string[] } | { ok: false; reason: string }>;
   showDaily: (path: string) => Promise<void>;
 }

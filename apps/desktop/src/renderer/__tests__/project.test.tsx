@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_DAILIES, DEFAULT_DELIVERY, type DeliveryState, type ProjectResult, type ProjectState } from '../../shared/project';
 import { App } from '../App';
@@ -27,8 +27,8 @@ const LICENSED = { plan: 'dit', state: 'licensed', email: null, serial: null, pa
 const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   file: '/data/productions/nightjar.vcdit',
   production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link' },
-  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' }, notes: '' },
-  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' }, notes: '' }],
+  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
+  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
   scenes: [],
   log: null,
   matches: [],
@@ -45,6 +45,7 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   ffmpeg: null,
   organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
   media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
+  notes: [],
   delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
@@ -110,7 +111,7 @@ beforeEach(() => {
     addScene: vi.fn(async () => ok(current)),
     updateScene: vi.fn(async () => ok(current)),
     removeScene: vi.fn(async () => ok(current)),
-    addDay: vi.fn(async () => ok(fresh({ day: { number: 2, date: '2026-10-07', locations: '', operator: { name: '', initials: '' }, notes: '' } }))),
+    addDay: vi.fn(async () => ok(fresh({ day: { number: 2, date: '2026-10-07', locations: '', operator: { name: '', initials: '' } } }))),
     openDay: vi.fn(async () => ok(current)),
     create: vi.fn(async () => ok(current)),
     open: vi.fn(async () => ({ ok: false, reason: 'A transfer is running. Wait for it to finish first.' })),
@@ -145,9 +146,13 @@ beforeEach(() => {
     showManifest: vi.fn(async () => undefined),
     showSceneFolder: vi.fn(async () => undefined),
     reports: vi.fn(async () => []),
+    addNote: vi.fn(async () => ok(current)),
+    updateNote: vi.fn(async () => ok(current)),
+    removeNote: vi.fn(async () => ok(current)),
     thumbnail: vi.fn(async (clip: string, options: { look: boolean; size: string }) => ({ ok: true, url: `data:image/jpeg;base64,${clip}-${options.look ? 'look' : 'log'}-${options.size}` })),
     showReport: vi.fn(async () => undefined),
     dayReport: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/day_report/NJR_D001_REPORT.pdf'] })),
+    filmStudio: vi.fn(async () => ({ ok: true, written: ['/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/REPORTS/vc_film_studio/NJR_D001_VC_FILM_STUDIO.json'] })),
   };
   window.vcdit = {
     platform: 'darwin',
@@ -545,7 +550,11 @@ describe('a production from the database', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Write to drives' }));
     expect(api.dayReport).toHaveBeenCalledWith('drives');
-    expect(await screen.findByText(/Day report written to 1 drive/)).toBeTruthy();
+    expect(await screen.findByText(/Day report and VC Film Studio log written to 1 drive/)).toBeTruthy();
+    expect(api.filmStudio).toHaveBeenCalledWith('drives');
+    fireEvent.click(screen.getByRole('button', { name: 'Export to VC Film Studio…' }));
+    expect(api.filmStudio).toHaveBeenLastCalledWith('save');
+    expect(await screen.findByText(/Day log saved for VC Film Studio/)).toBeTruthy();
   });
 
   it("counts the day's real media in the Files panel, under the folders' real names", () => {
@@ -568,16 +577,6 @@ describe('a production from the database', () => {
     expect(screen.queryByText('1,596')).toBeNull();
   });
 
-  it('keeps the day notes with the shoot day', () => {
-    render(
-      <StoreProvider>
-        <ProjectSetup />
-      </StoreProvider>,
-    );
-    fireEvent.change(screen.getByRole('textbox', { name: 'Day notes' }), { target: { value: 'Rain at 15:00; B camera down 40 min.' } });
-    expect(api.updateDay).toHaveBeenLastCalledWith({ notes: 'Rain at 15:00; B camera down 40 min.' });
-  });
-
   it('shows each take\'s real frame in the pool and the viewer, through its look or as shot', async () => {
     current = logged;
     const { container } = render(
@@ -594,5 +593,40 @@ describe('a production from the database', () => {
     expect(viewer.src).toBe('data:image/jpeg;base64,A001C001-look-large');
     fireEvent.click(screen.getByRole('button', { name: /LOOK ON/ }));
     expect(((await screen.findByAltText('A001C001 as shot (LOG)')) as HTMLImageElement).src).toBe('data:image/jpeg;base64,A001C001-log-large');
+  });
+
+  it('makes a timecoded note from the toolbar, about a shot or the day, and edits and deletes notes', async () => {
+    current = fresh({
+      ...logged,
+      notes: [
+        { id: 7, tc: '08:12:04:10', tcSource: 'ltc', rate: '23.976', at: '2026-10-06T08:12:05Z', scope: 'general', scene: '', setup: '', take: '', clip: '', text: 'Call 07:00.', screen: 'today' },
+      ],
+    });
+    render(
+      <StoreProvider>
+        <App />
+      </StoreProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /\+ Note/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Day notes' });
+    // Stamped from this computer's clock until a sync box is set up; a timecode either way.
+    expect(within(dialog).getByTitle('The timecode this note is stamped with').textContent).toMatch(/^\d{2}:\d{2}:\d{2}[:;]\d{2} CLOCK$/);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Note' }), { target: { value: 'Boom in the top of frame.' } });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Note is about' }), { target: { value: '4|A|1|A001C001' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save note' }));
+    expect(api.addNote).toHaveBeenCalledWith(
+      expect.objectContaining({ tcSource: 'clock', scope: 'shot', scene: '4', setup: 'A', take: '1', clip: 'A001C001', text: 'Boom in the top of frame.', screen: 'today', tc: expect.stringMatching(/^\d{2}:\d{2}:\d{2}:\d{2}$/) }),
+    );
+
+    fireEvent.click(within(dialog).getAllByRole('button', { name: 'Edit' }).at(-1)!);
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Edit note' }), { target: { value: 'Call 07:00. Rain cover up.' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(api.updateNote).toHaveBeenCalledWith(7, { text: 'Call 07:00. Rain cover up.' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete the note at 08:12:04:10' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Delete it' }));
+    expect(api.removeNote).toHaveBeenCalledWith(7);
+    // The timecode panel names where the time comes from.
+    fireEvent.click(screen.getByTitle('Station timecode: where it comes from'));
+    expect(screen.getByRole('radio', { name: 'Sync box (LTC on an audio input)' })).toBeTruthy();
   });
 });

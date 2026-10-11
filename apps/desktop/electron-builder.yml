@@ -66,6 +66,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSMicrophoneUsageDescription: VC DIT reads timecode from your sync box (Lockit, Tentacle, UltraSync) on an audio input, to stamp notes. It does not record or listen to the room.
 
 dmg:
   artifactName: VC-DIT-${version}.${ext}

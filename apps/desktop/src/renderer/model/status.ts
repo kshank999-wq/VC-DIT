@@ -276,9 +276,3 @@ export const formatGb = (gb: number): string => {
   if (gb < 1) return `${Math.round(gb * 1000)} MB`;
   return `${Math.round(gb)} GB`;
 };
-
-/** SMPTE-style clock for the header: HH:MM:SS:FF at the production's frame rate. */
-export const timecodeNow = (date: Date, fps = 24): string => {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}:${pad(Math.floor((date.getMilliseconds() / 1000) * fps))}`;
-};
