@@ -1,7 +1,7 @@
 import { app, safeStorage } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { FILM_STUDIO_URL, keyHint, readKey, uploadEndpoint } from './reports/film-studio-send';
+import { FILM_STUDIO_URL, keyHint, readKey, uploadEndpoint, cameraReportEndpoint } from './reports/film-studio-send';
 
 /**
  * Which VC Film Studio production each production on this cart sends its day
@@ -23,6 +23,7 @@ import { FILM_STUDIO_URL, keyHint, readKey, uploadEndpoint } from './reports/fil
 
 const site = (import.meta.env.MAIN_VITE_FILM_STUDIO_URL || FILM_STUDIO_URL).replace(/\/+$/, '');
 export const filmStudioEndpoint = uploadEndpoint(site);
+export const filmStudioReportEndpoint = cameraReportEndpoint(site);
 
 const file = () => join(app.getPath('userData'), 'film-studio.json');
 

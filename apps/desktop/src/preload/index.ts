@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('vcdit', {
     resolveMatch: (id: string, clip: string | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-resolve-match', id, clip),
     setCameraReport: (card: string, rows: unknown[]): Promise<unknown> => ipcRenderer.invoke('vcdit:project-camera-report', card, rows),
     importCameraReport: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-import-camera-report'),
+    pullCameraReport: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-pull-camera-report'),
     saveReportTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-report-template'),
     assign: (clips: { card: string; clip: string }[], slate: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-assign', clips, slate),
     saveLogTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-log-template'),

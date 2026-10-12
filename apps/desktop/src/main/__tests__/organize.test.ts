@@ -256,6 +256,23 @@ describe('where clips go: the log, the camera report, the sound slate and the DI
       'A015: 2 clips on the card are not in the report (A015C002, A015C003).',
     ]);
   });
+
+  it('takes Film Studio\'s report roll by roll, keeping rolls typed here', () => {
+    const line = (card: string, clip: string, take: string) => ({ card, clip, scene: '14', setup: 'A', take, circle: false, lens: '', notes: '' });
+    db.setCameraReport(1, 'B002', [line('B002', 'C001', '7')]);
+    expect(db.pullCameraReport(1, [line('A015', 'C001', '1'), line('A015', 'C002', '2'), line('B002', 'C001', '1'), line('C001', 'C001', '1')]))
+      .toEqual({ cards: ['A015', 'C001'], rows: 3, kept: ['B002'], removed: [] });
+    expect(db.cameraReport(1).map((row) => [row.card, row.clip, row.take, row.source])).toEqual([
+      ['A015', 'C001', '1', 'film-studio'],
+      ['A015', 'C002', '2', 'film-studio'],
+      ['B002', 'C001', '7', 'entered'],
+      ['C001', 'C001', '1', 'film-studio'],
+    ]);
+    // Pulled again after the AC fixed a take and took a roll off: Film Studio's rolls follow.
+    expect(db.pullCameraReport(1, [line('A015', 'C001', '1'), line('A015', 'C002', '3')]))
+      .toEqual({ cards: ['A015'], rows: 2, kept: [], removed: ['C001'] });
+    expect(db.cameraReport(1).map((row) => [row.card, row.take])).toEqual([['A015', '1'], ['A015', '3'], ['B002', '7']]);
+  });
 });
 
 describe('reading a slate', () => {

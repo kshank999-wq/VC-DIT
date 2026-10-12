@@ -34,12 +34,17 @@ export function Takes() {
   const api = state.project ? projectApi() : null;
   const { takes } = state;
   const [notice, setNotice] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   const answer = (call: Promise<ProjectResult>) =>
     void call.then((result) => {
       if (result.ok) {
         dispatch({ type: 'projectState', project: result.state });
         setNotice(null);
-      } else if (result.reason) setNotice(result.reason);
+        setDone(result.note ?? null);
+      } else if (result.reason) {
+        setNotice(result.reason);
+        setDone(null);
+      }
     });
 
   // ------------------------------------------------ the clips
@@ -123,6 +128,12 @@ export function Takes() {
         <div className="intake-warning" role="alert" style={tone(statusVar('problem'))}>
           <StatusText status="problem" word="Not done" />
           <span className="muted">{notice}</span>
+        </div>
+      ) : null}
+      {done ? (
+        <div className="intake-warning" role="status" style={tone(statusVar('done'))}>
+          <StatusText status="done" word="Done" />
+          <span className="muted">{done}</span>
         </div>
       ) : null}
 
@@ -280,6 +291,9 @@ function CameraReport({ cards, report, problems, onAnswer }: { cards: string[]; 
           </button>
           <button type="button" className="btn small" disabled={!api} onClick={() => api && onAnswer(api.importCameraReport())}>
             Import…
+          </button>
+          <button type="button" className="btn small" disabled={!api} title="The AC's report for this day, entered in VC Film Studio" onClick={() => api && onAnswer(api.pullCameraReport())}>
+            Get from Film Studio
           </button>
         </span>
       </div>

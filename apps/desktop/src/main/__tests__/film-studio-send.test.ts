@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { keyHint, readKey, sendDay, uploadEndpoint } from '../reports/film-studio-send';
+import { cameraReportEndpoint, fetchCameraReport, keyHint, pullNote, readKey, sendDay, uploadEndpoint } from '../reports/film-studio-send';
 
 const KEY = `vcdit_${'A1b2_-'.repeat(7)}x9Qa`;
 const LOG = '{"schema":"vc-film-studio.dit-day/1"}\n';
@@ -82,5 +82,46 @@ describe('sending the day', () => {
     expect(portal).toMatchObject({ ok: false, reason: expect.stringMatching(/something unexpected \(HTTP 200\)/) });
     const outage = await sendDay({ fetch: filmStudio(502, { message: 'Bad gateway' }).fetch, endpoint: 'x', key: KEY, log: LOG });
     expect(outage).toMatchObject({ ok: false, reason: expect.stringMatching(/refused the day \(HTTP 502\)/) });
+  });
+});
+
+describe('getting the camera report', () => {
+  const endpoint = cameraReportEndpoint('https://www.vcfilmstudio.com/');
+
+  it('asks for the day by date and number, with the key, and reads the lines as rolls', async () => {
+    const site = filmStudio(200, {
+      ok: true, production: 'HALCYON', day: { number: 3, date: '2026-10-12' },
+      lines: [
+        { camera: 'A', roll: 'a015', clip: 'c001', scene: '14', setup: 'b', take: 2, circle: true, lens: '35mm', stop: 'T2.8', filter: 'ND.6', notes: 'soft' },
+        { roll: 'A015', clip: 'C002' }, // no scene or take: not a line
+      ],
+    });
+    const result = await fetchCameraReport({ fetch: site.fetch, endpoint, key: KEY, date: '2026-10-12', day: 3 });
+    expect(site.calls[0]![0]).toBe('https://www.vcfilmstudio.com/api/dit/camera-report?date=2026-10-12&day=3');
+    expect((site.calls[0]![1].headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
+    expect(result).toEqual({
+      ok: true, production: 'HALCYON', day: 3,
+      lines: [{ card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '2', circle: true, lens: '35mm', notes: 'T2.8 · ND.6 · soft' }],
+    });
+  });
+
+  it('passes on Film Studio\'s refusal, and says so when it cannot be reached', async () => {
+    const refused = filmStudio(404, { ok: false, error: '“HALCYON” has no shoot day on 2026-10-12.' });
+    expect(await fetchCameraReport({ fetch: refused.fetch, endpoint, key: KEY, date: '2026-10-12', day: 3 }))
+      .toEqual({ ok: false, reason: '“HALCYON” has no shoot day on 2026-10-12.' });
+    const portal = filmStudio(200, '<html>Sign in to the hotel wifi</html>');
+    expect(await fetchCameraReport({ fetch: portal.fetch, endpoint, key: KEY, date: '2026-10-12', day: 3 }))
+      .toMatchObject({ ok: false, reason: expect.stringMatching(/unexpected/) });
+    const offline = vi.fn(async () => { throw new TypeError('fetch failed'); }) as unknown as typeof fetch;
+    expect(await fetchCameraReport({ fetch: offline, endpoint, key: KEY, date: '2026-10-12', day: 3 }))
+      .toMatchObject({ ok: false, reason: expect.stringMatching(/online/) });
+  });
+
+  it('says what the pull did, and why a roll was left alone', () => {
+    expect(pullNote(0, { cards: [], rows: 0, kept: [], removed: [] })).toBe('Film Studio has no camera report for this day yet.');
+    expect(pullNote(5, { cards: ['A015', 'B002'], rows: 4, kept: ['C001'], removed: ['D001'] })).toBe(
+      'From Film Studio: 4 lines on 2 rolls (A015, B002). C001 was entered or imported here, so it was kept. '
+      + 'Clear that roll to take Film Studio’s instead. D001 is no longer on Film Studio’s report, so it was taken out.',
+    );
   });
 });

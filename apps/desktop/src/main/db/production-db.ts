@@ -2297,6 +2297,40 @@ export class ProductionDb {
     return { cards: [...byCard.keys()], rows: [...byCard.values()].reduce((sum, rows) => sum + rows.length, 0), skipped };
   }
 
+  /**
+   * The day's camera report from VC Film Studio, roll by roll. A roll whose
+   * report was typed here or imported from a file is kept as it is — the DIT
+   * chose that over Film Studio's — and named, so the screen can say so. A
+   * roll Film Studio no longer has is taken out, if it came from Film Studio.
+   */
+  pullCameraReport(day: number, lines: CameraReportInput[]): { cards: string[]; rows: number; kept: string[]; removed: string[] } {
+    const byCard = new Map<string, CameraReportInput[]>();
+    for (const line of lines) byCard.set(line.card, [...(byCard.get(line.card) ?? []), line]);
+    const sourceOf = new Map<string, Set<CameraReportRow['source']>>();
+    for (const row of this.cameraReport(day)) sourceOf.set(row.card, (sourceOf.get(row.card) ?? new Set()).add(row.source));
+    const local = (card: string) => [...(sourceOf.get(card) ?? [])].some((source) => source !== 'film-studio');
+    const cards: string[] = [];
+    const kept: string[] = [];
+    let rows = 0;
+    // Roll by roll: each one is replaced whole, in its own transaction.
+    for (const [card, cardLines] of byCard) {
+      if (local(card)) {
+        kept.push(card);
+        continue;
+      }
+      this.setCameraReport(day, card, cardLines, 'film-studio');
+      cards.push(card);
+      rows += cardLines.length;
+    }
+    const removed = [...sourceOf.keys()].filter((card) => !byCard.has(card) && !local(card));
+    if (removed.length) {
+      this.transaction(() => {
+        for (const card of removed) this.run('delete from camera_report where day = ? and card = ? and source = ?', [day, card, 'film-studio']);
+      });
+    }
+    return { cards, rows, kept, removed };
+  }
+
   /** The DIT's own word on where clips go (null: back to what the sources say). */
   assignClips(day: number, clips: { card: string; clip: string }[], slate: SlateInput | null, how: 'manual' | 'decided' | 'none' = 'manual') {
     this.transaction(() => {

@@ -293,7 +293,7 @@ export interface ProjectState {
   recent: { file: string; name: string }[];
 }
 
-export type ProjectResult = { ok: true; state: ProjectState } | { ok: false; reason: string };
+export type ProjectResult = { ok: true; state: ProjectState; note?: string } | { ok: false; reason: string };
 
 export const DEFAULT_NAMING = ['{PROD}', '_', 'D{DAY}', '_', 'SC{SCENE}', '{SETUP}', '_', 'T{TAKE}', '_', '{CAM}{REEL}'];
 

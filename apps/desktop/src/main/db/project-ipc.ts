@@ -9,8 +9,8 @@ import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/deli
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
 import { filmStudioDay } from '../reports/film-studio';
-import { sendDay } from '../reports/film-studio-send';
-import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, setFilmStudioKey } from '../film-studio-link';
+import { fetchCameraReport, pullNote, sendDay } from '../reports/film-studio-send';
+import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, filmStudioReportEndpoint, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
@@ -424,6 +424,26 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       if (result.rows === 0) throw new Error(`No rows with a card or roll, a clip, a scene and a take were found in ${basename(path)}.`);
       mirrorQuick();
     });
+  });
+  /**
+   * The day's camera report from VC Film Studio, as the AC entered it there.
+   * Rolls typed here or imported from a file stay as they are; the note says
+   * which, so nobody wonders why Film Studio's lines did not appear.
+   */
+  ipcMain.handle('vcdit:project-pull-camera-report', async (): Promise<ProjectResult> => {
+    const db = library.current;
+    const day = db.currentDay();
+    const key = await filmStudioKey(db.file);
+    if (!key) return { ok: false, reason: 'This production has no Film Studio upload key yet. Paste one in Project setup → VC Film Studio.' };
+    const pulled = await fetchCameraReport({ fetch: (...args) => fetch(...args), endpoint: filmStudioReportEndpoint, key, date: day.date, day: day.number });
+    if (!pulled.ok) return pulled;
+    try {
+      const result = db.pullCameraReport(day.number, pulled.lines);
+      mirrorQuick();
+      return { ok: true, state: stateNow(), note: pullNote(pulled.lines.length, result) };
+    } catch (cause) {
+      return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
+    }
   });
   ipcMain.handle('vcdit:project-save-report-template', async (e) => {
     const window = BrowserWindow.fromWebContents(e.sender);

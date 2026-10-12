@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_DAILIES, DEFAULT_DELIVERY, type DeliveryState, type ProjectResult, type ProjectState } from '../../shared/project';
+import { DEFAULT_DELIVERY, type DeliveryState, type ProjectResult, type ProjectState } from '../../shared/project';
 import { App } from '../App';
+import { fresh } from './fixtures';
 import type { ScreenId } from '../model/types';
 import { MatchReview } from '../screens/MatchReview';
 import { ProjectSetup } from '../screens/ProjectSetup';
@@ -24,33 +25,6 @@ import { StoreProvider, useStore } from '../state/store';
 
 const LICENSED = { plan: 'dit', state: 'licensed', email: null, serial: null, paidThrough: null, validUntil: null, message: null };
 
-const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
-  file: '/data/productions/nightjar.vcdit',
-  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link', formatRule: 'two-local' },
-  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
-  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
-  scenes: [],
-  log: null,
-  matches: [],
-  vfx: [],
-  vfxActivity: null,
-  sync: [],
-  syncActivity: null,
-  luts: [],
-  lutRules: [],
-  previewClips: [],
-  dailies: DEFAULT_DAILIES,
-  renders: [],
-  dailiesActivity: null,
-  ffmpeg: null,
-  organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
-  media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
-  notes: [],
-  takes: { clips: [], report: [], reportProblems: [] },
-  delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
-  recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
-  ...patch,
-});
 
 const take = (n: number, patch: Partial<ProjectState['scenes'][number]['setups'][number]['takes'][number]> = {}) => ({
   id: `4|A|${n}`,
@@ -122,6 +96,7 @@ beforeEach(() => {
     resolveMatch: vi.fn(async () => ok(logged)),
     setCameraReport: vi.fn(async () => ok(fresh())),
     importCameraReport: vi.fn(async () => ok(fresh())),
+    pullCameraReport: vi.fn(async () => ok(fresh())),
     saveReportTemplate: vi.fn(async () => ok(fresh())),
     assign: vi.fn(async () => ok(fresh())),
     checkSceneFolders: vi.fn(async () => ok(fresh())),

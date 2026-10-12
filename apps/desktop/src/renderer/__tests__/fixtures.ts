@@ -1,0 +1,30 @@
+import { DEFAULT_DAILIES, DEFAULT_DELIVERY, type ProjectState } from '../../shared/project';
+
+/** An open production with nothing in it yet, for screens that need a whole ProjectState. */
+export const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
+  file: '/data/productions/nightjar.vcdit',
+  production: { name: 'NIGHTJAR', code: 'NJR', frameRate: '25 fps', checksum: 'MD5', totalDays: 30, devices: [], namingTokens: ['{PROD}', '_', 'D{DAY}'], vfxMethod: 'Hard link', formatRule: 'two-local' },
+  day: { number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } },
+  days: [{ number: 1, date: '2026-10-06', locations: '', operator: { name: '', initials: '' } }],
+  scenes: [],
+  log: null,
+  matches: [],
+  vfx: [],
+  vfxActivity: null,
+  sync: [],
+  syncActivity: null,
+  luts: [],
+  lutRules: [],
+  previewClips: [],
+  dailies: DEFAULT_DAILIES,
+  renders: [],
+  dailiesActivity: null,
+  ffmpeg: null,
+  organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
+  media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
+  notes: [],
+  takes: { clips: [], report: [], reportProblems: [] },
+  delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
+  recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
+  ...patch,
+});

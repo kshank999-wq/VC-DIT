@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Takes } from '../screens/Takes';
+import { fresh } from './fixtures';
 import { initialState, StoreProvider, useStore, type AppState } from '../state/store';
 
 function ScreenProbe() {
@@ -79,6 +80,17 @@ describe('Assign takes', () => {
       ['C005', '14', 'C', '2'],
       ['C006', '14', 'C', '3'],
     ]);
+  });
+
+  it('gets the camera report from Film Studio and says what it did', async () => {
+    const state = { ...initialState(), project: { file: '/p.vcdit', days: [], recent: [] } } as AppState;
+    const pullCameraReport = vi.fn(async () => ({ ok: true as const, state: fresh(), note: 'From Film Studio: 4 lines on 1 roll (A015).' }));
+    window.vcdit = { platform: 'darwin', desktop: true, project: { onChange: () => () => undefined, pullCameraReport } } as unknown as Window['vcdit'];
+    mount(state);
+    const report = screen.getByRole('region', { name: 'Camera report' });
+    fireEvent.click(within(report).getByRole('button', { name: 'Get from Film Studio' }));
+    await waitFor(() => expect(pullCameraReport).toHaveBeenCalled());
+    expect(await screen.findByText(/4 lines on 1 roll/)).toBeTruthy();
   });
 
   it('shows the folders read back on every drive, and puts back what is wrong', async () => {

@@ -100,6 +100,8 @@ interface ProjectApi {
   /** One card's camera report, replacing what it had. */
   setCameraReport: (card: string, rows: import('../shared/project').CameraReportInput[]) => Promise<ProjectResult>;
   importCameraReport: () => Promise<ProjectResult>;
+  /** The day's camera report from VC Film Studio, with the production's upload key. */
+  pullCameraReport: () => Promise<ProjectResult>;
   saveReportTemplate: () => Promise<ProjectResult>;
   /** Where clips go, in the DIT's own word; null takes them back to what the sources say. */
   assign: (clips: { card: string; clip: string }[], slate: import('../shared/project').SlateInput | null) => Promise<ProjectResult>;
