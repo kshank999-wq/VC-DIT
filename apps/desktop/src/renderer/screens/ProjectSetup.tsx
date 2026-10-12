@@ -253,6 +253,21 @@ export function ProjectSetup() {
                   : 'A card waits for its uploads too. It can still come out once its local copies are done.'}
               </span>
             </label>
+            <label className="field">
+              <span className="label">Phone &amp; mirrorless clips</span>
+              <span className="row" style={{ gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={production.renameClips === true}
+                  onChange={(event) => dispatch({ type: 'setProduction', patch: { renameClips: event.target.checked } })}
+                />
+                Name .mov and .mp4 copies after their card
+              </span>
+              <span className="faint small">
+                C0001.MP4 from card B002 is copied as B002_C0001.MP4, with its sidecars, so two cards' clips never share a name in the edit. The card is not touched;
+                camera originals in other formats keep their names.
+              </span>
+            </label>
 
             <div className="field setup-span">
               <span className="label">Cameras &amp; sound</span>

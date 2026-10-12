@@ -185,6 +185,7 @@ describe('Intake on the media engine', () => {
       production: { name: 'HALCYON', code: 'HLC' },
       day: { number: 14, date: '2026-10-05' },
       workflow: null,
+      rename: false,
     });
   });
 

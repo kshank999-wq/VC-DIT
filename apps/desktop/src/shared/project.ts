@@ -18,6 +18,8 @@ export interface Production {
   vfxMethod: MirrorMethod;
   /** When a card counts as safe to format (spec §4.3.1). */
   formatRule: FormatRule;
+  /** Name the copies of .mov and .mp4 clips after their card (B002_C0001.MP4), so phone and mirrorless cards never clash (spec §4.4). */
+  renameClips?: boolean;
 }
 
 /**

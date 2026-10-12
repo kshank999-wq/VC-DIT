@@ -512,6 +512,12 @@ MIGRATIONS.push(`alter table lut add column cdl text;`);
 // Cascade copies (spec §4.3.1): whether a destination is a drive on the cart, so a copy to it from the backup runs beside the uploads.
 MIGRATIONS.push(`alter table transfer_destination add column local integer;`);
 
+// Renaming on offload (spec §4.4): a renamed clip's name on the card, beside the name its copies have; and the production's choice.
+MIGRATIONS.push(`
+  alter table clip add column source_path text;
+  alter table production add column rename_clips integer not null default 0;
+`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -905,6 +911,7 @@ export class ProductionDb {
       namingTokens: JSON.parse(String(row['naming_tokens'])) as string[],
       vfxMethod: MIRROR_METHODS.includes(row['vfx_method'] as MirrorMethod) ? (row['vfx_method'] as MirrorMethod) : 'Hard link',
       formatRule: FORMAT_RULES.includes(row['format_rule'] as FormatRule) ? (row['format_rule'] as FormatRule) : 'two-local',
+      renameClips: Number(row['rename_clips'] ?? 0) === 1,
     };
   }
 
@@ -912,7 +919,7 @@ export class ProductionDb {
     const next = { ...this.production(), ...patch };
     this.transaction(() =>
       this.run(
-        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, vfx_method = ?, format_rule = ?, updated_at = ? where id = 1',
+        'update production set name = ?, code = ?, frame_rate = ?, checksum = ?, total_days = ?, devices = ?, naming_tokens = ?, vfx_method = ?, format_rule = ?, rename_clips = ?, updated_at = ? where id = 1',
         [
           next.name,
           next.code,
@@ -923,6 +930,7 @@ export class ProductionDb {
           JSON.stringify(next.namingTokens),
           next.vfxMethod,
           next.formatRule,
+          next.renameClips ? 1 : 0,
           now(),
         ],
       ),
@@ -1086,8 +1094,8 @@ export class ProductionDb {
         );
       }
       const insertClip = this.db.prepare(
-        `insert into clip (day, transfer_id, card, path, file_name, kind, size, mtime_ms, checksum_method, checksum, hashed_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning id`,
+        `insert into clip (day, transfer_id, card, path, file_name, kind, size, mtime_ms, checksum_method, checksum, hashed_at, source_path)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) returning id`,
       );
       const insertCopy = this.db.prepare('insert into clip_copy (clip_id, leg_id, state, error) values (?, ?, ?, ?)');
       try {
@@ -1104,6 +1112,7 @@ export class ProductionDb {
             record.checksum,
             file.hash,
             file.hashedAt,
+            file.source ?? null,
           ]);
           insertClip.step();
           const clipId = insertClip.get()[0] as number;
@@ -1164,6 +1173,7 @@ export class ProductionDb {
         clearedAt: (row['cleared_at'] as string | null) ?? null,
         files: clips.map((clip) => ({
           path: String(clip['path']),
+          ...(clip['source_path'] ? { source: String(clip['source_path']) } : {}),
           size: Number(clip['size']),
           mtimeMs: Number(clip['mtime_ms']),
           hash: (clip['checksum'] as string | null) ?? null,

@@ -119,6 +119,8 @@ export interface IngestRequest {
   day: { number: number; date: string };
   /** The workflow it follows, for what comes after the copy. */
   workflow?: string | null;
+  /** Name each .mov and .mp4 clip's copies after the card (B002_C0001.MP4); the card is not touched. */
+  rename?: boolean;
 }
 
 export type IngestResult = { ok: true; jobs: string[] } | { ok: false; reason: string };

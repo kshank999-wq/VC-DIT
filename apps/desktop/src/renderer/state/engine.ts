@@ -350,6 +350,7 @@ export const ingestRequest = (state: AppState): IngestRequest => ({
   production: { name: state.production.name, code: state.production.code },
   day: { number: state.day.number, date: state.day.date },
   workflow: state.appliedWorkflow,
+  rename: state.production.renameClips === true,
 });
 
 export const formatRate = (bytesPerSecond: number): string => `${formatBytes(bytesPerSecond)}/s`;

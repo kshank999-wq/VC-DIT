@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHasher, prepareChecksums } from '../media/checksum';
 import { c4id, mhlHashList, writeReports } from '../media/reports';
-import { cardFolder, destinationProblem, isRemote, sameOrInside, segment } from '../media/rules';
+import { cardFolder, destinationProblem, isRemote, renameForCard, sameOrInside, segment } from '../media/rules';
 import { listSource, PART_SUFFIX, runTransfer, type LegPlan } from '../media/transfer';
 import { classifyVolume, ejectCommand, fromDiskutil, fromWindows } from '../media/volumes';
 import { inside, listFolder, searchFolder } from '../media/browse';
@@ -260,6 +260,41 @@ describe('transfer records', () => {
     expect(id).toMatch(/^c4[1-9A-HJ-NP-Za-km-z]{88}$/);
     expect(c4id('hello')).toBe(id);
     expect(c4id('hello!')).not.toBe(id);
+  });
+});
+
+describe('renaming phone and mirrorless clips', () => {
+  const file = (path: string) => ({ path, size: 1, mtimeMs: 0 });
+
+  it('names .mov and .mp4 copies, and their sidecars, after the card; nothing else', () => {
+    const files = [
+      file('PRIVATE/M4ROOT/CLIP/C0001.MP4'),
+      file('PRIVATE/M4ROOT/CLIP/C0001.xml'),
+      file('PRIVATE/M4ROOT/THMBNL/C0001T01.JPG'),
+      file('DCIM/100GOPRO/GX010001.mp4'),
+      file('DCIM/100GOPRO/GX010001.THM'),
+      file('DCIM/100GOPRO/GX010001.LRF'),
+      file('A001C001.MXF'),
+      file('notes.xml'),
+    ];
+    expect(renameForCard(files, 'B002').map((item) => [item.path, item.source ?? null])).toEqual([
+      ['PRIVATE/M4ROOT/CLIP/B002_C0001.MP4', 'PRIVATE/M4ROOT/CLIP/C0001.MP4'],
+      ['PRIVATE/M4ROOT/CLIP/B002_C0001.xml', 'PRIVATE/M4ROOT/CLIP/C0001.xml'],
+      ['PRIVATE/M4ROOT/THMBNL/C0001T01.JPG', null],
+      ['DCIM/100GOPRO/B002_GX010001.mp4', 'DCIM/100GOPRO/GX010001.mp4'],
+      ['DCIM/100GOPRO/B002_GX010001.THM', 'DCIM/100GOPRO/GX010001.THM'],
+      ['DCIM/100GOPRO/B002_GX010001.LRF', 'DCIM/100GOPRO/GX010001.LRF'],
+      ['A001C001.MXF', null],
+      ['notes.xml', null],
+    ]);
+  });
+
+  it('leaves a clip already named after the card, and never lands on another file', () => {
+    expect(renameForCard([file('B002_C0001.MP4')], 'b002').map((item) => item.path)).toEqual(['B002_C0001.MP4']);
+    // The card already holds a B002_C0002.MP4: C0002.MP4 keeps its own name rather than overwrite it.
+    expect(renameForCard([file('C0002.MP4'), file('B002_C0002.MP4')], 'B002').map((item) => item.path)).toEqual(['C0002.MP4', 'B002_C0002.MP4']);
+    // A card name that is not a safe folder name is made one.
+    expect(renameForCard([file('IMG_0001.MOV')], 'CAM: B/2')[0]!.path).toBe('CAM_ B_2_IMG_0001.MOV');
   });
 });
 

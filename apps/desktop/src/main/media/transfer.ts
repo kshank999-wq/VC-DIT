@@ -28,8 +28,10 @@ import { createHasher, prepareChecksums } from './checksum';
 export const PART_SUFFIX = '.vcdit-part';
 
 export interface SourceFile {
-  /** Relative to the card's root, with `/` separators. */
+  /** Relative to the card's root, with `/` separators; where it goes on each destination. */
   path: string;
+  /** Where it is on the card, when its copies are renamed (a phone or mirrorless clip); else it is `path`. */
+  source?: string;
   size: number;
   mtimeMs: number;
   /**
@@ -380,7 +382,7 @@ export const runTransfer = async (
     let readError: unknown = null;
     let refused: string | null = null;
     try {
-      source = await open(join(sourceRoot, ...splitPath(file.path)), 'r');
+      source = await open(join(sourceRoot, ...splitPath(file.source ?? file.path)), 'r');
       let which = 0;
       let current = await source.read(buffers[which]!, 0, chunkBytes, null);
       while (current.bytesRead > 0) {

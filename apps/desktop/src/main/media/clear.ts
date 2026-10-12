@@ -46,7 +46,8 @@ export const checkClear = async (input: { card: string; sourceRoot: string; file
   } catch {
     problems.push(`${input.card} cannot be read.`);
   }
-  const ingested = new Map(input.files.map((file) => [file.path, file]));
+  // By where each file is on the card: its copies may have been named after the card.
+  const ingested = new Map(input.files.map((file) => [file.source ?? file.path, file]));
   const extra = onCard.filter((file) => !ingested.has(file.path));
   const changed = onCard.filter((file) => {
     const before = ingested.get(file.path);
@@ -98,15 +99,17 @@ export const clearCardFiles = async (sourceRoot: string, files: SourceFile[]): P
   const failed: { path: string; error: string }[] = [];
   const folders = new Set<string>();
   for (const file of files) {
-    const path = join(sourceRoot, ...split(file.path));
+    // The file as it is on the card, whatever its copies are called.
+    const onCard = file.source ?? file.path;
+    const path = join(sourceRoot, ...split(onCard));
     try {
       await unlink(path);
       removed += 1;
     } catch (cause) {
       const code = (cause as { code?: string }).code;
-      if (code !== 'ENOENT') failed.push({ path: file.path, error: cause instanceof Error ? cause.message : String(cause) });
+      if (code !== 'ENOENT') failed.push({ path: onCard, error: cause instanceof Error ? cause.message : String(cause) });
     }
-    for (let dir = dirname(file.path); dir && dir !== '.'; dir = dirname(dir)) folders.add(dir);
+    for (let dir = dirname(onCard); dir && dir !== '.'; dir = dirname(dir)) folders.add(dir);
   }
   // Deepest first, so a folder's empty subfolders go before it.
   for (const dir of [...folders].sort((a, b) => b.split('/').length - a.split('/').length)) {

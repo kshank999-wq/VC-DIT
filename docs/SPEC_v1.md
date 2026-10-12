@@ -104,6 +104,7 @@ A workflow is a saved way to offload a kind of card: **any camera**, a **camera 
 - Circle/select status is metadata and/or a clearly organized subview; it must not cause the only copy of non-select material to be omitted.
 - Naming templates must be customizable because productions differ in slate and camera naming conventions.
 - Original camera filenames should be preserved or mapped non-destructively; the system should avoid renaming protected originals unless explicitly required by an approved workflow.
+- **Renaming on offload** (Project setup → Phone & mirrorless clips; off by default): the copies of .mov and .mp4 clips, and their same-named sidecars (.thm, .lrf, .xml, .srt), are named after their card, so C0001.MP4 on card B002 lands as B002_C0001.MP4 and two cards' clips never share a name in the edit. The card is never touched: the copy reads it by its own names, and clearing and ejecting check it by them. The clip record keeps both names. Other camera originals (MXF, R3D, BRAW, ARRIRAW) keep their names; a clip already named after its card, or whose new name another file on the card already has, keeps its name. Uploads and cascade copies read the renamed copy on the backup.
 
 ### 4.5 Script Supervisor Import & Matching
 

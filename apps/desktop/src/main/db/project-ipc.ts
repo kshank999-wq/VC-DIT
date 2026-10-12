@@ -64,6 +64,7 @@ const productionPatch = (input: unknown): Partial<Production> => {
   }
   if (MIRROR_METHODS.includes(value['vfxMethod'] as MirrorMethod)) patch.vfxMethod = value['vfxMethod'] as MirrorMethod;
   if (FORMAT_RULES.includes(value['formatRule'] as FormatRule)) patch.formatRule = value['formatRule'] as FormatRule;
+  if (typeof value['renameClips'] === 'boolean') patch.renameClips = value['renameClips'];
   if (Array.isArray(value['namingTokens'])) patch.namingTokens = (value['namingTokens'] as unknown[]).slice(0, 40).map((token) => text(token, 40) ?? '');
   return patch;
 };

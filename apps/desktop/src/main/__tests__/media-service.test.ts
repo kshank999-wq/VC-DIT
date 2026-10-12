@@ -455,6 +455,53 @@ describe('cascade copies: card → RAID → shuttle', () => {
   });
 });
 
+describe('renaming on offload', () => {
+  it('copies .mp4 clips named after the card, reads the card by its own names, and clears and ejects it as usual', async () => {
+    const card = mounts[0]!;
+    await mkdir(join(card, 'DCIM'), { recursive: true });
+    await writeFile(join(card, 'DCIM', 'C0001.MP4'), 'phone clip');
+    await writeFile(join(card, 'DCIM', 'C0001.THM'), 'thumb');
+    const cloudDir = join(base, 'Dropbox');
+    await mkdir(cloudDir);
+    await service.addFolder(cloudDir);
+    await service.ingest({ ...request([card], [mounts[1]!, mounts[2]!, `folder:${cloudDir}`]), rename: true });
+    await settle();
+    const dir = (root: string) => join(root, 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015');
+    for (const root of [mounts[1]!, mounts[2]!, cloudDir]) {
+      expect((await readdir(join(dir(root), 'DCIM'))).sort()).toEqual(['A015_C0001.MP4', 'A015_C0001.THM']);
+      // The MXF clips are camera originals in another format: their names stay.
+      expect(await readdir(join(dir(root), 'A015R1AB'))).toContain('A015C001_261005_R1AB.mxf');
+    }
+    expect(await readFile(join(dir(cloudDir), 'DCIM', 'A015_C0001.MP4'), 'utf8')).toBe('phone clip');
+    const job = service.state().jobs[0]!;
+    expect(job.legs.every((leg) => leg.verifyPct === 100 && !leg.failed)).toBe(true);
+    // Kept with both names, for a restart.
+    expect(records.at(-1)!.files.find((file) => file.path === 'DCIM/A015_C0001.MP4')).toMatchObject({ source: 'DCIM/C0001.MP4' });
+    // The card is unchanged, and safe: cleared by its own names.
+    expect((await readdir(join(card, 'DCIM'))).sort()).toEqual(['C0001.MP4', 'C0001.THM']);
+    expect(await service.checkClear('A015', 'two-local')).toMatchObject({ ok: true, files: 4 });
+    expect(await service.clearCard('A015', 'two-local')).toMatchObject({ ok: true, removed: 4 });
+    await expect(readdir(join(card, 'DCIM'))).rejects.toThrow();
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(card)).toEqual({ ok: true });
+  });
+
+  it('lets a renamed card out once it is backed up, matching the card by its own names', async () => {
+    const card = mounts[0]!;
+    await writeFile(join(card, 'C0002.MP4'), 'another');
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    await service.ingest({ ...request([card], [mounts[1]!]), rename: true });
+    await settle();
+    expect(await service.eject(card)).toEqual({ ok: true });
+  });
+});
+
 describe('saved workflows', () => {
   const deps = () => (service as unknown as { deps: MediaServiceDeps }).deps;
   const context = { production: { name: 'HALCYON', code: 'HLC' }, day: { number: 14, date: '2026-10-05' } };

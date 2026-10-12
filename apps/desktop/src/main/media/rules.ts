@@ -66,3 +66,36 @@ export const headroom = (totalBytes: number): number => Math.max(1e9, totalBytes
 const REMOTE =
   /network share|^(smbfs|nfs4?|afpfs|webdav|cifs|smb3?|lucidfs|fuse\.lucid\w*)$|lucid|frame\.?io|suite ?studios|dropbox|google ?drive|googledrive|my drive|onedrive|\bbox\b|icloud|cloudstorage|mobile documents|^\\\\/i;
 export const isRemote = (...hints: (string | null | undefined)[]): boolean => hints.some((hint) => !!hint && REMOTE.test(hint));
+
+// ---------------------------------------------------------------- renaming on offload
+
+/** Clips from phones, mirrorless cameras and drones: .mov and .mp4, named C0001 or DJI_0001 on every card. */
+const RENAMED = /\.(mov|mp4)$/i;
+/** Files that go with such a clip under the same name: thumbnails, proxies, metadata, subtitles. */
+const SIDECARS = /\.(thm|lrf|xml|srt)$/i;
+
+const stem = (path: string) => path.replace(/\.[^./]+$/, '').toUpperCase();
+
+/**
+ * The copies of a card's .mov and .mp4 clips (and their same-named sidecars)
+ * named after the card: C0001.MP4 on B002 lands as B002_C0001.MP4, so two
+ * cards' C0001 never meet in an edit. The card itself is never touched; each
+ * renamed file keeps where it is on the card in `source`. A file already
+ * named after the card, or one whose new name another file on the card
+ * already has, keeps its name.
+ */
+export const renameForCard = <T extends { path: string; source?: string }>(files: T[], card: string): T[] => {
+  const prefix = `${segment(card)}_`;
+  const clips = new Set(files.filter((file) => RENAMED.test(file.path)).map((file) => stem(file.path)));
+  const taken = new Set(files.map((file) => file.path.toUpperCase()));
+  return files.map((file) => {
+    const slash = file.path.lastIndexOf('/');
+    const name = file.path.slice(slash + 1);
+    const goes = RENAMED.test(name) || (SIDECARS.test(name) && clips.has(stem(file.path)));
+    if (!goes || name.toUpperCase().startsWith(prefix.toUpperCase())) return file;
+    const path = `${file.path.slice(0, slash + 1)}${prefix}${name}`;
+    if (taken.has(path.toUpperCase())) return file;
+    taken.add(path.toUpperCase());
+    return { ...file, path, source: file.path };
+  });
+};

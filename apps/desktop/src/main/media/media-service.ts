@@ -22,7 +22,7 @@ import {
 import { BRAND_NAME, brandOf } from '../../shared/brands';
 import type { TransferRecord } from '../db/production-db';
 import type { ReportContext } from './reports';
-import { cardFolder, destinationProblem, headroom, isRemote, reportsFolder } from './rules';
+import { cardFolder, destinationProblem, headroom, isRemote, renameForCard, reportsFolder } from './rules';
 import type { FormatRule } from '../../shared/project';
 import { checkClear, clearCardFiles } from './clear';
 import { isTransient, listSource, STOPPED, type FileOutcome, type LegPlan, type LegProgress, type SourceFile } from './transfer';
@@ -772,6 +772,8 @@ export class MediaService {
       let files: SourceFile[];
       try {
         files = (await listSource(card.mountPath)).files;
+        // Phone and mirrorless clips named after the card on every copy, when the production asks for it.
+        if (request.rename && card.role !== 'Sound') files = renameForCard(files, card.name);
       } catch {
         return { ok: false, reason: `${card.name} could not be read.` };
       }
@@ -1018,7 +1020,8 @@ export class MediaService {
     const legs = job.legs.filter((leg) => work.legIds.includes(leg.plan.id));
     const chosen = work.only ? job.files.filter((file) => work.only!.has(file.path)) : job.files;
     // An upload checks each file read from the backup against the card's own checksum.
-    const files = relay ? chosen.map((file) => ({ ...file, expected: job.hashes.get(file.path)?.hash ?? null })) : chosen;
+    // A copy from the backup reads the file as it was written there, renamed or not.
+    const files = relay ? chosen.map(({ source: _source, ...file }) => ({ ...file, expected: job.hashes.get(file.path)?.hash ?? null })) : chosen;
     const contexts: Record<string, ReportContext> = Object.fromEntries(
       legs.map((leg) => [leg.plan.id, { card: job.card, tool: this.deps.tool, reportsDir: leg.reportsDir }]),
     );
@@ -1156,7 +1159,7 @@ export class MediaService {
         sourceRoot: record.sourceRoot,
         card: record.card,
         checksum: record.checksum,
-        files: record.files.map(({ path, size, mtimeMs }) => ({ path, size, mtimeMs })),
+        files: record.files.map(({ path, size, mtimeMs, source }) => ({ path, size, mtimeMs, ...(source ? { source } : {}) })),
         hashes: new Map(record.files.map((file) => [file.path, { hash: file.hash, hashedAt: file.hashedAt }])),
         totalBytes: record.files.reduce((sum, file) => sum + file.size, 0),
         legs: record.destinations.map((destination) => {
@@ -1280,9 +1283,10 @@ export class MediaService {
     }
     if (onCard.length === 0) return null;
     const backedUp = jobs.some((job) => {
-      const copied = new Map(job.files.map((file) => [file.path, file]));
+      // By where each file is on the card; its copies may be named after the card.
+      const copied = new Map(job.files.map((file) => [file.source ?? file.path, file]));
       if (!onCard.every((file) => copied.get(file.path)?.size === file.size)) return false;
-      return job.legs.some((leg) => !leg.relay && onCard.every((file) => VERIFIED.has(leg.outcomes.get(file.path)?.state ?? '')));
+      return job.legs.some((leg) => !leg.relay && onCard.every((file) => VERIFIED.has(leg.outcomes.get(copied.get(file.path)!.path)?.state ?? '')));
     });
     if (backedUp) return null;
     return jobs.length === 0
