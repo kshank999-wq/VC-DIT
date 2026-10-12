@@ -102,6 +102,10 @@ interface ProjectApi {
   importCameraReport: () => Promise<ProjectResult>;
   /** The day's camera report from VC Film Studio, with the production's upload key. */
   pullCameraReport: () => Promise<ProjectResult>;
+  /** Seal a drive before it leaves set: check it against every copy made to it, then write a manifest to it. */
+  seal: (id: string, verify: boolean) => Promise<import('../shared/media').SealResult>;
+  stopSeal: () => Promise<void>;
+  onSealProgress: (listener: (progress: { id: string; files: number; totalFiles: number; bytes: number; totalBytes: number; file: string | null }) => void) => () => void;
   saveReportTemplate: () => Promise<ProjectResult>;
   /** Where clips go, in the DIT's own word; null takes them back to what the sources say. */
   assign: (clips: { card: string; clip: string }[], slate: import('../shared/project').SlateInput | null) => Promise<ProjectResult>;

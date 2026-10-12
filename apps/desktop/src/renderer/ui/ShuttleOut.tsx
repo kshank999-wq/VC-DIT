@@ -2,6 +2,7 @@ import type { Volume } from '../model/types';
 import { legState } from '../model/status';
 import { useStore } from '../state/store';
 import { EjectButton } from './ClearCard';
+import { SealButton, sealOf, sealWords } from './SealDrive';
 import { StatusText } from './kit';
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -12,6 +13,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
  */
 export function ShuttleOut({ volume }: { volume: Volume }) {
   const { state } = useStore();
+  const sealed = sealWords(sealOf(state, volume));
   const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.id === volume.id || (!leg.id && leg.name === volume.name)));
   const copying = legs.filter((leg) => !leg.failed && legState(leg) !== 'verified').length;
   const failed = legs.filter((leg) => leg.failed).length;
@@ -38,8 +40,13 @@ export function ShuttleOut({ volume }: { volume: Volume }) {
           🔒 Eject when verified
         </button>
       ) : (
-        <EjectButton volume={volume} />
+        <>
+          {/* Sealing: the last check before it goes, and a manifest for the other end. */}
+          {legs.length > 0 && <SealButton volume={volume} />}
+          <EjectButton volume={volume} />
+        </>
       )}
+      {sealed && <span className="muted small">{sealed}</span>}
     </div>
   );
 }

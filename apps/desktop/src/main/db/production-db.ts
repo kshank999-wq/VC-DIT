@@ -1,5 +1,5 @@
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import initSqlJs, { type Database, type SqlValue } from 'sql.js';
 import type { ChecksumMethod } from '../../shared/media';
 import {
@@ -18,6 +18,7 @@ import {
   type VfxLocation,
 } from '../../shared/project';
 import type { FileOutcome, SourceFile } from '../media/transfer';
+import type { SealExpected } from '../media/seal';
 import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
 import type { LogEntry, ParsedLog } from '../scriptlog/parse';
 import { clipKeyOfFile } from '../scriptlog/clip-key';
@@ -39,7 +40,7 @@ import type { ViewClip } from '../organize/view';
 import { SCENE_VIEW, SELECTS_VIEW, applyNaming } from '../../shared/project';
 import { segment } from '../media/rules';
 import { resolveAssignment, reportClipKey, SOURCE_WORD, splitSlate, takeNumber, type Assignment, type Claim } from '../organize/assign';
-import type { AssignedClip, CameraReportInput, CameraReportRow, MatchEntry, SetupEntry, SlateInput, TakesState } from '../../shared/project';
+import type { AssignedClip, CameraReportInput, CameraReportRow, DriveSeal, MatchEntry, SetupEntry, SlateInput, TakesState } from '../../shared/project';
 import {
   DEFAULT_DELIVERY,
   DELIVERY_PACKAGES,
@@ -485,6 +486,20 @@ MIGRATIONS.push(`
     how text not null check (how in ('manual', 'decided', 'none')),
     made_at text not null,
     primary key (day, card, clip_key)
+  );
+`);
+
+// Drives sealed before they leave set: when, how thoroughly, and the manifest written to them.
+MIGRATIONS.push(`
+  create table drive_seal (
+    id integer primary key,
+    root text not null,
+    name text not null,
+    sealed_at text not null,
+    files integer not null,
+    bytes integer not null,
+    verified integer not null,
+    manifest text
   );
 `);
 
@@ -2240,6 +2255,76 @@ export class ProductionDb {
     };
   }
 
+
+  // ------------------------------------------------ sealing a drive
+
+  /**
+   * Every file copied to a drive and verified there, on every day: what a
+   * seal checks the drive against. The drive is known by where it is mounted
+   * or by its name (a drive letter can change between days); each card
+   * folder is kept relative to the drive, so either way it is found.
+   */
+  sealExpectations(root: string, name: string): SealExpected[] {
+    const rows = this.rows<Record<string, SqlValue>>(
+      `select c.day, c.card, c.path, c.size, c.checksum, c.checksum_method, d.root, d.target_dir
+       from clip c
+       join transfer_destination d on d.day = c.day and d.transfer_id = c.transfer_id
+       join clip_copy cc on cc.clip_id = c.id and cc.leg_id = d.leg_id
+       where cc.state in ('verified', 'already-there') and (d.root = ? or d.name = ?)
+       order by c.day, c.id`,
+      [root, name],
+    );
+    const out: SealExpected[] = [];
+    for (const row of rows) {
+      const dir = relative(String(row['root']), String(row['target_dir'])).split(sep).join('/');
+      if (!dir || dir.startsWith('..') || isAbsolute(dir)) continue;
+      out.push({
+        day: Number(row['day']),
+        card: String(row['card']),
+        dir,
+        path: String(row['path']),
+        size: Number(row['size']),
+        hash: (row['checksum'] as string | null) ?? null,
+        method: row['checksum_method'] as ChecksumMethod,
+      });
+    }
+    return out;
+  }
+
+  recordSeal(seal: Omit<DriveSeal, 'stale'>) {
+    this.run('insert into drive_seal (root, name, sealed_at, files, bytes, verified, manifest) values (?, ?, ?, ?, ?, ?, ?)', [
+      seal.root,
+      seal.name,
+      seal.sealedAt,
+      seal.files,
+      seal.bytes,
+      seal.verified ? 1 : 0,
+      seal.manifest,
+    ]);
+    this.changed();
+  }
+
+  /** Each drive's last seal, and whether a transfer to it finished after. */
+  seals(): DriveSeal[] {
+    return this.rows<Record<string, SqlValue>>(
+      `select s.*, exists (
+         select 1 from transfer t join transfer_destination d on d.day = t.day and d.transfer_id = t.id
+         where (d.root = s.root or d.name = s.name) and t.finished_at > s.sealed_at
+       ) as stale
+       from drive_seal s
+       where s.id = (select max(id) from drive_seal x where x.root = s.root and x.name = s.name)
+       order by s.sealed_at desc`,
+    ).map((row) => ({
+      root: String(row['root']),
+      name: String(row['name']),
+      sealedAt: String(row['sealed_at']),
+      files: Number(row['files']),
+      bytes: Number(row['bytes']),
+      verified: Number(row['verified']) === 1,
+      manifest: (row['manifest'] as string | null) ?? null,
+      stale: Number(row['stale']) === 1,
+    }));
+  }
 
   // ------------------------------------------------ takes: where each clip goes
 

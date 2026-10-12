@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import type { ChecksumMethod } from '../../shared/media';
+import type { ChecksumMethod, SealResult } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
@@ -12,6 +12,8 @@ import { filmStudioDay } from '../reports/film-studio';
 import { fetchCameraReport, pullNote, sendDay } from '../reports/film-studio-send';
 import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, filmStudioReportEndpoint, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
+import { sealDrive, type SealProgress } from '../media/seal';
+import { segment } from '../media/rules';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
@@ -112,6 +114,8 @@ export interface ProjectHooks {
   opened: (transfers: TransferRecord[]) => void;
   /** Where copies may go now: destination volumes and folders, by id. */
   destinations: () => { id: string; name: string; kind: string; root: string }[];
+  /** Keep a destination from copies and ejecting while it is sealed. */
+  hold: (id: string, why: string) => { ok: true; root: string; name: string; release: () => void } | { ok: false; reason: string };
 }
 
 const LOG_EXTENSIONS = ['csv', 'tsv', 'txt', 'tab', 'ale', 'json', 'xml'];
@@ -775,6 +779,50 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  /**
+   * Seal a drive before it leaves set: every file the production copied to
+   * it, on every day, checked against the drive (and read back, if asked),
+   * then a manifest written to it. One at a time; the drive is held from
+   * copies and ejecting until it is done.
+   */
+  let sealing: AbortController | null = null;
+  ipcMain.handle('vcdit:project-seal', async (e, id: unknown, verify: unknown): Promise<SealResult> => {
+    if (sealing) return { ok: false, reason: 'A drive is already being sealed. Wait for it, or stop it.' };
+    const held = hooks.hold(String(id), 'being sealed');
+    if (!held.ok) return held;
+    const controller = new AbortController();
+    sealing = controller;
+    let last = 0;
+    const progress = (now: SealProgress) => {
+      if (Date.now() - last < 200 && now.files < now.totalFiles) return;
+      last = Date.now();
+      if (!e.sender.isDestroyed()) e.sender.send('vcdit:seal-progress', { id: String(id), ...now });
+    };
+    try {
+      const db = library.current;
+      const production = db.production();
+      const outcome = await sealDrive({
+        root: held.root,
+        name: held.name,
+        production: segment(production.name || production.code),
+        expected: db.sealExpectations(held.root, held.name),
+        verify: verify === true,
+        tool: { name: 'VC DIT', version: app.getVersion() },
+        onProgress: progress,
+        signal: controller.signal,
+      });
+      if (!outcome.ok) return { ok: false, reason: outcome.problems[0] ?? `${held.name} was not sealed.`, outcome };
+      db.recordSeal({ root: outcome.root, name: outcome.name, sealedAt: outcome.checkedAt, files: outcome.files, bytes: outcome.bytes, verified: outcome.verified, manifest: outcome.manifest });
+      broadcast();
+      return { ok: true, outcome };
+    } catch (cause) {
+      return { ok: false, reason: controller.signal.aborted ? `Stopped. ${held.name} was not sealed.` : cause instanceof Error ? cause.message : String(cause) };
+    } finally {
+      held.release();
+      sealing = null;
+    }
+  });
+  ipcMain.handle('vcdit:project-seal-stop', () => sealing?.abort());
   // The upload key for the open production. The screens never see the key itself.
   ipcMain.handle('vcdit:film-studio-link', () => filmStudioLink(library.current.file));
   ipcMain.handle('vcdit:film-studio-link-set', (_e, key: unknown) => setFilmStudioKey(library.current.file, key));

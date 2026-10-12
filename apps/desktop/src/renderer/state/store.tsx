@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
+import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, DriveSeal, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -108,6 +108,8 @@ export interface AppState {
   notes: DayNote[];
   /** Where each camera clip goes, from the log, the camera report, the sound slate and the DIT. */
   takes: TakesState;
+  /** Each drive's last seal before it left set. */
+  seals: DriveSeal[];
   reportFilter: ReportFilter;
 }
 
@@ -160,6 +162,7 @@ export const initialState = (): AppState => ({
   media: null,
   notes: structuredClone(demo.DAY_NOTES),
   takes: structuredClone(demo.TAKES),
+  seals: [],
   reportFilter: 'all',
 });
 

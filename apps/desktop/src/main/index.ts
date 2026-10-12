@@ -80,6 +80,7 @@ void app.whenReady().then(async () => {
     busy: () => media?.busy() ?? false,
     opened: (transfers) => media?.load(transfers),
     destinations: () => media?.destinations() ?? [],
+    hold: (id, why) => (media ? media.hold(id, why) : { ok: false, reason: 'The media engine is still starting.' }),
   });
   library = project.library;
   vfx = project.vfx;

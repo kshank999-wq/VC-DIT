@@ -133,6 +133,7 @@ export class Library {
       media: db.mediaCounts(day.number),
       notes: db.notes(day.number),
       organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
+      seals: db.seals(),
       recent: this.index.recent,
     };
   }

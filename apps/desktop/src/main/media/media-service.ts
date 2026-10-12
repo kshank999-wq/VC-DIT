@@ -173,6 +173,8 @@ const reachable = (path: string): boolean => {
 };
 
 export class MediaService {
+  /** Drives kept back from copies and ejecting (being sealed), by root: why. */
+  private readonly holds = new Map<string, string>();
   private readonly platform: NodeJS.Platform;
   private settings: Settings = { roles: {}, folders: [], relay: {}, relaysPaused: false, relayLimit: null };
   private readonly volumes = new Map<string, VolumeEntry>();
@@ -419,6 +421,30 @@ export class MediaService {
     ];
   }
 
+  /**
+   * Keep a destination to itself for a while (being sealed): nothing is
+   * copied to it and it is not ejected until it is let go. Refused while a
+   * transfer is using it.
+   */
+  hold(id: string, why: string): { ok: true; root: string; name: string; release: () => void } | { ok: false; reason: string } {
+    const drive = this.destinations().find((candidate) => candidate.id === id);
+    if (!drive) return { ok: false, reason: 'That drive is no longer available.' };
+    if (this.inUse(id) || this.inUse(drive.root)) return { ok: false, reason: `${drive.name} is being copied to. Try again when the transfer has finished.` };
+    const already = this.holds.get(drive.root);
+    if (already) return { ok: false, reason: `${drive.name} is already ${already}.` };
+    this.holds.set(drive.root, why);
+    this.emit(true);
+    return {
+      ok: true,
+      root: drive.root,
+      name: drive.name,
+      release: () => {
+        this.holds.delete(drive.root);
+        this.emit(true);
+      },
+    };
+  }
+
     /** Volumes a queued or running transfer reads from or writes to. */
   private inUse(volumeId: string): boolean {
     const active = [...(this.current ? [this.current.work] : []), ...(this.relayCurrent ? [this.relayCurrent.work] : []), ...this.queue, ...this.relayQueue];
@@ -513,6 +539,8 @@ export class MediaService {
       } else return { ok: false, reason: 'A destination you picked is no longer available.' };
     }
     for (const destination of destinations) {
+      const held = this.holds.get(destination.root);
+      if (held) return { ok: false, reason: `${destination.name} is ${held}. Copy to it when that has finished.` };
       const problem = destinationProblem(destination.root, allCards, this.platform);
       if (problem) return { ok: false, reason: `${destination.name}: ${problem}` };
       if (destinations.some((other) => other !== destination && other.root === destination.root)) {
@@ -1044,6 +1072,8 @@ export class MediaService {
     if (!entry) return { ok: true };
     const { volume } = entry;
     if (this.inUse(volumeId) || this.inUse(volume.mountPath)) return { ok: false, reason: `${volume.name} is being copied. Eject it when the transfer has finished.` };
+    const held = this.holds.get(volume.mountPath);
+    if (held) return { ok: false, reason: `${volume.name} is ${held}. Eject it when that has finished.` };
     const unsafe = await this.notBackedUp(volume);
     if (unsafe) return { ok: false, reason: unsafe };
     const failed = await (this.deps.eject ? this.deps.eject(volume.mountPath) : ejectVolume(volume.mountPath, this.platform));

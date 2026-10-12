@@ -25,6 +25,7 @@ export const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   notes: [],
   takes: { clips: [], report: [], reportProblems: [] },
   delivery: { settings: DEFAULT_DELIVERY, places: [], parts: [], scanning: false, scannedAt: null, records: [], activity: null, error: null },
+  seals: [],
   recent: [{ file: '/data/productions/nightjar.vcdit', name: 'NIGHTJAR' }, { file: '/data/productions/halcyon.vcdit', name: 'HALCYON' }],
   ...patch,
 });

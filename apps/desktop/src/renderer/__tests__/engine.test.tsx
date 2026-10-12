@@ -6,6 +6,7 @@ import { Intake } from '../screens/Intake';
 import { FilesPanel } from '../shell/FilesPanel';
 import { Verify } from '../screens/Verify';
 import { StoreProvider, useStore } from '../state/store';
+import { fresh } from './fixtures';
 
 /**
  * The screens on the real media engine: what the main process reports is
@@ -516,6 +517,53 @@ describe('a shuttle on its way out', () => {
     expect(within(tile()).getByText('1 card verified · ready to go')).toBeTruthy();
     fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject SHTL_08' }));
     await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
+  });
+});
+
+describe('sealing a shuttle', () => {
+  it('seals a verified shuttle, reading every file back unless told not to, and says what it found', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const outcome = { ok: true, name: 'SHTL_08', root: shuttle.mountPath, files: 1284, bytes: 2.1e12, verified: true, missing: [], changed: [], added: ['HALCYON/x.mxf'], unhashed: 0, problems: [], checkedAt: '2026-10-06T19:40:00Z', manifest: '/Volumes/SHTL_08/HALCYON/SEALS/SEAL.csv' };
+    const seal = vi.fn(async () => ({ ok: true, outcome }));
+    window.vcdit!.project = { now: () => fresh(), onChange: () => () => undefined, seal, stopSeal: vi.fn(), onSealProgress: vi.fn(() => () => undefined) } as unknown as NonNullable<Window['vcdit']>['project'];
+    media.state.mockResolvedValueOnce({
+      volumes: [card, raid, shuttle],
+      folders: [],
+      relaysPaused: false,
+      relayLimit: null,
+      jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, legs: [{ ...leg, copyPct: 100, verifyPct: 100 }, { ...leg, copyPct: 100, verifyPct: 100, id: shuttle.id, name: 'SHTL_08' }] }],
+    });
+    mount(<Intake />);
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    await waitFor(() => within(out).getByText('1 card verified · ready to go'));
+    fireEvent.click(within(out).getByRole('button', { name: 'Seal…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Seal SHTL_08' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Seal SHTL_08' }));
+    await within(screen.getByRole('dialog')).findByText('SHTL_08 is sealed');
+    expect(seal).toHaveBeenCalledWith(shuttle.id, true);
+    expect(screen.getByRole('dialog').textContent).toMatch(/1,284 files .* read back and matched their checksums/);
+    expect(screen.getByRole('dialog').textContent).toMatch(/1 file in its card folders is not from this production/);
+  });
+
+  it('says why a drive was not sealed, file by file', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const outcome = { ok: false, name: 'SHTL_08', root: shuttle.mountPath, files: 2, bytes: 10, verified: false, missing: ['HALCYON/A015/C001.mxf'], changed: [], added: [], unhashed: 0, problems: ['1 file copied here is not on the drive now, e.g. HALCYON/A015/C001.mxf.'], checkedAt: '', manifest: null };
+    window.vcdit!.project = { now: () => fresh(), onChange: () => () => undefined, seal: vi.fn(async () => ({ ok: false, reason: outcome.problems[0], outcome })), stopSeal: vi.fn(), onSealProgress: vi.fn(() => () => undefined) } as unknown as NonNullable<Window['vcdit']>['project'];
+    media.state.mockResolvedValueOnce({
+      volumes: [card, raid, shuttle],
+      folders: [],
+      relaysPaused: false,
+      relayLimit: null,
+      jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false, legs: [{ ...leg, copyPct: 100, verifyPct: 100, id: shuttle.id, name: 'SHTL_08' }] }],
+    });
+    mount(<Intake />);
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    await waitFor(() => within(out).getByRole('button', { name: 'Seal…' }));
+    fireEvent.click(within(out).getByRole('button', { name: 'Seal…' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: /Read every file back/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Seal SHTL_08' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/not on the drive now/);
+    expect(screen.getByText('missing · HALCYON/A015/C001.mxf')).toBeTruthy();
   });
 });
 

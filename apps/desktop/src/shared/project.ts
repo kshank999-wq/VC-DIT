@@ -289,8 +289,24 @@ export interface ProjectState {
   takes: TakesState;
   /** The day's media in the production: what the Files panel counts. */
   media: { cameraFiles: number; soundFiles: number; cards: number; home: string | null };
+  /** The last seal of each drive this production has sealed. */
+  seals: DriveSeal[];
   /** Productions opened before, newest first, for switching. */
   recent: { file: string; name: string }[];
+}
+
+/** A drive's last seal: when, how thoroughly, and whether anything was copied to it since. */
+export interface DriveSeal {
+  root: string;
+  name: string;
+  sealedAt: string;
+  files: number;
+  bytes: number;
+  /** Every file read back and its checksum compared. */
+  verified: boolean;
+  manifest: string | null;
+  /** Something was copied to it after it was sealed: seal it again before it goes. */
+  stale: boolean;
 }
 
 export type ProjectResult = { ok: true; state: ProjectState; note?: string } | { ok: false; reason: string };

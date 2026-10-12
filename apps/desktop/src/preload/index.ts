@@ -43,6 +43,13 @@ contextBridge.exposeInMainWorld('vcdit', {
     setCameraReport: (card: string, rows: unknown[]): Promise<unknown> => ipcRenderer.invoke('vcdit:project-camera-report', card, rows),
     importCameraReport: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-import-camera-report'),
     pullCameraReport: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-pull-camera-report'),
+    seal: (id: string, verify: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:project-seal', id, verify),
+    stopSeal: (): Promise<void> => ipcRenderer.invoke('vcdit:project-seal-stop'),
+    onSealProgress: (listener: (progress: unknown) => void): (() => void) => {
+      const handler = (_e: unknown, progress: unknown) => listener(progress);
+      ipcRenderer.on('vcdit:seal-progress', handler);
+      return () => ipcRenderer.removeListener('vcdit:seal-progress', handler);
+    },
     saveReportTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-report-template'),
     assign: (clips: { card: string; clip: string }[], slate: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-assign', clips, slate),
     saveLogTemplate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-save-log-template'),

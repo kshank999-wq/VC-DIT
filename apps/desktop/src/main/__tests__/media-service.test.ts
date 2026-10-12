@@ -505,6 +505,25 @@ describe('clearing a card for camera', () => {
     expect(ejected).toEqual([join(base, 'A015')]);
   });
 
+  it('keeps a drive being sealed from copies and ejecting until it is let go', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    // Not while a transfer is writing to it.
+    expect(service.hold(mounts[2]!, 'being sealed')).toEqual({ ok: false, reason: 'SHUTTLE is being copied to. Try again when the transfer has finished.' });
+    await settle();
+    const held = service.hold(mounts[2]!, 'being sealed');
+    if (!held.ok) throw new Error(held.reason);
+    expect(held).toMatchObject({ root: mounts[2], name: 'SHUTTLE' });
+    expect(service.hold(mounts[2]!, 'being sealed')).toEqual({ ok: false, reason: 'SHUTTLE is already being sealed.' });
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: false, reason: 'SHUTTLE is being sealed. Eject it when that has finished.' });
+    expect(await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]))).toEqual({ ok: false, reason: 'SHUTTLE is being sealed. Copy to it when that has finished.' });
+    held.release();
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+  });
+
   it('will not let a shuttle go until every card copied to it has verified there', async () => {
     (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
       mounts = mounts.filter((mount) => mount !== path);

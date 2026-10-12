@@ -148,6 +148,31 @@ export interface ClearCheck {
   checkedAt: string;
 }
 
+/** A drive sealed before it leaves set: every file copied to it, checked against the drive. */
+export interface SealOutcome {
+  ok: boolean;
+  name: string;
+  root: string;
+  /** Files the production copied to this drive, on every day. */
+  files: number;
+  bytes: number;
+  /** Every file read back and its checksum compared; otherwise present at its copied size. */
+  verified: boolean;
+  missing: string[];
+  changed: { path: string; why: string }[];
+  /** On the drive in a card folder, but not in the production. Noted, not a reason to refuse. */
+  added: string[];
+  /** Files with no checksum recorded at ingest, checked by size only. */
+  unhashed: number;
+  /** Why it was not sealed; empty when it was. */
+  problems: string[];
+  checkedAt: string;
+  /** The manifest written to the drive, when sealed. */
+  manifest: string | null;
+}
+
+export type SealResult = { ok: true; outcome: SealOutcome } | { ok: false; reason: string; outcome?: SealOutcome };
+
 export type ClearResult = { ok: true; removed: number; check: ClearCheck } | { ok: false; reason: string; check?: ClearCheck };
 
 /** Something in a folder on a drive, as the Files panel shows it. */
