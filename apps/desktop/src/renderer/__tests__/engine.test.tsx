@@ -593,4 +593,18 @@ describe('eject all', () => {
     // The RAID is not going anywhere: not listed.
     expect(within(out).queryByText('RAID')).toBeNull();
   });
+
+  it('on Verify, Eject all keeps a shuttle in until every copy to it has verified', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const toShuttle = (patch: Partial<JobSnapshot['legs'][number]>) => ({ ...leg, id: shuttle.id, name: 'SHTL_08', targetDir: '/Volumes/SHTL_08/HALCYON/A015', ...patch });
+    media.state.mockResolvedValueOnce({ volumes: [card, raid, shuttle], folders: [], jobs: [], relaysPaused: false, relayLimit: null });
+    mount(<Verify />);
+    await screen.findByRole('region', { name: 'Drives going out' });
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100, failed: true })] }] });
+    fireEvent.click(screen.getByRole('button', { name: '⏏ Eject all…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
+    const box = within(dialog).getByRole('checkbox', { name: 'Eject SHTL_08' }) as HTMLInputElement;
+    expect([box.checked, box.disabled]).toEqual([false, true]);
+    expect(within(dialog).getByText('A copy failed · stays in')).toBeTruthy();
+  });
 });
