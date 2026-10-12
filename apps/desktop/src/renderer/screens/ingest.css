@@ -234,3 +234,8 @@
 .offload-tile.stage-problem { border-color: var(--s-problem); background: color-mix(in oklch, var(--s-problem) 11%, var(--card)); }
 .offload-tile.stage-cleared { border-color: var(--border); opacity: 0.6; }
 .offload-clear { justify-self: center; }
+
+/* Verify: shuttles and archives on their way out. */
+.verify-out { display: grid; gap: 6px; padding: 12px 16px; margin-top: 14px; }
+.verify-out-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.verify-out-row .offload-eject { display: flex; align-items: center; gap: 10px; }

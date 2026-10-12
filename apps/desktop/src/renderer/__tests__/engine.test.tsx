@@ -577,4 +577,20 @@ describe('eject all', () => {
     expect([a015.checked, a015.disabled]).toEqual([false, true]);
     expect(within(dialog).getByText('Not backed up · stays in')).toBeTruthy();
   });
+
+  it('on Verify, lists the shuttle going out with the same safeguard', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const toShuttle = (patch: Partial<JobSnapshot['legs'][number]>) => ({ ...leg, id: shuttle.id, name: 'SHTL_08', targetDir: '/Volumes/SHTL_08/HALCYON/A015', ...patch });
+    media.state.mockResolvedValueOnce({ volumes: [card, raid, shuttle], folders: [], jobs: [], relaysPaused: false, relayLimit: null });
+    mount(<Verify />);
+    const out = await screen.findByRole('region', { name: 'Drives going out' });
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100, failed: true })] }] });
+    expect(within(out).getByText('1 card failed here')).toBeTruthy();
+    expect((within(out).getByRole('button', { name: 'Eject SHTL_08 (locked until every copy has verified)' }) as HTMLButtonElement).disabled).toBe(true);
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100 })] }] });
+    fireEvent.click(within(out).getByRole('button', { name: '⏏ Eject SHTL_08' }));
+    await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
+    // The RAID is not going anywhere: not listed.
+    expect(within(out).queryByText('RAID')).toBeNull();
+  });
 });

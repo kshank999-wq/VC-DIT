@@ -4,6 +4,8 @@ import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { UploadControls } from '../ui/UploadControls';
+import { ShuttleOut } from '../ui/ShuttleOut';
+import { DeviceIcon, volumeLook } from '../ui/media-icons';
 import { EjectAllButton } from '../ui/EjectAll';
 import { CardEject, ClearCardDialog, clearedWord, volumeOfJob } from '../ui/ClearCard';
 import { useState } from 'react';
@@ -56,6 +58,7 @@ export function Verify() {
   };
   // Problems first, then what is moving, then the queue, then the finished cards.
   const rule = state.production.formatRule;
+  const outgoing = state.volumes.filter((volume) => volume.role === 'Shuttle' || volume.role === 'Archive');
   const [clearing, setClearing] = useState<TransferJob | null>(null);
   const jobs = state.jobs.map((job, index) => ({ job, index })).sort((a, b) => ORDER[jobState(a.job, rule)] - ORDER[jobState(b.job, rule)] || a.index - b.index);
   const count = (which: JobState) => state.jobs.filter((job) => jobState(job, rule) === which).length;
@@ -104,6 +107,8 @@ export function Verify() {
         {uploading ? ` · ${uploading} upload${uploading === 1 ? '' : 's'} ${state.relaysPaused ? 'paused' : 'not finished'}` : null}
       </p>
       <p className="muted small">Safe to format means {RULE_WORD[rule]}. Change it in Project setup.</p>
+
+
 
       {jobs.map(({ job }) => {
         const head = pill(job, rule);
@@ -170,6 +175,22 @@ export function Verify() {
           </section>
         );
       })}
+
+      {/* Drives going out: each shuttle or archive plugged in, ejected only once every card on it has verified there. */}
+      {outgoing.length ? (
+        <section className="card verify-out" aria-label="Drives going out">
+          <span className="label">Drives going out</span>
+          {outgoing.map((volume) => (
+            <div key={volume.id} className="verify-out-row">
+              <DeviceIcon look={volumeLook(volume)} size={28} path={volume.mountPath} />
+              <span className="mono strong">{volume.name}</span>
+              <span className="muted small">{volume.role}</span>
+              <span className="grow" />
+              <ShuttleOut volume={volume} />
+            </div>
+          ))}
+        </section>
+      ) : null}
       {clearing ? <ClearCardDialog job={clearing} onClose={() => setClearing(null)} /> : null}
     </div>
   );

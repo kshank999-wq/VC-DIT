@@ -6,6 +6,7 @@ import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
 import { EjectAllButton } from '../ui/EjectAll';
+import { ShuttleOut } from '../ui/ShuttleOut';
 import { CardEject, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
@@ -347,44 +348,6 @@ const STAGE: Record<CardStage, { status: Status; word: (job: TransferJob) => str
   problem: { status: 'problem', word: () => "Problem · don't clear" },
   cleared: { status: 'idle', word: (job) => clearedWord(job) },
 };
-
-/**
- * A shuttle (or archive drive) on its way out: whether everything sent to it
- * today has verified, and the button to eject it so it can be carried off.
- */
-function ShuttleOut({ volume }: { volume: Volume }) {
-  const { state } = useStore();
-  const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.id === volume.id || (!leg.id && leg.name === volume.name)));
-  const copying = legs.filter((leg) => !leg.failed && legState(leg) !== 'verified').length;
-  const failed = legs.filter((leg) => leg.failed).length;
-  const verified = legs.length - copying - failed;
-  const word = failed
-    ? { status: 'problem' as const, text: `${plural(failed, 'card')} failed here` }
-    : copying
-      ? { status: 'working' as const, text: `${plural(copying, 'card')} still copying` }
-      : legs.length
-        ? { status: 'done' as const, text: `${plural(verified, 'card')} verified · ready to go` }
-        : { status: 'idle' as const, text: 'Nothing copied here today' };
-  return (
-    <div className="offload-eject">
-      <StatusText status={word.status} word={word.text} />
-      {/* Safeguard: it leaves only with every card on it verified. */}
-      {failed || copying ? (
-        <button
-          type="button"
-          className="btn small"
-          disabled
-          aria-label={`Eject ${volume.name} (locked until every copy has verified)`}
-          title={failed ? 'A copy to it failed. Retry it in Verify, then eject.' : 'Eject it when every card copied to it has verified.'}
-        >
-          🔒 Eject when verified
-        </button>
-      ) : (
-        <EjectButton volume={volume} />
-      )}
-    </div>
-  );
-}
 
 function TransferRow({
   job,
