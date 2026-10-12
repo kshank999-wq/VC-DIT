@@ -30,8 +30,10 @@ const rowsOf = (state: AppState): Row[] =>
         return { volume, note: note ?? '', ticked: true, busy: false };
       }
       const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.id === volume.id));
-      const busy = legs.some((leg) => !leg.failed && legState(leg) !== 'verified' && legState(leg) !== 'waiting');
-      if (busy) return { volume, note: 'Being copied to', ticked: false, busy: true };
+      // Safeguard: a drive leaves only with every card copied to it verified there.
+      if (legs.some((leg) => leg.failed)) return { volume, note: 'A copy failed · stays in', ticked: false, busy: true };
+      if (legs.some((leg) => legState(leg) === 'copying' || legState(leg) === 'checking')) return { volume, note: 'Being copied to', ticked: false, busy: true };
+      if (legs.some((leg) => legState(leg) === 'waiting')) return { volume, note: 'Still to copy · stays in', ticked: false, busy: true };
       if (volume.role === 'Destination') return { volume, note: 'Main backup', ticked: false, busy: false };
       return { volume, note: volume.role === 'Shuttle' ? 'Shuttle' : 'Archive', ticked: true, busy: false };
     });
@@ -107,7 +109,7 @@ function EjectAllDialog({ onClose }: { onClose: () => void }) {
             );
           })}
         </ul>
-        <p className="muted small">A card stays in until everything on it has verified on at least one drive, and anything being copied stays in. The main backup is not ticked unless you tick it.</p>
+        <p className="muted small">A card stays in until everything on it has verified on at least one drive; a shuttle stays in until every card copied to it has verified there. The main backup is not ticked unless you tick it.</p>
         <div className="row clear-actions">
           {done ? (
             <>

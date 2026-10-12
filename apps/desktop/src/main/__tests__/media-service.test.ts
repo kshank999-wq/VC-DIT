@@ -504,4 +504,22 @@ describe('clearing a card for camera', () => {
     expect(await service.eject(mounts[0]!)).toEqual({ ok: true });
     expect(ejected).toEqual([join(base, 'A015')]);
   });
+
+  it('will not let a shuttle go until every card copied to it has verified there', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    corrupt = { path: 'A015R1AB/A015C002_261005_R1AB.mxf', leg: mounts[2]! };
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    await settle();
+    expect(await service.eject(mounts[2]!)).toEqual({
+      ok: false,
+      reason: 'SHUTTLE has 1 card whose copy failed there. Retry the copy (Verify) so everything on it is verified, then eject.',
+    });
+    corrupt = null;
+    service.retry('A015', mounts[2]!);
+    await settle();
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+  });
 });

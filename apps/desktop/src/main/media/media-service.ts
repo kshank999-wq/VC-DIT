@@ -991,6 +991,7 @@ export class MediaService {
    * changed on it since. A card already cleared, or empty, may go.
    */
   private async notBackedUp(volume: MediaVolume): Promise<string | null> {
+    if (DESTINATION_ROLES.includes(volume.role)) return this.notComplete(volume);
     if (!SOURCE_ROLES.includes(volume.role)) return null;
     const jobs = this.jobs.filter((job) => job.sourceRoot === volume.mountPath && job.card === volume.name);
     if (jobs.at(-1)?.clearedAt) return null;
@@ -1010,6 +1011,28 @@ export class MediaService {
     return jobs.length === 0
       ? `${volume.name} has not been backed up. It can be ejected once everything on it has been copied and verified on at least one drive.`
       : `${volume.name} is not fully backed up: not everything on it has verified on any one drive (or something on it is new or changed). Copy it again, then eject.`;
+  }
+
+  /**
+   * Why a shuttle (or any drive copies go to) may not leave yet, or null
+   * when it may: every card copied to it must have verified there. One
+   * still to copy, or with a copy that failed, keeps it in.
+   */
+  private notComplete(volume: MediaVolume): string | null {
+    let pending = 0;
+    let failed = 0;
+    for (const job of this.jobs) {
+      for (const leg of job.legs) {
+        if (leg.plan.root !== volume.mountPath) continue;
+        const outcomes = job.files.map((file) => leg.outcomes.get(file.path));
+        if (outcomes.some((outcome) => outcome?.state === 'failed') || leg.error) failed += 1;
+        else if (outcomes.some((outcome) => !outcome)) pending += 1;
+      }
+    }
+    const cards = (n: number) => `${n} card${n === 1 ? '' : 's'}`;
+    if (failed) return `${volume.name} has ${cards(failed)} whose copy failed there. Retry the copy (Verify) so everything on it is verified, then eject.`;
+    if (pending) return `${volume.name} still has ${cards(pending)} to copy or check. Eject it when they have verified.`;
+    return null;
   }
 
   /**

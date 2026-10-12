@@ -368,7 +368,20 @@ function ShuttleOut({ volume }: { volume: Volume }) {
   return (
     <div className="offload-eject">
       <StatusText status={word.status} word={word.text} />
-      <EjectButton volume={volume} />
+      {/* Safeguard: it leaves only with every card on it verified. */}
+      {failed || copying ? (
+        <button
+          type="button"
+          className="btn small"
+          disabled
+          aria-label={`Eject ${volume.name} (locked until every copy has verified)`}
+          title={failed ? 'A copy to it failed. Retry it in Verify, then eject.' : 'Eject it when every card copied to it has verified.'}
+        >
+          🔒 Eject when verified
+        </button>
+      ) : (
+        <EjectButton volume={volume} />
+      )}
     </div>
   );
 }

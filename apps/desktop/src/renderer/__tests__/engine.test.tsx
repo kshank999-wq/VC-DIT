@@ -507,6 +507,11 @@ describe('a shuttle on its way out', () => {
 
     push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), legs: [leg, toShuttle({ copyPct: 50 })] }] });
     expect(within(tile()).getByText('1 card still copying')).toBeTruthy();
+    expect((within(tile()).getByRole('button', { name: 'Eject SHTL_08 (locked until every copy has verified)' }) as HTMLButtonElement).disabled).toBe(true);
+    // A failed copy keeps it in too.
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100, failed: true })] }] });
+    expect(within(tile()).getByText('1 card failed here')).toBeTruthy();
+    expect(within(tile()).getByRole('button', { name: 'Eject SHTL_08 (locked until every copy has verified)' })).toBeTruthy();
     push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100 })] }] });
     expect(within(tile()).getByText('1 card verified · ready to go')).toBeTruthy();
     fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject SHTL_08' }));
