@@ -564,9 +564,12 @@ describe('eject all', () => {
     expect(within(dialog).getByRole('button', { name: '⏏ Eject 0' })).toHaveProperty('disabled', true);
   });
 
-  it('is on Verify too', async () => {
+  it('is on Verify too, with the same safeguard: a card not backed up stays in', async () => {
     mount(<Verify />);
     fireEvent.click(await screen.findByRole('button', { name: '⏏ Eject all…' }));
-    expect(screen.getByRole('dialog', { name: 'Eject cards and drives' })).toBeTruthy();
+    const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
+    const a015 = within(dialog).getByRole('checkbox', { name: 'Eject A015' }) as HTMLInputElement;
+    expect([a015.checked, a015.disabled]).toEqual([false, true]);
+    expect(within(dialog).getByText('Not backed up · stays in')).toBeTruthy();
   });
 });
