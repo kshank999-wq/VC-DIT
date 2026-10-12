@@ -348,6 +348,24 @@ describe('uploads relayed from the backup', () => {
     expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.relay).toBe(true);
   });
 
+  it('lets the shuttle go while an upload reads from the RAID, but not the RAID', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    // The upload is waiting on the RAID: the RAID stays, the shuttle may go.
+    expect(service.relaysPending()).toBe(1);
+    const ejected: string[] = [];
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(mounts[1]!)).toEqual({ ok: false, reason: 'RAID is being copied. Eject it when the transfer has finished.' });
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'SHUTTLE')]);
+  });
+
   it('holds uploads to the speed set, changing a running upload at once, and never limits a card copy', async () => {
     const cloud = await addCloud();
     // 400 kB of media, uploaded at most 1 MB/s: well under a second, but measurably held.

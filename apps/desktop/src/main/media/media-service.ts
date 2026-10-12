@@ -422,7 +422,12 @@ export class MediaService {
     /** Volumes a queued or running transfer reads from or writes to. */
   private inUse(volumeId: string): boolean {
     const active = [...(this.current ? [this.current.work] : []), ...(this.relayCurrent ? [this.relayCurrent.work] : []), ...this.queue, ...this.relayQueue];
-    return active.some(({ job }) => job.sourceId === volumeId || job.legs.some((leg) => leg.plan.root === volumeId));
+    // Only the drives a piece of work touches: a card copy reads the card and writes its local copies; an
+    // upload reads one backup and writes its uploads. A shuttle is free to go while the RAID feeds the cloud.
+    return active.some((work) => {
+      const touched = work.job.legs.filter((leg) => work.legIds.includes(leg.plan.id) || leg.plan.id === work.from);
+      return (work.from === undefined && work.job.sourceId === volumeId) || touched.some((leg) => leg.plan.root === volumeId);
+    });
   }
 
   async setRole(volumeId: string, role: VolumeRole): Promise<{ ok: boolean; reason?: string }> {

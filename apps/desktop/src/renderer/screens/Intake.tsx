@@ -310,6 +310,7 @@ export function Intake() {
                 relay={!!volume.relay}
                 onRelay={(relay) => setRelay(volume.id, relay)}
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: volume.id })}
+                extra={volume.role === 'Shuttle' || volume.role === 'Archive' ? <ShuttleOut volume={volume} /> : undefined}
                 role={<select className="select offload-role" aria-label={`Role of ${volume.name}`} value={volume.role} onChange={(event) => setRole(volume, event.target.value as VolumeRole)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select>}
               />
             ))}
@@ -342,6 +343,31 @@ const STAGE: Record<CardStage, { status: Status; word: (job: TransferJob) => str
   problem: { status: 'problem', word: () => "Problem · don't clear" },
   cleared: { status: 'idle', word: (job) => clearedWord(job) },
 };
+
+/**
+ * A shuttle (or archive drive) on its way out: whether everything sent to it
+ * today has verified, and the button to eject it so it can be carried off.
+ */
+function ShuttleOut({ volume }: { volume: Volume }) {
+  const { state } = useStore();
+  const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.id === volume.id || (!leg.id && leg.name === volume.name)));
+  const copying = legs.filter((leg) => !leg.failed && legState(leg) !== 'verified').length;
+  const failed = legs.filter((leg) => leg.failed).length;
+  const verified = legs.length - copying - failed;
+  const word = failed
+    ? { status: 'problem' as const, text: `${plural(failed, 'card')} failed here` }
+    : copying
+      ? { status: 'working' as const, text: `${plural(copying, 'card')} still copying` }
+      : legs.length
+        ? { status: 'done' as const, text: `${plural(verified, 'card')} verified · ready to go` }
+        : { status: 'idle' as const, text: 'Nothing copied here today' };
+  return (
+    <div className="offload-eject">
+      <StatusText status={word.status} word={word.text} />
+      <EjectButton volume={volume} />
+    </div>
+  );
+}
 
 function TransferRow({
   job,
@@ -436,6 +462,7 @@ function DestinationTile({
   onToggle,
   onRemove,
   role,
+  extra,
 }: {
   name: string;
   sub: string;
@@ -449,6 +476,7 @@ function DestinationTile({
   onToggle: () => void;
   onRemove?: () => void;
   role?: ReactNode;
+  extra?: ReactNode;
 }) {
   const px = ICON_PX[useStore().state.prefs.iconSize];
   return (
@@ -474,6 +502,7 @@ function DestinationTile({
           Upload from backup
         </button>
       </div>
+      {extra}
       {role || onRemove ? (
         <div className="offload-tile-foot">
           {role}

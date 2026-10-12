@@ -460,3 +460,26 @@ describe('clearing a card for camera', () => {
     expect(screen.queryByText('A015 is safe to clear')).toBeNull();
   });
 });
+
+describe('a shuttle on its way out', () => {
+  const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+  const toShuttle = (patch: Partial<JobSnapshot['legs'][number]>) => ({ ...leg, id: shuttle.id, name: 'SHTL_08', targetDir: '/Volumes/SHTL_08/HALCYON/A015', ...patch });
+
+  it('says whether everything on it has verified, and ejects it', async () => {
+    media.state.mockResolvedValueOnce({ volumes: [card, raid, shuttle], folders: [], jobs: [], relaysPaused: false, relayLimit: null });
+    mount(<Intake />);
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    await waitFor(() => within(out).getByText('SHTL_08'));
+    const tile = () => within(out).getByText('SHTL_08').closest('.offload-tile') as HTMLElement;
+    expect(within(tile()).getByText('Nothing copied here today')).toBeTruthy();
+    // The RAID stays on the cart: no eject there.
+    expect(within(within(out).getByText('RAID').closest('.offload-tile') as HTMLElement).queryByRole('button', { name: /Eject/ })).toBeNull();
+
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), legs: [leg, toShuttle({ copyPct: 50 })] }] });
+    expect(within(tile()).getByText('1 card still copying')).toBeTruthy();
+    push({ volumes: [card, raid, shuttle], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job(), running: false, legs: [leg, toShuttle({ copyPct: 100, verifyPct: 100 })] }] });
+    expect(within(tile()).getByText('1 card verified · ready to go')).toBeTruthy();
+    fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject SHTL_08' }));
+    await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
+  });
+});
