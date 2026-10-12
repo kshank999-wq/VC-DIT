@@ -215,6 +215,14 @@ describe('Intake on the media engine', () => {
     expect((screen.getByRole('button', { name: /Start verified ingest/ }) as HTMLButtonElement).disabled || screen.queryByText(/copies straight from the card/)).toBeTruthy();
   });
 
+  it('offers to eject a card that has not been copied, and a cleared or problem one, but not one copying', async () => {
+    mount(<Intake />);
+    const sources = screen.getByRole('region', { name: 'Sources' });
+    await waitFor(() => within(sources).getByText('A015'));
+    fireEvent.click(within(sources).getByRole('button', { name: '⏏ Eject A015' }));
+    await waitFor(() => expect(media.eject).toHaveBeenCalledWith(card.id));
+  });
+
   it('says what to do when nothing is plugged in', async () => {
     media.state.mockResolvedValueOnce({ volumes: [], folders: [], relaysPaused: false, relayLimit: null, jobs: [] });
     mount(<Intake />);
@@ -404,10 +412,14 @@ describe('clearing a card for camera', () => {
     push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
     expect(tile().dataset['stage']).toBe('copying');
     expect(within(tile()).queryByRole('button', { name: 'Clear card…' })).toBeNull();
+    // Never ejected mid-copy.
+    expect(within(tile()).queryByRole('button', { name: '⏏ Eject A015' })).toBeNull();
 
     push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [safeJob()] });
     expect(tile().dataset['stage']).toBe('safe');
     expect(within(tile()).getByText('Safe to clear')).toBeTruthy();
+    // It can be ejected without clearing, too.
+    expect(within(tile()).getByRole('button', { name: '⏏ Eject A015' })).toBeTruthy();
     fireEvent.click(within(tile()).getByRole('button', { name: 'Clear card…' }));
 
     // 1. The check, fresh.

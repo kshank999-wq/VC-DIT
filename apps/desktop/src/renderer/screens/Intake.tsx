@@ -171,15 +171,17 @@ export function Intake() {
                       </span>
                     )}
                   </div>
-                  {stage === 'safe' ? (
-                    <button type="button" className="btn small offload-clear" onClick={() => setClearing(job!)}>
-                      Clear card…
-                    </button>
-                  ) : stage === 'cleared' ? (
+                  {/* Clear when safe; eject any time it is not being read (never mid-copy). */}
+                  {stage === 'copying' || stage === 'waiting' ? null : (
                     <div className="offload-eject">
-                      <EjectButton volume={volume} primary />
+                      {stage === 'safe' ? (
+                        <button type="button" className="btn small" onClick={() => setClearing(job!)}>
+                          Clear card…
+                        </button>
+                      ) : null}
+                      <EjectButton volume={volume} primary={stage === 'cleared'} />
                     </div>
-                  ) : null}
+                  )}
                 </div>
               );
             })}
