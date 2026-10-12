@@ -99,7 +99,7 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     luts: project.luts.map((lut) => ({
       id: lut.id,
       name: lut.name,
-      description: [lut.title, `${lut.kind} · ${lut.size}-point ${lut.format}`].filter(Boolean).join(' · '),
+      description: [lut.title, lut.cdl ? 'ASC CDL · goes to editorial with each clip' : `${lut.kind} · ${lut.size}-point ${lut.format}`].filter(Boolean).join(' · '),
       isDefault: lut.isDefault,
     })),
     lutRules: project.lutRules,

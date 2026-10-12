@@ -90,7 +90,7 @@ export function Looks() {
           <button
             type="button"
             className="btn tall"
-            title="Adds .cube or .3dl LUTs to this production's library"
+            title="Adds .cube or .3dl LUTs, or ASC CDLs (.cc, .ccc, .cdl), to this production's library"
             onClick={() => (api ? act(api.importLuts()) : undefined)}
             disabled={!api && Boolean(state.project)}
           >
@@ -109,7 +109,7 @@ export function Looks() {
           <div className="card-head">
             <h3>Library · {state.production.name}</h3>
           </div>
-          {state.luts.length === 0 ? <p className="muted looks-empty">No LUTs yet. Import the production&apos;s .cube or .3dl files.</p> : null}
+          {state.luts.length === 0 ? <p className="muted looks-empty">No LUTs yet. Import the production&apos;s .cube or .3dl files, or its ASC CDLs (.cc, .ccc, .cdl).</p> : null}
           <div role="listbox" aria-label="LUT library">
             {state.luts.map((item, index) => (
               <button

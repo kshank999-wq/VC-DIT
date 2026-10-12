@@ -17,6 +17,7 @@ import type { LegPlan, SourceFile, TransferProgress, TransferResult } from '../m
 import type { WorkerPlan } from '../media/transfer-worker';
 import { buildView } from '../organize/view';
 import { editorialAle, editorialCsv } from './editorial';
+import { editorialCdl, editorialFcpxml, editorialXmeml } from './editorial-xml';
 import { dayDir, listPart, scanInventory, type Inventory, type Place } from './inventory';
 
 /**
@@ -247,8 +248,14 @@ export class DeliveryService {
         const rows = db.editorialRows(day.number);
         const base = join(dir, `${segment(production.code || production.name)}_D${String(day.number).padStart(3, '0')}_${stamp(new Date())}`);
         await mkdir(dir, { recursive: true });
+        const title = `${production.name || production.code} · Day ${day.number}`;
         await writeFile(`${base}.ale`, editorialAle(rows, production.frameRate), 'utf8');
         await writeFile(`${base}_sync.csv`, editorialCsv(rows), 'utf8');
+        // For Final Cut Pro and Resolve, and for Premiere: the same clips, linked to the copies on this drive.
+        await writeFile(`${base}.fcpxml`, editorialFcpxml(rows, { frameRate: production.frameRate, event: title, root: place.root }), 'utf8');
+        await writeFile(`${base}_premiere.xml`, editorialXmeml(rows, { frameRate: production.frameRate, bin: title, root: place.root }), 'utf8');
+        const cdl = editorialCdl(rows);
+        if (cdl) await writeFile(`${base}.ccc`, cdl, 'utf8');
         const list = await listPart(dayDir(place.root, ref), 'editorial');
         Object.assign(part, {
           sourceId: place.id,

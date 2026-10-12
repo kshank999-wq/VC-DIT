@@ -193,6 +193,8 @@ export interface LutEntry {
   importedAt: string;
   /** The project-wide rule uses it. */
   isDefault: boolean;
+  /** An ASC CDL (slope, offset, power, saturation), sent to editorial with each clip. */
+  cdl?: boolean;
 }
 
 export type LutScope = 'Project' | 'Camera' | 'Day' | 'Scene' | 'Setup' | 'Clip';
@@ -353,7 +355,7 @@ export const DELIVERY_PARTS: { id: DeliveryPartId; folder: string; exclude?: str
   { id: 'looks', folder: 'LUTS_LOOKS' },
   { id: 'dailies', folder: 'SYNCED_DAILIES' },
   { id: 'vfx', folder: 'VFX' },
-  // The ALE and sync list, written fresh for each delivery.
+  // The ALE, sync list, FCPXML, Premiere XML and CDLs, written fresh for each delivery.
   { id: 'editorial', folder: 'EDITORIAL' },
   { id: 'reports-ingest', folder: 'REPORTS/ingest_verification' },
   { id: 'reports-dailies', folder: 'REPORTS/dailies' },
@@ -364,7 +366,7 @@ export type DeliveryPackageId = 'ocf' | 'edit' | 'dailies' | 'vfx' | 'reports';
 
 export const DELIVERY_PACKAGES: { id: DeliveryPackageId; name: string; description: string; parts: DeliveryPartId[] }[] = [
   { id: 'ocf', name: 'Camera originals archive', description: 'All camera and sound originals, ingest MHL and logs', parts: ['camera', 'sound', 'reports-ingest'] },
-  { id: 'edit', name: 'Editorial handoff', description: 'Originals in scene/setup folders, looks, and an ALE and sync list', parts: ['camera', 'sound', 'looks', 'editorial'] },
+  { id: 'edit', name: 'Editorial handoff', description: 'Originals in scene/setup folders, looks, and edit lists: ALE, Final Cut/Resolve XML, Premiere XML, CDL', parts: ['camera', 'sound', 'looks', 'editorial'] },
   { id: 'dailies', name: 'Synced dailies', description: 'The rendered dailies, their looks and manifest', parts: ['dailies', 'looks', 'reports-dailies'] },
   { id: 'vfx', name: 'VFX package', description: 'Mirrored plates and the VC VFX Prep handoff', parts: ['vfx'] },
   { id: 'reports', name: 'Reports & logs', description: 'Ingest, dailies, VFX and delivery reports', parts: ['reports-ingest', 'reports-dailies', 'reports'] },

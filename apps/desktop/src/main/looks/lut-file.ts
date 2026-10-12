@@ -17,7 +17,7 @@ export const parseLut = (fileName: string, text: string): LutInfo => {
   const extension = fileName.toLowerCase().split('.').pop();
   if (extension === 'cube') return parseCube(text);
   if (extension === '3dl') return parse3dl(text);
-  throw new Error('Only .cube and .3dl LUTs can be imported.');
+  throw new Error('Only .cube and .3dl LUTs, and ASC CDLs (.cc, .ccc, .cdl), can be imported.');
 };
 
 const parseCube = (text: string): LutInfo => {

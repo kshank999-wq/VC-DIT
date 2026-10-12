@@ -123,7 +123,7 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
 
 ### 4.7 LUT & Look Manager
 
-- Import production LUTs and organize them per production.
+- Import production LUTs and organize them per production: .cube and .3dl, and ASC CDLs (.cc, .ccc, .cdl). Each correction in a CDL becomes a look of its own; its slope, offset, power and saturation are kept for editorial, and a 33-point .cube baked from them is what previews and dailies apply.
 - Support assignment by project default, camera, shoot day, scene, setup, or clip where appropriate.
 - Preview footage through the selected LUT/look.
 - Generate dailies/proxies with the viewing look applied when requested, while preserving untouched camera originals.
@@ -151,6 +151,7 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
 - Multi-destination output comparable to the multi-destination ingest workflow.
 - Destination types: removable/local storage, production storage/NAS, network locations, and Frame.io integration where authorized.
 - Export selectable package types: camera originals archive, editorial handoff, synced dailies, VFX package, reports/logs, or combined production-day package.
+- The editorial handoff's lists, written fresh with each delivery into the day's EDITORIAL folder: an Avid ALE (with ASC_SOP and ASC_SAT where the clip's look is a CDL), a sync CSV, FCPXML 1.10 for Final Cut Pro and DaVinci Resolve (the day as an event; scene, take, camera roll and notes as metadata; circled takes keyworded; synced sound as a synced clip), Final Cut Pro 7 XML for Premiere Pro (bins by scene; each clip a merged clip of picture and its synced sound, one track per channel, lined up by the sync offset), and an ASC CDL collection (.ccc) of each clip's CDL by clip name. File references point at the copies on the drive the lists are written to.
 - Preflight destination capacity and warn before transfer.
 - Verify copied deliverables and generate a delivery manifest showing files, destinations, timestamps, checksum/verification state, and failures/retries.
 - Allow saved destination presets for recurring daily handoffs.

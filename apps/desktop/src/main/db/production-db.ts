@@ -36,6 +36,7 @@ import {
   type SyncEntry,
 } from '../../shared/project';
 import { parseLut } from '../looks/lut-file';
+import { cdlCube, isCdlFile, parseCdl, type Cdl } from '../looks/cdl';
 import type { ViewClip } from '../organize/view';
 import { SCENE_VIEW, SELECTS_VIEW, applyNaming } from '../../shared/project';
 import { segment } from '../media/rules';
@@ -503,6 +504,9 @@ MIGRATIONS.push(`
   );
 `);
 
+// An ASC CDL look keeps its numbers (slope, offset, power, saturation) for editorial, beside the .cube baked from them.
+MIGRATIONS.push(`alter table lut add column cdl text;`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -557,6 +561,17 @@ export interface EditorialRow {
   /** Where the sound starts relative to the clip's first frame, in frames. */
   syncFrames: number | null;
   look: string;
+  /** The look's ASC CDL, when it is one. */
+  cdl: Cdl | null;
+  /** Every verified copy of the camera file, absolute. */
+  paths: string[];
+  /** Every verified copy of the synced sound file, absolute; empty when not synced. */
+  soundPaths: string[];
+  /** The sound file's channels, sample rate, start (seconds since midnight) and length, when read. */
+  soundChannels: number | null;
+  sampleRate: number | null;
+  soundStartSec: number | null;
+  soundDurationSec: number | null;
 }
 
 /** What a daily needs to know about one take's clip. */
@@ -1779,7 +1794,7 @@ export class ProductionDb {
 
   luts(): LutEntry[] {
     const fallback = this.rows<Record<string, SqlValue>>("select lut_id from lut_rule where scope = 'Project'")[0]?.['lut_id'];
-    return this.rows<Record<string, SqlValue>>('select id, name, format, kind, size, title, imported_at from lut order by name').map((row) => ({
+    return this.rows<Record<string, SqlValue>>('select id, name, format, kind, size, title, imported_at, cdl is not null as is_cdl from lut order by name').map((row) => ({
       id: Number(row['id']),
       name: String(row['name']),
       title: String(row['title']),
@@ -1788,19 +1803,34 @@ export class ProductionDb {
       format: row['format'] as LutEntry['format'],
       importedAt: String(row['imported_at']),
       isDefault: Number(row['id']) === Number(fallback),
+      cdl: Number(row['is_cdl']) === 1,
     }));
   }
 
   /** Add a LUT to the library: checked first; the same name with different contents is refused, not replaced. */
   importLut(fileName: string, content: string): number {
-    const info = parseLut(fileName, content);
+    // An ASC CDL: each correction in it becomes a look of its own, baked to a .cube for the dailies.
+    if (isCdlFile(fileName)) {
+      const corrections = parseCdl(fileName, content);
+      let first = 0;
+      for (const cdl of corrections) {
+        const name = corrections.length === 1 ? fileName : `${cdl.id}.cc`;
+        const id = this.addLut(name, { format: 'cube', kind: '3D', size: 33, title: cdl.description || cdl.id }, cdlCube(cdl), JSON.stringify({ slope: cdl.slope, offset: cdl.offset, power: cdl.power, sat: cdl.sat }));
+        first ||= id;
+      }
+      return first;
+    }
+    return this.addLut(fileName, parseLut(fileName, content), content, null);
+  }
+
+  private addLut(fileName: string, info: { format: string; kind: string; size: number; title: string }, content: string, cdl: string | null): number {
     const existing = this.rows<Record<string, SqlValue>>('select id, content from lut where name = ?', [fileName])[0];
     if (existing) {
       if (String(existing['content']) === content) return Number(existing['id']);
       throw new Error(`A different ${fileName} is already in the library. Rename the new one (e.g. _v2) to keep both.`);
     }
     this.transaction(() =>
-      this.run('insert into lut (name, format, kind, size, title, content, imported_at) values (?, ?, ?, ?, ?, ?, ?)', [
+      this.run('insert into lut (name, format, kind, size, title, content, imported_at, cdl) values (?, ?, ?, ?, ?, ?, ?, ?)', [
         fileName,
         info.format,
         info.kind,
@@ -1808,6 +1838,7 @@ export class ProductionDb {
         info.title,
         content,
         now(),
+        cdl,
       ]),
     );
     const id = Number(this.value<number>('select id from lut where name = ?', [fileName]));
@@ -1832,6 +1863,13 @@ export class ProductionDb {
 
   removeLutRule(id: number) {
     this.transaction(() => this.run('delete from lut_rule where id = ?', [id]));
+  }
+
+  /** The CDL numbers of each look that is an ASC CDL, by look id. */
+  private cdls(): Map<number, Cdl> {
+    return new Map(
+      this.rows<Record<string, SqlValue>>('select id, cdl from lut where cdl is not null').map((row) => [Number(row['id']), JSON.parse(String(row['cdl'])) as Cdl]),
+    );
   }
 
   private rules(): { id: number; scope: LutScope; target: string; lutId: number; lut: string }[] {
@@ -2146,7 +2184,10 @@ export class ProductionDb {
       }
     }
     const rules = this.rules();
-    return this.syncMedia(day)
+    const media = this.syncMedia(day);
+    const soundMedia = new Map(media.sounds.map((sound) => [`${sound.card}|${sound.key}`, sound]));
+    const cdls = this.cdls();
+    return media
       .pictures.map((picture) => {
         const id = `${picture.card}|${picture.key}`;
         const entry = takes.get(id);
@@ -2171,6 +2212,18 @@ export class ProductionDb {
           sync: synced ? `${sync.method}${sync.accepted ? '' : ' (not reviewed)'}` : 'None',
           syncFrames: synced ? sync.alignFrames : null,
           look: rule?.lut ?? '',
+          cdl: rule ? (cdls.get(rule.lutId) ?? null) : null,
+          paths: picture.paths,
+          ...(() => {
+            const sound = synced ? soundMedia.get(`${sync.soundCard}|${sync.soundKey}`) : undefined;
+            return {
+              soundPaths: sound?.paths ?? [],
+              soundChannels: sound?.meta?.channels ?? null,
+              sampleRate: sound?.meta?.sampleRate ?? null,
+              soundStartSec: sound?.meta?.soundStartSec ?? null,
+              soundDurationSec: sound?.meta?.durationSec ?? null,
+            };
+          })(),
         };
       })
       .sort((a, b) => a.card.localeCompare(b.card) || a.clip.localeCompare(b.clip));

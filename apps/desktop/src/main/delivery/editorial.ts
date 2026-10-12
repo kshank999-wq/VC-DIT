@@ -1,5 +1,6 @@
 import { timecodeLabel } from '../dailies/render-args';
 import type { EditorialRow } from '../db/production-db';
+import { aleSop } from '../looks/cdl';
 
 /**
  * What editorial gets besides the media (spec §4.10 "Editorial handoff"):
@@ -64,6 +65,8 @@ export const editorialAle = (rows: EditorialRow[], frameRate: string): string =>
     'Sync Offset',
     'Circled',
     'LUT',
+    'ASC_SOP',
+    'ASC_SAT',
     'Comments',
   ];
   const data = rows.map((row) => {
@@ -84,6 +87,8 @@ export const editorialAle = (rows: EditorialRow[], frameRate: string): string =>
       offset(row.syncFrames),
       row.circle ? 'Yes' : '',
       row.look,
+      row.cdl ? aleSop(row.cdl) : '',
+      row.cdl ? String(row.cdl.sat) : '',
       row.notes,
     ]
       .map(cell)

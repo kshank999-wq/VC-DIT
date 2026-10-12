@@ -517,7 +517,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     const options = {
       title: 'Import LUTs',
       properties: ['openFile', 'multiSelections'] as ('openFile' | 'multiSelections')[],
-      filters: [{ name: 'LUT', extensions: ['cube', '3dl'] }],
+      filters: [{ name: 'LUT or ASC CDL', extensions: ['cube', '3dl', 'cc', 'ccc', 'cdl'] }],
     };
     const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
     if (picked.canceled || picked.filePaths.length === 0) return { ok: false, reason: '' };

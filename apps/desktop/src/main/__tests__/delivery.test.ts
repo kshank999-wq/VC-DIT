@@ -167,6 +167,10 @@ describe('a delivery', () => {
     const ale = (await files(join(raidDay, 'EDITORIAL'))).find((name) => name.endsWith('.ale'))!;
     expect(ale).toMatch(/^NJR_D001_\d{8}_\d{6}Z\.ale$/);
     const delivered = await readFile(join(shuttleDay, 'EDITORIAL', ale), 'utf8');
+    // The XML for Final Cut, Resolve and Premiere goes with it, linked to the copies on the drive it was written on.
+    const stem = ale.replace(/\.ale$/, '');
+    expect((await files(join(shuttleDay, 'EDITORIAL'))).sort()).toEqual(expect.arrayContaining([`${stem}.fcpxml`, `${stem}_premiere.xml`, `${stem}_sync.csv`]));
+    expect(await readFile(join(raidDay, 'EDITORIAL', `${stem}.fcpxml`), 'utf8')).toContain('<fcpxml version="1.10">');
     expect(delivered).toContain('Heading');
     expect(delivered).toMatch(/^A001C001\tV\t/m);
     expect(db.deliveries(1)[0]).toMatchObject({ package: 'edit', failed: 2 });
@@ -204,6 +208,13 @@ describe('the editorial lists', () => {
     sync: 'Timecode',
     syncFrames: -12.5,
     look: 'NJR_Show_v3.cube',
+    cdl: null,
+    paths: ['/Volumes/RAID/HALCYON/SHOOT_DAY_014_2026-10-07/CAMERA_ORIGINALS/A015/A015C002_261007_R1AB.mov', '/Volumes/SHTL/HALCYON/SHOOT_DAY_014_2026-10-07/CAMERA_ORIGINALS/A015/A015C002_261007_R1AB.mov'],
+    soundPaths: ['/Volumes/RAID/HALCYON/SHOOT_DAY_014_2026-10-07/SOUND_ORIGINALS/S004/14B-03.WAV'],
+    soundChannels: 4,
+    sampleRate: 48000,
+    soundStartSec: 50739.0,
+    soundDurationSec: 14.5,
     ...patch,
   });
 
