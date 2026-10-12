@@ -218,6 +218,8 @@
 .relay-switch button { border: 0; background: transparent; color: var(--muted); padding: 3px 7px; cursor: pointer; font: inherit; }
 .relay-switch button[aria-pressed='true'] { background: color-mix(in oklch, var(--st-intake) 18%, var(--card)); color: var(--ink); font-weight: 600; }
 .relay-switch button:disabled { cursor: default; opacity: .6; }
+.drive-limit { display: inline-flex; align-items: center; gap: 6px; }
+.drive-limit .select { font-size: 11px; padding: 2px 4px; }
 .offload-transfers-head { display: flex; align-items: center; gap: 8px; }
 .offload-transfers-head .offload-head { flex: 1; }
 .offload-row.is-upload .offload-row-title .relay-hop { color: var(--muted); }

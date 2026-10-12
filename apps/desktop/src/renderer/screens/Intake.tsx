@@ -4,7 +4,7 @@ import type { ChecksumMethod, Status, TransferJob, TransferLeg, Volume, VolumeRo
 import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
-import { UploadControls } from '../ui/UploadControls';
+import { limitWord, UPLOAD_LIMITS, UploadControls } from '../ui/UploadControls';
 import { EjectAllButton } from '../ui/EjectAll';
 import { ShuttleOut } from '../ui/ShuttleOut';
 import { CardEject, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
@@ -61,6 +61,9 @@ export function Intake() {
     dispatch({ type: 'setDestinationRelay', destination: id, relay });
     if (media) void media.setRelay(id, relay).then(answer);
   };
+  const setLimit = (id: string, limit: number | null) => {
+    if (media) void media.setDriveLimit(id, limit).then(answer);
+  };
   const setRole = (volume: Volume, role: VolumeRole) => {
     dispatch({ type: 'setVolumeRole', volume: volume.id, role });
     if (media) void media.setRole(volume.id, role).then(answer);
@@ -84,11 +87,13 @@ export function Intake() {
   const sources = sourceVolumes.filter((volume) => volume.included && !volume.ingested);
   const volumeDestinations = state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role));
   const picked = [
-    ...state.destinations.filter((destination) => destination.selected).map((destination) => ({ name: destination.name, relay: !!destination.relay })),
-    ...volumeDestinations.filter((volume) => volume.included).map((volume) => ({ name: volume.name, relay: !!volume.relay })),
+    ...state.destinations.filter((destination) => destination.selected).map((destination) => ({ name: destination.name, relay: !!destination.relay, local: !!destination.local })),
+    ...volumeDestinations.filter((volume) => volume.included).map((volume) => ({ name: volume.name, relay: !!volume.relay, local: volume.local ?? true })),
   ];
   const destinations = picked.filter((destination) => !destination.relay).map((destination) => destination.name);
-  const uploads = picked.filter((destination) => destination.relay).map((destination) => destination.name);
+  // From the backup: to drives on the cart (a cascade: card → RAID → shuttle), or up to the network.
+  const cascades = picked.filter((destination) => destination.relay && destination.local).map((destination) => destination.name);
+  const uploads = picked.filter((destination) => destination.relay && !destination.local).map((destination) => destination.name);
   const rule = state.production.formatRule;
 
   const blocker = starting
@@ -221,11 +226,13 @@ export function Intake() {
             <div className="grow">
               <div className="intake-summary">
                 {plural(sources.length, 'source')} → {plural(destinations.length, 'destination')}
+                {cascades.length ? ` + ${cascades.length} from backup` : ''}
                 {uploads.length ? ` + ${plural(uploads.length, 'upload')}` : ''}
               </div>
               <div className="muted small">
                 {sources.length > 0 ? sources.map((volume) => volume.name).join(', ') : 'No source picked'}
                 {destinations.length > 0 ? ` → ${destinations.join(', ')}` : ''}
+                {cascades.length > 0 ? ` → ${cascades.join(', ')} from ${destinations[0] ?? 'the backup'}` : ''}
                 {uploads.length > 0 ? ` → ↑ ${uploads.join(', ')} from ${destinations[0] ?? 'the backup'}` : ''}
               </div>
             </div>
@@ -240,7 +247,7 @@ export function Intake() {
               Start verified ingest
             </StartButton>
           </div>
-          {destinations.length === 1 ? (
+          {destinations.length === 1 && cascades.length === 0 ? (
             <div className="intake-warning" role="note" style={tone(statusVar('needs'))}>
               <StatusText status="needs" word={uploads.length ? 'Only one local copy' : 'Only one destination'} />
               <span className="muted">
@@ -297,6 +304,9 @@ export function Intake() {
                 path={destination.path}
                 selected={destination.selected}
                 relay={!!destination.relay}
+                local={!!destination.local}
+                limit={destination.limit ?? null}
+                onLimit={media ? (limit) => setLimit(destination.id, limit) : undefined}
                 onRelay={(relay) => setRelay(destination.id, relay)}
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: destination.id })}
                 onRemove={media ? () => void media.removeFolder(destination.id) : undefined}
@@ -313,6 +323,9 @@ export function Intake() {
                 path={volume.mountPath}
                 selected={volume.included}
                 relay={!!volume.relay}
+                local={volume.local ?? true}
+                limit={volume.limit ?? null}
+                onLimit={media ? (limit) => setLimit(volume.id, limit) : undefined}
                 onRelay={(relay) => setRelay(volume.id, relay)}
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: volume.id })}
                 extra={volume.role === 'Shuttle' || volume.role === 'Archive' ? <ShuttleOut volume={volume} /> : undefined}
@@ -438,6 +451,9 @@ function DestinationTile({
   path,
   selected,
   relay,
+  local,
+  limit,
+  onLimit,
   onRelay,
   onToggle,
   onRemove,
@@ -452,6 +468,11 @@ function DestinationTile({
   path?: string;
   selected: boolean;
   relay: boolean;
+  /** On the cart: from the backup it is a cascade copy (card → RAID → this), not an upload. */
+  local: boolean;
+  /** Its own speed limit for copies from the backup. */
+  limit: number | null;
+  onLimit?: (limit: number | null) => void;
   onRelay: (relay: boolean) => void;
   onToggle: () => void;
   onRemove?: () => void;
@@ -478,10 +499,32 @@ function DestinationTile({
         <button type="button" aria-pressed={!relay} title="Copied straight from the card, and checked, before the card counts as done" onClick={() => onRelay(false)}>
           From card
         </button>
-        <button type="button" aria-pressed={relay} title="Uploaded from the verified backup after the card is done, so the card can come out first" onClick={() => onRelay(true)}>
-          Upload from backup
+        <button
+          type="button"
+          aria-pressed={relay}
+          title={
+            local
+              ? 'Copied from the verified backup once the card is done (card → RAID → here), checked against the card, so the card can come out first'
+              : 'Uploaded from the verified backup after the card is done, so the card can come out first'
+          }
+          onClick={() => onRelay(true)}
+        >
+          {local ? 'From backup' : 'Upload from backup'}
         </button>
       </div>
+      {/* Its own speed, for copies from the backup: a shared NAS, a slow network drive. */}
+      {relay && onLimit ? (
+        <label className="drive-limit" title="The most copies from the backup may write to this drive. Copies straight from the card are never limited.">
+          <span className="faint small">Speed</span>
+          <select className="select" aria-label={`Speed limit for ${name}`} value={limit ?? ''} onChange={(event) => onLimit(event.target.value ? Number(event.target.value) : null)}>
+            {(limit && !UPLOAD_LIMITS.includes(limit) ? [...UPLOAD_LIMITS, limit].sort((a, b) => (a ?? 0) - (b ?? 0)) : UPLOAD_LIMITS).map((option) => (
+              <option key={option ?? 'none'} value={option ?? ''}>
+                {limitWord(option)}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {extra}
       {role || onRemove ? (
         <div className="offload-tile-foot">

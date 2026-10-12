@@ -16,13 +16,16 @@ import { listSource, type FileOutcome, type SourceFile } from './transfer';
  * - the copies the production's rule relies on (two local copies, or every
  *   destination) all verified at ingest, and are still there now, at the
  *   same size;
- * - under the two-local rule there are at least two of them.
+ * - under the two-local rule there are at least two of them (a drive on the
+ *   cart copied from the backup, a cascade, counts; an upload does not).
  */
 
 export interface ClearLeg {
   name: string;
   targetDir: string;
   relay: boolean;
+  /** A drive on the cart: copied from the backup (a cascade), it still counts as a local copy. */
+  local?: boolean;
   outcomes: Map<string, FileOutcome>;
 }
 
@@ -32,7 +35,8 @@ const plural = (n: number, word: string) => `${n.toLocaleString('en-US')} ${word
 
 export const checkClear = async (input: { card: string; sourceRoot: string; files: SourceFile[]; legs: ClearLeg[]; rule: FormatRule }): Promise<ClearCheck> => {
   const problems: string[] = [];
-  const counted = input.rule === 'every' ? input.legs : input.legs.filter((leg) => !leg.relay);
+  // Local copies: straight from the card, or cascaded from the backup to another drive on the cart (checked against the card's checksums).
+  const counted = input.rule === 'every' ? input.legs : input.legs.filter((leg) => !leg.relay || leg.local);
   if (input.rule === 'two-local' && counted.length < 2) problems.push('Only one local copy. This production needs two verified local copies before a card is cleared.');
 
   // The card: exactly what was copied, nothing new, nothing changed.

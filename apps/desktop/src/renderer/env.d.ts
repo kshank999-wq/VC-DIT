@@ -60,6 +60,8 @@ interface MediaApi {
   pauseRelays: (paused: boolean) => Promise<void>;
   /** Most bytes a second uploads may write; null for no limit. */
   setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
+  /** A destination's own speed limit for copies from the backup (bytes a second), or null for none. */
+  setDriveLimit: (id: string, bytesPerSecond: number | null) => Promise<{ ok: boolean; reason?: string }>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
   /** Eject a card or drive, as Finder or Explorer would; ok once it has really gone. */

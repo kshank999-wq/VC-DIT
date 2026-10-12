@@ -63,6 +63,10 @@ export interface Volume {
   mountPath?: string;
   /** As a destination: fed from the backup rather than the card (an upload). */
   relay?: boolean;
+  /** On the cart, not the network: from the backup it is a cascade copy. */
+  local?: boolean;
+  /** Its own speed limit for copies from the backup, bytes a second. */
+  limit?: number | null;
   /** What the system says the device is: its model, bus, solid state, RAID. */
   device?: DeviceInfo;
 }
@@ -76,6 +80,8 @@ export interface IngestDestination {
   selected: boolean;
   /** Fed from the backup rather than the card (an upload). */
   relay?: boolean;
+  local?: boolean;
+  limit?: number | null;
   /** Where it is (from the media engine), for the system's own icon. */
   path?: string;
 }
@@ -94,6 +100,8 @@ export interface TransferLeg {
   targetDir?: string;
   /** An upload fed from a backup (relayFrom, by name) rather than the card; why it is not moving; its own speed and file. */
   relay?: boolean;
+  /** Fed from a backup to a drive on the cart: a cascade copy, not an upload. */
+  local?: boolean;
   relayFrom?: string | null;
   waiting?: string | null;
   bytesPerSecond?: number;

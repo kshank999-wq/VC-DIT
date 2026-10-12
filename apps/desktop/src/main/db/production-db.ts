@@ -88,6 +88,8 @@ export interface TransferRecord {
     /** Fed from a backup (relayFrom, a leg id) rather than the card. */
     relay?: boolean;
     relayFrom?: string | null;
+    /** A drive on the cart rather than the network: fed from the backup, it is a cascade copy, not an upload. */
+    local?: boolean;
   }[];
 }
 
@@ -506,6 +508,9 @@ MIGRATIONS.push(`
 
 // An ASC CDL look keeps its numbers (slope, offset, power, saturation) for editorial, beside the .cube baked from them.
 MIGRATIONS.push(`alter table lut add column cdl text;`);
+
+// Cascade copies (spec §4.3.1): whether a destination is a drive on the cart, so a copy to it from the backup runs beside the uploads.
+MIGRATIONS.push(`alter table transfer_destination add column local integer;`);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
@@ -1063,7 +1068,7 @@ export class ProductionDb {
       ]);
       for (const [position, destination] of record.destinations.entries()) {
         this.run(
-          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error, relay, relay_from) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error, relay, relay_from, local) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             record.day,
             record.id,
@@ -1076,6 +1081,7 @@ export class ProductionDb {
             destination.error,
             destination.relay ? 1 : 0,
             destination.relayFrom ?? null,
+            destination.local === undefined ? null : destination.local ? 1 : 0,
           ],
         );
       }
@@ -1132,6 +1138,7 @@ export class ProductionDb {
         outcomes: {} as Record<string, FileOutcome>,
         relay: Number(leg['relay']) === 1,
         relayFrom: (leg['relay_from'] as string | null) ?? null,
+        ...(leg['local'] === null || leg['local'] === undefined ? {} : { local: Number(leg['local']) === 1 }),
       }));
       const clips = this.rows<Record<string, SqlValue>>('select * from clip where day = ? and transfer_id = ? order by id', [day, id]);
       const byLeg = new Map(destinations.map((destination) => [destination.id, destination]));

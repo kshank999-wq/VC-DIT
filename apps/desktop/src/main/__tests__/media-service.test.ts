@@ -393,6 +393,68 @@ describe('uploads relayed from the backup', () => {
   });
 });
 
+describe('cascade copies: card → RAID → shuttle', () => {
+  const cloudDir = () => join(base, 'Dropbox', 'Dailies');
+  const addCloud = async () => {
+    await mkdir(cloudDir(), { recursive: true });
+    await service.addFolder(cloudDir());
+    return `folder:${cloudDir()}`;
+  };
+
+  it('copies a shuttle from the verified RAID, in its own lane: not paused with uploads, not held to their limit', async () => {
+    const cloud = await addCloud();
+    expect(await service.setRelay(mounts[2]!, true)).toEqual({ ok: true });
+    const shuttle = service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!;
+    expect(shuttle).toMatchObject({ relay: true, local: true, limit: null });
+    expect(service.state().folders[0]).toMatchObject({ relay: true, local: false });
+    await service.setRelayLimit(1_000_000);
+    await service.pauseRelays(true);
+
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    const job = service.state().jobs[0]!;
+    // The card went to the RAID alone; the shuttle was copied from the RAID while uploads stayed paused.
+    expect(plans.map((plan) => [plan.sourceRoot === mounts[0] ? 'card' : 'RAID', plan.legs.map((leg) => leg.name), plan.limit])).toEqual([
+      ['card', ['RAID'], null],
+      ['RAID', ['SHUTTLE'], null],
+    ]);
+    expect(job.legs.map((leg) => [leg.name, leg.relay, leg.local, leg.relayFrom, leg.copyPct, leg.verifyPct, leg.waiting])).toEqual([
+      ['RAID', false, true, null, 100, 100, null],
+      ['SHUTTLE', true, true, 'RAID', 100, 100, null],
+      ['Dailies', true, false, 'RAID', 0, 0, 'Paused'],
+    ]);
+    // Checked against the card's own checksums, so it is a second local copy: the card can be cleared.
+    expect(plans[1]!.files.every((file) => typeof file.expected === 'string')).toBe(true);
+    expect(await service.checkClear('A015', 'two-local')).toMatchObject({ ok: true, copies: [{ name: 'RAID', ok: true }, { name: 'SHUTTLE', ok: true }] });
+    expect(records.at(-1)!.destinations.map((destination) => destination.local)).toEqual([true, true, false]);
+
+    await service.pauseRelays(false);
+    await settle();
+    expect(plans[2]).toMatchObject({ limit: 1_000_000 });
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ copyPct: 100, verifyPct: 100 });
+  });
+
+  it('holds a drive to its own speed limit, and an upload to the lower of its own and the upload limit', async () => {
+    const cloud = await addCloud();
+    await service.setRelay(mounts[2]!, true);
+    expect(await service.setDriveLimit(mounts[2]!, 25_000_000)).toEqual({ ok: true });
+    expect(await service.setDriveLimit(cloud, 500_000)).toEqual({ ok: true });
+    expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.limit).toBe(25_000_000);
+    expect(service.state().folders[0]!.limit).toBe(500_000);
+    await service.setRelayLimit(1_000_000);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    expect(plans.slice(1).map((plan) => [plan.legs[0]!.name, plan.limit]).sort()).toEqual([
+      ['Dailies', 500_000],
+      ['SHUTTLE', 25_000_000],
+    ]);
+    // Taken off: no limit; a drive that is gone is refused.
+    await service.setDriveLimit(mounts[2]!, null);
+    expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.limit).toBeNull();
+    expect(await service.setDriveLimit('/Volumes/gone', 1_000_000)).toEqual({ ok: false, reason: 'That destination is no longer available.' });
+  });
+});
+
 describe('clearing a card for camera', () => {
   const onCard = () => readdir(join(mounts[0]!, 'A015R1AB')).catch(() => null);
   const ingestBoth = async () => {

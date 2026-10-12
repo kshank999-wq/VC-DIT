@@ -48,6 +48,7 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
   ipcMain.handle('vcdit:media-set-relay', (_e, id: unknown, relay: unknown) => service.setRelay(String(id), relay === true));
   ipcMain.handle('vcdit:media-pause-relays', (_e, paused: unknown) => service.pauseRelays(paused === true));
   ipcMain.handle('vcdit:media-relay-limit', (_e, bytesPerSecond: unknown) => service.setRelayLimit(typeof bytesPerSecond === 'number' ? bytesPerSecond : null));
+  ipcMain.handle('vcdit:media-drive-limit', (_e, id: unknown, bytesPerSecond: unknown) => service.setDriveLimit(String(id), typeof bytesPerSecond === 'number' ? bytesPerSecond : null));
   // The system's own picture of a drive or folder, so they look as they do in Explorer or Finder.
   const icons = new Map<string, string | null>();
   ipcMain.handle('vcdit:media-icon', async (_e, path: unknown) => {

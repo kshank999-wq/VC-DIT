@@ -273,6 +273,8 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       ingested: volume.ingested,
       mountPath: volume.mountPath,
       relay: volume.relay,
+      local: volume.local ?? true,
+      limit: volume.limit ?? null,
       device: volume.device,
     };
   });
@@ -286,6 +288,8 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       fillPct: pct(folder.totalBytes - folder.freeBytes, folder.totalBytes),
       selected: folder.online && (before?.selected ?? true),
       relay: folder.relay,
+      local: folder.local ?? false,
+      limit: folder.limit ?? null,
       path: folder.path,
     };
   });
@@ -309,6 +313,7 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       error: leg.error,
       targetDir: leg.targetDir,
       relay: leg.relay,
+      local: leg.local ?? false,
       relayFrom: leg.relayFrom,
       waiting: leg.waiting,
       bytesPerSecond: leg.bytesPerSecond,

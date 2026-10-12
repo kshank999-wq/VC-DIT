@@ -21,7 +21,7 @@ export function UploadControls() {
   const limits = state.relayLimit && !UPLOAD_LIMITS.includes(state.relayLimit) ? [...UPLOAD_LIMITS, state.relayLimit].sort((a, b) => (a ?? 0) - (b ?? 0)) : UPLOAD_LIMITS;
   return (
     <span className="upload-controls">
-      <label className="upload-limit" title="The most all uploads together may send. Card copies are never limited.">
+      <label className="upload-limit" title="The most all uploads together may send. Card copies, and copies from the backup to drives on the cart, are never held to it.">
         <span className="faint small">Upload speed</span>
         <select
           className="select"

@@ -110,6 +110,7 @@ contextBridge.exposeInMainWorld('vcdit', {
     setRelay: (id: string, relay: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:media-set-relay', id, relay),
     pauseRelays: (paused: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:media-pause-relays', paused),
     setRelayLimit: (bytesPerSecond: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:media-relay-limit', bytesPerSecond),
+    setDriveLimit: (id: string, bytesPerSecond: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:media-drive-limit', id, bytesPerSecond),
     icon: (path: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-icon', path),
     eject: (volumeId: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-eject', volumeId),
     checkClear: (jobId: string, rule: string): Promise<unknown> => ipcRenderer.invoke('vcdit:media-check-clear', jobId, rule),

@@ -33,6 +33,10 @@ export interface MediaVolume {
   ingested: boolean;
   /** As a destination: fed from the main backup once the card has verified there, not from the card (a slow cloud or network drive). */
   relay: boolean;
+  /** On the cart, not the network: fed from the backup, it is a cascade copy rather than an upload. */
+  local?: boolean;
+  /** Its own speed limit for copies from the backup, bytes a second; null for none. */
+  limit?: number | null;
   /** What the device itself is, from the system: its model, how it is connected, solid state or spinning. */
   device: DeviceInfo;
 }
@@ -59,6 +63,8 @@ export interface FolderDestination {
   online: boolean;
   /** Fed from the main backup rather than the card (see MediaVolume.relay). */
   relay: boolean;
+  local?: boolean;
+  limit?: number | null;
 }
 
 export interface MediaState {
@@ -98,6 +104,8 @@ export interface LegSnapshot {
   targetDir: string;
   /** Fed from a backup rather than the card. */
   relay: boolean;
+  /** A drive on the cart: fed from a backup, a cascade copy rather than an upload. */
+  local?: boolean;
   /** The backup it is (or will be) read from, by name, once known. */
   relayFrom: string | null;
   /** Why a relay is not moving now: "Paused", "Waiting for RAID: plug it back in to carry on.". */

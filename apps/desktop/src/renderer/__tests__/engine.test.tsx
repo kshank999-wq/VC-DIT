@@ -135,6 +135,7 @@ beforeEach(() => {
     setRelay: vi.fn(async () => ({ ok: true })),
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
+    setDriveLimit: vi.fn(async () => ({ ok: true })),
     checkClear: vi.fn(async () => CHECK),
     eject: vi.fn(async () => ({ ok: true })),
     clearCard: vi.fn(async () => ({ ok: true, removed: 1284, check: CHECK })),
@@ -210,7 +211,8 @@ describe('Intake on the media engine', () => {
     const out = screen.getByRole('region', { name: 'Destinations' });
     expect(within(out).getByText('LucidLink')).toBeTruthy();
     expect(screen.getByText(/1 destination \+ 1 upload/)).toBeTruthy();
-    fireEvent.click(within(within(out).getByRole('group', { name: 'How RAID is fed' })).getByRole('button', { name: 'Upload from backup' }));
+    // The RAID is on the cart: from the backup it would be a copy, not an upload.
+    fireEvent.click(within(within(out).getByRole('group', { name: 'How RAID is fed' })).getByRole('button', { name: 'From backup' }));
     expect(media.setRelay).toHaveBeenCalledWith(raid.id, true);
     // Everything uploading, nothing from the card: it says so instead of starting.
     expect((screen.getByRole('button', { name: /Start verified ingest/ }) as HTMLButtonElement).disabled || screen.queryByText(/copies straight from the card/)).toBeTruthy();

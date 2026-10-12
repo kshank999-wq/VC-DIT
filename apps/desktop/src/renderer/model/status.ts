@@ -54,7 +54,7 @@ export const legWord = (leg: TransferLeg): string => {
     case 'checking':
       return `Checking ${Math.floor(leg.verifyPct)}%`;
     case 'copying':
-      return `${leg.relay ? 'Uploading' : 'Copying'} ${Math.floor(leg.copyPct)}%`;
+      return `${leg.relay && !leg.local ? 'Uploading' : 'Copying'} ${Math.floor(leg.copyPct)}%`;
     default:
       return leg.waiting ?? 'Waiting';
   }

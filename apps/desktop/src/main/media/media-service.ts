@@ -82,6 +82,8 @@ interface Settings {
   relaysPaused: boolean;
   /** Most bytes a second all uploads may write, or null for no limit. */
   relayLimit: number | null;
+  /** Most bytes a second a copy from the backup may write to one drive or folder, by volume (name and size) or folder id. */
+  limits?: Record<string, number>;
 }
 
 interface Leg {
@@ -94,6 +96,8 @@ interface Leg {
   /** Fed from a backup (the leg id in relayFrom, once picked) rather than the card. */
   relay: boolean;
   relayFrom: string | null;
+  /** A drive on the cart (not a network share or cloud folder): from the backup it is a cascade copy, not an upload. */
+  local: boolean;
   /** Why a relay is not moving; when it may try again after its destination went away. */
   waiting: string | null;
   retryAt: number;
@@ -133,9 +137,14 @@ interface Work {
   only: Set<string> | null;
   /** A relay: the backup leg it reads from. */
   from?: string;
+  /** A relay: to drives on the cart (a cascade) or to the network (an upload). Each lane runs one at a time, side by side. */
+  lane?: Lane;
   /** Why a running relay was stopped: paused (its files are still to upload) or cancelled (they fail, and can be retried). */
   stopping?: 'pause' | 'cancel';
 }
+
+type Lane = 'local' | 'remote';
+const LANES: Lane[] = ['local', 'remote'];
 
 interface VolumeEntry {
   volume: MediaVolume;
@@ -149,12 +158,13 @@ const UPLOAD_STOPPED = 'Upload stopped. Retry to carry on from the backup.';
 const RELAY_RETRY_MS = 60_000;
 const backupLost = (name: string) => `${name} was disconnected during the upload.`;
 
-const freshLeg = (relay: boolean) => ({
+const freshLeg = (relay: boolean, local: boolean) => ({
   live: null,
   outcomes: new Map<string, FileOutcome>(),
   error: null,
   relay,
   relayFrom: null,
+  local,
   waiting: null,
   retryAt: 0,
   bytesPerSecond: 0,
@@ -184,7 +194,8 @@ export class MediaService {
   private readonly queue: Work[] = [];
   private current: { work: Work; worker: TransferRunner } | null = null;
   private readonly relayQueue: Work[] = [];
-  private relayCurrent: { work: Work; worker: TransferRunner } | null = null;
+  /** The from-backup copy running in each lane. */
+  private readonly relayRunning = new Map<Lane, { work: Work; worker: TransferRunner }>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastSent = '';
 
@@ -215,9 +226,9 @@ export class MediaService {
     this.queue.length = 0;
     this.relayQueue.length = 0;
     this.current?.worker.postMessage('stop');
-    if (this.relayCurrent) {
-      this.relayCurrent.work.stopping = 'pause';
-      this.relayCurrent.worker.postMessage('stop');
+    for (const running of this.relayRunning.values()) {
+      running.work.stopping = 'pause';
+      running.worker.postMessage('stop');
     }
   }
 
@@ -261,17 +272,17 @@ export class MediaService {
       work.legIds = work.legIds.filter((id) => !ids.has(id));
       if (work.legIds.length === 0) this.relayQueue.splice(this.relayQueue.indexOf(work), 1);
     }
-    const running = this.relayCurrent?.work.job === job && this.relayCurrent.work.legIds.some((id) => ids.has(id));
+    const running = [...this.relayRunning.values()].filter((run) => run.work.job === job && run.work.legIds.some((id) => ids.has(id)));
     for (const leg of legs) {
-      if (running && this.relayCurrent!.work.legIds.includes(leg.plan.id)) continue;
+      if (running.some((run) => run.work.legIds.includes(leg.plan.id))) continue;
       const left = job.files.filter((file) => !leg.outcomes.has(file.path));
       for (const file of left) leg.outcomes.set(file.path, { state: 'failed', error: UPLOAD_STOPPED });
       leg.waiting = null;
       if (left.length) leg.error = UPLOAD_STOPPED;
     }
-    if (running) {
-      this.relayCurrent!.work.stopping = 'cancel';
-      this.relayCurrent!.worker.postMessage('stop');
+    for (const run of running) {
+      run.work.stopping = 'cancel';
+      run.worker.postMessage('stop');
     }
     this.record(job);
     this.emit(true);
@@ -282,20 +293,68 @@ export class MediaService {
     const limit = bytesPerSecond && Number.isFinite(bytesPerSecond) && bytesPerSecond > 0 ? Math.max(100_000, Math.round(bytesPerSecond)) : null;
     this.settings.relayLimit = limit;
     await this.saveSettings();
-    this.relayCurrent?.worker.postMessage({ type: 'limit', bytesPerSecond: limit });
+    this.retune();
     this.emit(true);
+  }
+
+  /**
+   * Limit how fast copies from the backup write to one drive or folder (bytes
+   * a second), or null for no limit: a slow NAS, a shared network. A copy to
+   * it that is running changes speed at once.
+   */
+  async setDriveLimit(id: string, bytesPerSecond: number | null): Promise<{ ok: boolean; reason?: string }> {
+    const key = this.driveKey(id);
+    if (!key) return { ok: false, reason: 'That destination is no longer available.' };
+    const limits = { ...(this.settings.limits ?? {}) };
+    if (bytesPerSecond && Number.isFinite(bytesPerSecond) && bytesPerSecond > 0) limits[key] = Math.max(100_000, Math.round(bytesPerSecond));
+    else delete limits[key];
+    this.settings.limits = limits;
+    await this.saveSettings();
+    this.retune();
+    this.emit(true);
+    return { ok: true };
+  }
+
+  /** A destination's own speed limit, or null. */
+  limitFor(id: string): number | null {
+    const key = this.driveKey(id);
+    return (key && this.settings.limits?.[key]) || null;
+  }
+
+  /** The key a destination's choices are remembered by: a volume by name and size (it keeps them across mounts), a folder by id. */
+  private driveKey(id: string): string | null {
+    const volume = this.volumes.get(id)?.volume;
+    if (volume) return roleKey(volume.name, volume.totalBytes);
+    return this.settings.folders.some((folder) => folder.id === id) ? id : null;
+  }
+
+  /** The speed a from-backup copy may go: its drives' own limits, and the upload limit for uploads; the lowest wins. */
+  private limitOf(work: Work): number | null {
+    const limits = work.job.legs
+      .filter((leg) => work.legIds.includes(leg.plan.id))
+      .map((leg) => this.limitFor(leg.plan.id))
+      .concat(work.lane === 'remote' ? [this.settings.relayLimit] : [])
+      .filter((limit): limit is number => limit !== null);
+    return limits.length ? Math.min(...limits) : null;
+  }
+
+  /** Tell each running from-backup copy its speed now. */
+  private retune(): void {
+    for (const run of this.relayRunning.values()) run.worker.postMessage({ type: 'limit', bytesPerSecond: this.limitOf(run.work) });
   }
 
   /** Pause or resume every upload. Paused, a running upload stops; its files are still to upload, from the last verified one. */
   async pauseRelays(paused: boolean): Promise<void> {
     this.settings.relaysPaused = paused;
     await this.saveSettings();
-    if (paused && this.relayCurrent) {
-      this.relayCurrent.work.stopping = 'pause';
-      this.relayCurrent.worker.postMessage('stop');
+    // Uploads only: a cascade copy to a drive on the cart is not network traffic.
+    const upload = this.relayRunning.get('remote');
+    if (paused && upload) {
+      upload.work.stopping = 'pause';
+      upload.worker.postMessage('stop');
     }
     if (!paused) {
-      for (const job of this.jobs) for (const leg of job.legs) if (leg.relay) leg.retryAt = 0;
+      for (const job of this.jobs) for (const leg of job.legs) if (leg.relay && !leg.local) leg.retryAt = 0;
       this.nextRelay();
     }
     this.emit(true);
@@ -309,7 +368,7 @@ export class MediaService {
 
   /** Something is copying or uploading now, or a card is waiting to copy. */
   busy(): boolean {
-    return this.cardBusy() || this.relayCurrent !== null;
+    return this.cardBusy() || this.relayRunning.size > 0;
   }
 
   /** A card is copying or checking, or waiting to: quitting now would leave it not safe to format. */
@@ -324,7 +383,9 @@ export class MediaService {
 
   state(): MediaState {
     return {
-      volumes: [...this.volumes.values()].map((entry) => ({ ...entry.volume, relay: this.relayFor(entry.volume.id) })).sort((a, b) => a.name.localeCompare(b.name)),
+      volumes: [...this.volumes.values()]
+        .map((entry) => ({ ...entry.volume, relay: this.relayFor(entry.volume.id), local: this.isLocal(entry.volume.id), limit: this.limitFor(entry.volume.id) }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
       folders: this.folders(),
       jobs: this.jobs.map((job) => this.snapshot(job)),
       relaysPaused: this.settings.relaysPaused,
@@ -405,7 +466,15 @@ export class MediaService {
   private folders(): FolderDestination[] {
     return this.settings.folders.map((folder) => {
       const capacity = this.folderCapacity.get(folder.id) ?? null;
-      return { ...folder, totalBytes: capacity?.totalBytes ?? 0, freeBytes: capacity?.freeBytes ?? 0, online: capacity !== null, relay: this.relayFor(folder.id) };
+      return {
+        ...folder,
+        totalBytes: capacity?.totalBytes ?? 0,
+        freeBytes: capacity?.freeBytes ?? 0,
+        online: capacity !== null,
+        relay: this.relayFor(folder.id),
+        local: this.isLocal(folder.id),
+        limit: this.limitFor(folder.id),
+      };
     });
   }
 
@@ -447,7 +516,7 @@ export class MediaService {
 
     /** Volumes a queued or running transfer reads from or writes to. */
   private inUse(volumeId: string): boolean {
-    const active = [...(this.current ? [this.current.work] : []), ...(this.relayCurrent ? [this.relayCurrent.work] : []), ...this.queue, ...this.relayQueue];
+    const active = [...(this.current ? [this.current.work] : []), ...[...this.relayRunning.values()].map((run) => run.work), ...this.queue, ...this.relayQueue];
     // Only the drives a piece of work touches: a card copy reads the card and writes its local copies; an
     // upload reads one backup and writes its uploads. A shuttle is free to go while the RAID feeds the cloud.
     return active.some((work) => {
@@ -465,6 +534,14 @@ export class MediaService {
     await this.saveSettings();
     this.emit();
     return { ok: true };
+  }
+
+  /** A drive or folder on the cart, not on the network or in the cloud. */
+  isLocal(id: string): boolean {
+    const volume = this.volumes.get(id)?.volume;
+    if (volume) return !isRemote(volume.kind, volume.filesystem, volume.name, volume.device?.bus);
+    const folder = this.settings.folders.find((candidate) => candidate.id === id);
+    return folder ? !isRemote(folder.path, folder.name) : true;
   }
 
   /** Is this destination fed from the backup (true) or straight from the card? The operator's choice, else by what it is. */
@@ -525,17 +602,17 @@ export class MediaService {
     // Every card mounted now, picked or not, is off limits as a destination.
     const allCards = [...this.volumes.values()].filter((entry) => SOURCE_ROLES.includes(entry.volume.role)).map((entry) => entry.volume.mountPath);
 
-    const destinations: { id: string; name: string; root: string; freeBytes: number; relay: boolean }[] = [];
+    const destinations: { id: string; name: string; root: string; freeBytes: number; relay: boolean; local: boolean }[] = [];
     for (const id of request.destinations) {
       const volume = this.volumes.get(id)?.volume;
       const folder = this.settings.folders.find((candidate) => candidate.id === id);
       if (volume) {
         if (!DESTINATION_ROLES.includes(volume.role)) return { ok: false, reason: `${volume.name} is not marked as a destination, shuttle or archive.` };
-        destinations.push({ id, name: volume.name, root: volume.mountPath, freeBytes: volume.freeBytes, relay: this.relayFor(id) });
+        destinations.push({ id, name: volume.name, root: volume.mountPath, freeBytes: volume.freeBytes, relay: this.relayFor(id), local: this.isLocal(id) });
       } else if (folder) {
         const capacity = await capacityOf(folder.path);
         if (!capacity) return { ok: false, reason: `${folder.name} cannot be reached.` };
-        destinations.push({ id, name: folder.name, root: folder.path, freeBytes: capacity.freeBytes, relay: this.relayFor(id) });
+        destinations.push({ id, name: folder.name, root: folder.path, freeBytes: capacity.freeBytes, relay: this.relayFor(id), local: this.isLocal(id) });
       } else return { ok: false, reason: 'A destination you picked is no longer available.' };
     }
     for (const destination of destinations) {
@@ -595,7 +672,7 @@ export class MediaService {
         legs: destinations.map((destination) => ({
           plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: cardFolder(destination.root, request, sound, card.name) },
           reportsDir: reportsFolder(destination.root, request),
-          ...freshLeg(destination.relay),
+          ...freshLeg(destination.relay, destination.local),
         })),
         bytesPerSecond: 0,
         etaSeconds: null,
@@ -675,7 +752,7 @@ export class MediaService {
     if (legs.length === 0 || this.current?.work.job === job || this.queue.some((work) => work.job === job)) return;
     for (const leg of legs) {
       if (leg.live || leg.error || this.relayQueue.some((work) => work.job === job && work.legIds.includes(leg.plan.id))) continue;
-      if (this.relayCurrent?.work.job === job && this.relayCurrent.work.legIds.includes(leg.plan.id)) continue;
+      if ([...this.relayRunning.values()].some((run) => run.work.job === job && run.work.legIds.includes(leg.plan.id))) continue;
       const pending = job.files.filter((file) => !leg.outcomes.has(file.path));
       if (pending.length === 0) continue;
       const backup = this.backupFor(job);
@@ -691,26 +768,39 @@ export class MediaService {
       }
       leg.relayFrom = backup.plan.id;
       if (only.size === 0) continue;
-      // Two uploads of the same files from the same backup read it once.
+      const lane: Lane = leg.local ? 'local' : 'remote';
+      // Two copies of the same files from the same backup, in the same lane at the same speed, read it once.
       const same = this.relayQueue.find(
-        (work) => work.job === job && work.from === backup.plan.id && work.only!.size === only.size && [...only].every((path) => work.only!.has(path)),
+        (work) =>
+          work.job === job &&
+          work.from === backup.plan.id &&
+          work.lane === lane &&
+          work.legIds.every((id) => this.limitFor(id) === this.limitFor(leg.plan.id)) &&
+          work.only!.size === only.size &&
+          [...only].every((path) => work.only!.has(path)),
       );
       if (same) same.legIds.push(leg.plan.id);
-      else this.relayQueue.push({ job, legIds: [leg.plan.id], only, from: backup.plan.id });
+      else this.relayQueue.push({ job, legIds: [leg.plan.id], only, from: backup.plan.id, lane });
     }
     this.record(job);
     this.nextRelay();
   }
 
+  /** Start the next from-backup copy in each lane that is free: cascades to drives on the cart and uploads run side by side. */
   private nextRelay(): void {
-    if (this.relayCurrent) return;
+    for (const lane of LANES) this.nextInLane(lane);
+  }
+
+  private nextInLane(lane: Lane): void {
+    if (this.relayRunning.has(lane)) return;
     for (const work of this.relayQueue) {
+      if ((work.lane ?? 'remote') !== lane) continue;
       const legs = work.job.legs.filter((leg) => work.legIds.includes(leg.plan.id));
       const backup = work.job.legs.find((leg) => leg.plan.id === work.from)!;
       const say = (why: string | null) => {
         for (const leg of legs) leg.waiting = why;
       };
-      if (this.settings.relaysPaused) {
+      if (lane === 'remote' && this.settings.relaysPaused) {
         say('Paused');
         continue;
       }
@@ -725,7 +815,7 @@ export class MediaService {
       }
       say(null);
       this.relayQueue.splice(this.relayQueue.indexOf(work), 1);
-      this.relayCurrent = this.launch(work, (job) => this.relayEnded(job, work));
+      this.relayRunning.set(lane, this.launch(work, (job) => this.relayEnded(job, work)));
       return;
     }
   }
@@ -737,7 +827,7 @@ export class MediaService {
    * that failed (a checksum that did not match) stays failed.
    */
   private relayEnded(job: Job, work: Work): void {
-    this.relayCurrent = null;
+    this.relayRunning.delete(work.lane ?? 'remote');
     const backup = job.legs.find((leg) => leg.plan.id === work.from);
     const lost = backup ? backupLost(backup.plan.name) : '';
     for (const leg of job.legs.filter((candidate) => work.legIds.includes(candidate.plan.id))) {
@@ -783,8 +873,8 @@ export class MediaService {
       allLegs: job.legs.map((leg) => leg.plan),
       method: job.checksum,
       sourceLost: backup ? backupLost(backup.plan.name) : undefined,
-      // Uploads go at the speed set for them, in small reads so the limit is smooth.
-      limit: relay ? this.settings.relayLimit : null,
+      // From the backup: at the speed set for the drives (and for uploads), in small reads so the limit is smooth.
+      limit: relay ? this.limitOf(work) : null,
       chunkBytes: relay ? 1024 * 1024 : undefined,
       contexts,
     };
@@ -880,6 +970,7 @@ export class MediaService {
           outcomes: Object.fromEntries(leg.outcomes),
           relay: leg.relay,
           relayFrom: leg.relayFrom,
+          local: leg.local,
         })),
       });
     } catch {
@@ -917,7 +1008,7 @@ export class MediaService {
           const relay = destination.relay === true;
           if (interrupted && !relay) for (const file of record.files) if (!outcomes.has(file.path)) outcomes.set(file.path, { state: 'failed', error: reason });
           return {
-            ...freshLeg(relay),
+            ...freshLeg(relay, destination.local ?? !isRemote(destination.root, destination.name)),
             plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: destination.targetDir },
             reportsDir: destination.reportsDir,
             outcomes,
@@ -958,7 +1049,7 @@ export class MediaService {
       card: job.card,
       sourceRoot: job.sourceRoot,
       files: job.files,
-      legs: job.legs.map((leg) => ({ name: leg.plan.name, targetDir: leg.plan.targetDir, relay: leg.relay, outcomes: leg.outcomes })),
+      legs: job.legs.map((leg) => ({ name: leg.plan.name, targetDir: leg.plan.targetDir, relay: leg.relay, local: leg.local, outcomes: leg.outcomes })),
       rule,
     };
   }
@@ -1122,6 +1213,7 @@ export class MediaService {
       name: leg.plan.name,
       targetDir: leg.plan.targetDir,
       relay: leg.relay,
+      local: leg.local,
       relayFrom: job.legs.find((other) => other.plan.id === leg.relayFrom)?.plan.name ?? null,
       waiting: null as string | null,
       bytesPerSecond: leg.bytesPerSecond,
