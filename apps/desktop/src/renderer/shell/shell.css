@@ -135,3 +135,4 @@ body.resizing { cursor: col-resize; user-select: none; }
 .eject-all { width: 560px; }
 .eject-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 50vh; overflow: auto; }
 .eject-list li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+.files-assign { justify-self: start; }

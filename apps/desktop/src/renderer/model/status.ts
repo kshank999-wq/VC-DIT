@@ -13,7 +13,7 @@ import type { ScreenId, Status, StepId, TransferJob, TransferLeg } from './types
 export const STEPS: { id: StepId; number: number; name: string; screen: ScreenId; screens: ScreenId[] }[] = [
   { id: 'intake', number: 1, name: 'Intake', screen: 'intake', screens: ['intake'] },
   { id: 'verify', number: 2, name: 'Verify', screen: 'verify', screens: ['verify'] },
-  { id: 'organize', number: 3, name: 'Organize', screen: 'scenes', screens: ['scenes', 'match'] },
+  { id: 'organize', number: 3, name: 'Organize', screen: 'scenes', screens: ['scenes', 'takes', 'match'] },
   { id: 'vfx', number: 4, name: 'VFX', screen: 'vfx', screens: ['vfx'] },
   { id: 'sync', number: 5, name: 'Audio Sync', screen: 'sync', screens: ['sync'] },
   { id: 'output', number: 6, name: 'Output', screen: 'dailies', screens: ['looks', 'dailies', 'delivery'] },

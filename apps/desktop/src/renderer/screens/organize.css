@@ -159,3 +159,27 @@
 .org-thumb-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 4px; background: #000; }
 .org-stage-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; border-radius: 2px; background: #000; }
 .org-burn-name.on-picture { left: 10px; top: 10px; transform: none; }
+
+/* Assign takes */
+.takes-counts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.takes-counts button { border: 1px solid var(--border); background: var(--card); color: var(--muted); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: 600 12px 'IBM Plex Sans'; }
+.takes-counts button[aria-pressed='true'] { background: var(--selected); color: var(--ink); }
+.takes-source { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px; font-weight: 600; color: var(--tone); background: color-mix(in oklch, var(--tone) 14%, var(--card)); }
+.takes-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(360px, 1fr); gap: 14px; align-items: start; }
+.takes-clips, .takes-report { padding: 14px; display: grid; gap: 10px; }
+.takes-bulk { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); position: sticky; top: 0; z-index: 1; }
+.takes-bulk label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.takes-bulk .input { width: 64px; height: 30px; }
+.takes-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.takes-table th { text-align: left; font: 600 11px 'IBM Plex Sans'; color: var(--muted); padding: 6px; border-bottom: 1px solid var(--border); }
+.takes-table td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.takes-table tr.is-conflict td { background: color-mix(in oklch, var(--s-needs) 9%, transparent); }
+.takes-table tr.is-unplaced td:nth-child(3) { color: var(--faint); }
+.takes-claim { display: inline-block; margin-right: 10px; }
+.takes-h { margin: 0; font: 600 15px 'IBM Plex Sans'; }
+.takes-report-table .input { height: 28px; width: 100%; min-width: 0; padding: 0 6px; }
+.takes-report-table td:nth-child(1) { width: 78px; }
+.takes-report-table td:nth-child(2), .takes-report-table td:nth-child(3), .takes-report-table td:nth-child(4) { width: 52px; }
+.takes-run { width: 64px; height: 28px; }
+.takes-problems { border: 1px solid var(--s-needs); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; }
+.takes-problems p { margin: 0; }

@@ -57,7 +57,7 @@ export function MatchReview() {
           <div className="card match-detail">
             <div className="match-top">
               <div>
-                <span className="label">Script log entry</span>
+                <span className="label">{match.kind === 'sources' ? 'What each source says' : 'Script log entry'}</span>
                 {match.fields.map(([label, value]) => (
                   <div key={label} className="org-log-field">
                     <span className="muted">{label}</span>
@@ -72,7 +72,7 @@ export function MatchReview() {
             </div>
 
             <div className="org-cands" role="radiogroup" aria-label="Candidate media">
-              <span className="label">Candidate media</span>
+              <span className="label">{match.kind === 'sources' ? 'Where it goes' : 'Candidate media'}</span>
               {match.candidates.map((candidate, index) => {
                 const picked = match.resolution === null ? index === match.picked : match.resolution.kind === 'matched' && match.resolution.clip === candidate.clip;
                 const status = confidenceStatus(candidate.confidence);
@@ -87,7 +87,7 @@ export function MatchReview() {
                       onChange={() => dispatch({ type: 'pickCandidate', id: match.id, index })}
                       aria-label={`${candidate.clip}, ${candidate.confidence}% confidence`}
                     />
-                    <Frame label="frame" style={{ height: 56, borderRadius: 4 }} />
+                    {match.kind === 'sources' ? <span /> : <Frame label="frame" style={{ height: 56, borderRadius: 4 }} />}
                     <span className="stack" style={{ gap: 4 }}>
                       <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>
                         {candidate.clip}
@@ -108,7 +108,7 @@ export function MatchReview() {
               {match.resolution === null ? (
                 <div className="match-actions">
                   <button type="button" className="btn" style={{ height: 34 }} onClick={() => dispatch({ type: 'markWild', id: match.id })}>
-                    Mark unslated / wild
+                    {match.kind === 'sources' ? 'Goes nowhere (unslated)' : 'Mark unslated / wild'}
                   </button>
                   <button
                     type="button"
@@ -117,14 +117,16 @@ export function MatchReview() {
                     disabled={!match.candidates[match.picked]}
                     onClick={() => dispatch({ type: 'confirmMatch', id: match.id })}
                   >
-                    Confirm match
+                    {match.kind === 'sources' ? 'Use this' : 'Confirm match'}
                   </button>
                 </div>
               ) : (
                 <div className="match-outcome" style={tone(statusVar(match.resolution.kind === 'matched' ? 'done' : 'working'))}>
                   <StatusText status={match.resolution.kind === 'matched' ? 'done' : 'working'} word={match.resolution.kind === 'matched' ? 'Matched' : 'Wild'} />
                   <span className="muted">
-                    {match.resolution.kind === 'matched'
+                    {match.kind === 'sources' && match.resolution.kind === 'matched'
+                      ? `${match.log} goes to ${match.resolution.clip}. You decided it.`
+                      : match.resolution.kind === 'matched'
                       ? `${match.log} is linked to ${match.resolution.clip}. You confirmed it.`
                       : `${match.log} is marked unslated / wild — no clip is linked. The media is still kept.`}
                   </span>

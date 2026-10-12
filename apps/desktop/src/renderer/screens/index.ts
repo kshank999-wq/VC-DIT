@@ -8,6 +8,7 @@ import { MatchReview } from './MatchReview';
 import { ProjectSetup } from './ProjectSetup';
 import { Reports } from './Reports';
 import { SceneOrganizer } from './SceneOrganizer';
+import { Takes } from './Takes';
 import { SyncWorkspace } from './SyncWorkspace';
 import { Today } from './Today';
 import { Verify } from './Verify';
@@ -20,6 +21,7 @@ export const SCREENS: Record<ScreenId, ComponentType> = {
   intake: Intake,
   verify: Verify,
   scenes: SceneOrganizer,
+  takes: Takes,
   match: MatchReview,
   vfx: VfxHandoff,
   sync: SyncWorkspace,

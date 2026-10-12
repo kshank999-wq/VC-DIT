@@ -167,3 +167,111 @@ describe('the scene folders', () => {
     ).toBe(true);
   });
 });
+
+describe('where clips go: the log, the camera report, the sound slate and the DIT', () => {
+  const where = (clip: string) => db.takesView(1).clips.find((item) => item.clip === clip)!;
+
+  it('places a clip the log leaves out from the camera report, on every destination', async () => {
+    db.setCameraReport(1, 'A015', [{ card: 'A015', clip: 'C003', scene: '14', setup: 'C', take: '1', circle: false, lens: '50mm', notes: '' }]);
+    expect(where('A015C003')).toMatchObject({ scene: '14', setup: 'C', take: '1', by: 'report', conflict: false });
+    await organizer.run();
+    for (const leg of [0, 1]) {
+      expect(await same(scenes(leg, 'SCENE_014', 'SETUP_C', 'HLC_D001_SC14C_T01_A015', 'A015R1AB', 'A015C003_261007_R1AB.mxf'), card(leg, 'A015C003_261007_R1AB.mxf'))).toBe(true);
+      expect(await exists(scenes(leg, 'UNMATCHED'))).toBe(false);
+    }
+    // Agreeing with the log changes nothing: still the log's word.
+    db.setCameraReport(1, 'A015', [
+      { card: 'A015', clip: 'C001', scene: '14', setup: 'A', take: '1', circle: false, lens: '', notes: '' },
+      { card: 'A015', clip: 'C003', scene: '14', setup: 'C', take: '1', circle: false, lens: '', notes: '' },
+    ]);
+    expect(where('A015C001')).toMatchObject({ by: 'log', conflict: false });
+    expect(where('A015C001').claims.map((claim) => claim.source)).toEqual(['log', 'report']);
+    // The Scene Organizer shows the report's take too.
+    const sc14 = db.logView(1).scenes.find((scene) => scene.id === '14')!;
+    expect(sc14.setups.map((setup) => setup.id)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('holds a clip back when the log and the report disagree, until Match Review decides', async () => {
+    db.setCameraReport(1, 'A015', [{ card: 'A015', clip: 'C002', scene: '14', setup: 'B', take: '4', circle: true, lens: '', notes: '' }]);
+    expect(where('A015C002')).toMatchObject({ scene: '', by: null, conflict: true });
+    const review = db.logView(1).matches.find((match) => match.kind === 'sources')!;
+    expect(review).toMatchObject({ id: 'sources:A015|A015C002', resolution: null });
+    expect(review.candidates.map((candidate) => candidate.clip)).toEqual(['Sc 14 / B / T03', 'Sc 14 / B / T04']);
+    await organizer.run();
+    expect(await exists(scenes(0, 'UNMATCHED', 'A015', 'A015C002'))).toBe(true);
+
+    db.resolveMatch(1, review.id, 'Sc 14 / B / T04');
+    expect(where('A015C002')).toMatchObject({ scene: '14', setup: 'B', take: '4', by: 'manual', conflict: false });
+    expect(db.logView(1).matches.find((match) => match.kind === 'sources')!.resolution).toEqual({ kind: 'matched', clip: 'Sc 14 / B / T04' });
+    await organizer.run();
+    expect(await same(scenes(1, 'SCENE_014', 'SETUP_B', 'HLC_D001_SC14B_T04_A015', 'A015R1AB', 'A015C002_261007_R1AB.mxf'), card(1, 'A015C002_261007_R1AB.mxf'))).toBe(true);
+    expect(await exists(scenes(1, 'UNMATCHED', 'A015', 'A015C002'))).toBe(false);
+  });
+
+  it('takes the DIT\'s own word over every source, and gives it back', async () => {
+    db.assignClips(1, [{ card: 'A015', clip: 'A015C001' }], { scene: '30', setup: 'a', take: '02', circle: true });
+    expect(where('A015C001')).toMatchObject({ scene: '30', setup: 'A', take: '2', circle: true, by: 'manual' });
+    await organizer.run();
+    expect(await exists(scenes(0, 'SCENE_030', 'SETUP_A', 'HLC_D001_SC30A_T02_A015'))).toBe(true);
+    expect(await exists(join(day(0), 'SELECTS_CIRCLE_TAKES', 'SCENE_030', 'SETUP_A'))).toBe(true);
+    db.assignClips(1, [{ card: 'A015', clip: 'A015C001' }], null);
+    expect(where('A015C001')).toMatchObject({ scene: '14', setup: 'A', by: 'log' });
+  });
+
+  it('takes the slate the sound recorder wrote, through the sync', async () => {
+    db.saveTransfer({
+      id: 'S014',
+      day: 1,
+      card: 'S014',
+      label: 'Sound',
+      sourceRoot: join(base, 'cards', 'S014'),
+      sound: true,
+      checksum: 'xxHash64',
+      startedAt: '2026-10-07T10:00:00.000Z',
+      finishedAt: '2026-10-07T10:01:00.000Z',
+      files: [{ path: '14C-01.wav', size: 10, mtimeMs: 1, hash: 'aa', hashedAt: '2026-10-07T10:00:30.000Z' }],
+      destinations: [],
+    });
+    db.saveMeta(1, 'S014', '14C-01.wav', {
+      ok: true,
+      meta: { kind: 'sound', format: 'WAV', tc: null, rate: null, durationSec: 10, soundStartSec: 0, sampleRate: 48000, channels: 2, hasAudio: true, ixml: { scene: '14C', take: '01', tape: 'S014', rate: '', tracks: [] } },
+    });
+    db.saveSync(1, { card: 'A015', clipKey: 'A015C003', soundCard: 'S014', soundKey: '14C-01', method: 'Timecode', alignFrames: 0, baseFrames: 0, fps: 25, confidence: 1, why: '', accepted: true, decided: 'auto', barsPicture: [], barsSound: [] });
+    expect(where('A015C003')).toMatchObject({ scene: '14', setup: 'C', take: '1', by: 'sound' });
+    expect(where('A015C003').claims[0]).toMatchObject({ source: 'sound', from: 'Sound file 14C-01' });
+  });
+
+  it('reads a camera report file, and checks it against the card', () => {
+    const csv = 'Roll,Clip,Scene,Setup,Take,Circle,Lens,Notes\nA015,C001,14,A,1,,35mm,\nA015,C009,14,A,2,Y,35mm,\n,C010,14,A,3,,,no roll\n';
+    const result = db.importCameraReport(1, parseScriptLog('report.csv', csv).entries);
+    expect(result).toMatchObject({ cards: ['A015'], rows: 2 });
+    expect(result.skipped).toEqual(['Line 4: no card or roll — skipped.']);
+    const view = db.takesView(1);
+    expect(view.report.map((row) => [row.clip, row.take, row.circle, row.source])).toEqual([
+      ['C001', '1', false, 'csv'],
+      ['C009', '2', true, 'csv'],
+    ]);
+    expect(view.reportProblems).toEqual([
+      'A015: the report names A015C009 (Sc 14A T2), but it is not on the card.',
+      'A015: 2 clips on the card are not in the report (A015C002, A015C003).',
+    ]);
+  });
+});
+
+describe('reading a slate', () => {
+  it('splits a sound recorder\'s slate by the day\'s scene list', async () => {
+    const { splitSlate, reportClipKey, resolveAssignment } = await import('../organize/assign');
+    expect(splitSlate('14B', new Set(['14']))).toEqual({ scene: '14', setup: 'B' });
+    expect(splitSlate('14A', new Set(['14A']))).toEqual({ scene: '14A', setup: '' });
+    expect(splitSlate('14AB', new Set(['14A']))).toEqual({ scene: '14A', setup: 'B' });
+    expect(reportClipKey('A015', 'C2')).toBe('A015C002');
+    expect(reportClipKey('A015', '7')).toBe('A015C007');
+    expect(reportClipKey('A015', 'B010C003')).toBe('B010C003');
+    // "14" + "B" and "14B" agree; take "03" and "3" agree.
+    const agree = resolveAssignment('A015', 'A015C001', [
+      { source: 'log', scene: '14', setup: 'B', take: '03', circle: false, from: '' },
+      { source: 'sound', scene: '14B', setup: '', take: '3', circle: false, from: '' },
+    ]);
+    expect(agree).toMatchObject({ conflict: false, by: 'log', slate: { scene: '14', setup: 'B', take: '3' } });
+  });
+});

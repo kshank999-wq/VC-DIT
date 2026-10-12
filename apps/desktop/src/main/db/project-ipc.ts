@@ -12,7 +12,7 @@ import { filmStudioDay } from '../reports/film-studio';
 import { sendDay } from '../reports/film-studio-send';
 import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
-import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type DeliverySettings, type FormatRule, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
 import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
@@ -24,6 +24,7 @@ import { SyncService, type RunAnalysis } from '../sync/sync-service';
 import type { RunCopy } from '../vfx/mirror';
 import { VfxService } from '../vfx/vfx-service';
 import { LOG_TEMPLATE, parseScriptLog } from '../scriptlog/parse';
+import { REPORT_TEMPLATE } from '../organize/assign';
 import { Library, PRODUCTION_EXTENSION } from './library';
 import type { TransferRecord } from './production-db';
 
@@ -386,6 +387,73 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       mirrorQuick();
     }),
   );
+  // ------------------------------------------------ takes: the camera report and the DIT's own assignments
+  const reportRow = (input: unknown): CameraReportInput => {
+    const value = (input ?? {}) as Record<string, unknown>;
+    return {
+      card: (text(value['card'], 24) ?? '').toUpperCase(),
+      clip: text(value['clip'], 60) ?? '',
+      scene: (text(value['scene'], 12) ?? '').toUpperCase(),
+      setup: (text(value['setup'], 8) ?? '').toUpperCase(),
+      take: text(value['take'], 6) ?? '',
+      circle: value['circle'] === true,
+      lens: text(value['lens'], 40) ?? '',
+      notes: text(value['notes'], 400) ?? '',
+    };
+  };
+  ipcMain.handle('vcdit:project-camera-report', (_e, card: unknown, rows: unknown) =>
+    answer(() => {
+      const name = (text(card, 24) ?? '').toUpperCase();
+      if (!name) throw new Error('Name the card or roll this report is for.');
+      const clean = (Array.isArray(rows) ? rows.slice(0, 2000) : []).map(reportRow).filter((row) => row.clip && row.scene && row.take);
+      library.current.setCameraReport(library.current.currentDay().number, name, clean);
+      mirrorQuick();
+    }),
+  );
+  ipcMain.handle('vcdit:project-import-camera-report', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = { title: 'Import a camera report', properties: ['openFile'] as 'openFile'[], filters: [{ name: 'Camera report', extensions: LOG_EXTENSIONS }] };
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, reason: '' };
+    const path = picked.filePaths[0];
+    return answer(async () => {
+      if ((await stat(path)).size > MAX_LOG_BYTES) throw new Error('That file is too large to be a camera report.');
+      const parsed = parseScriptLog(basename(path), await readFile(path));
+      const db = library.current;
+      const result = db.importCameraReport(db.currentDay().number, parsed.entries);
+      if (result.rows === 0) throw new Error(`No rows with a card or roll, a clip, a scene and a take were found in ${basename(path)}.`);
+      mirrorQuick();
+    });
+  });
+  ipcMain.handle('vcdit:project-save-report-template', async (e) => {
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = { title: 'Save the camera report template', defaultPath: 'VC DIT camera report template.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] };
+    const picked = window ? await dialog.showSaveDialog(window, options) : await dialog.showSaveDialog(options);
+    if (picked.canceled || !picked.filePath) return { ok: false, reason: '' };
+    return answer(() => writeFile(picked.filePath!, REPORT_TEMPLATE, 'utf8'));
+  });
+  ipcMain.handle('vcdit:project-assign', (_e, clips: unknown, slate: unknown) =>
+    answer(() => {
+      const list = (Array.isArray(clips) ? clips.slice(0, 5000) : [])
+        .map((item) => (item ?? {}) as Record<string, unknown>)
+        .map((item) => ({ card: text(item['card'], 24) ?? '', clip: text(item['clip'], 60) ?? '' }))
+        .filter((item) => item.card && item.clip);
+      let clean: SlateInput | null = null;
+      if (slate) {
+        const value = slate as Record<string, unknown>;
+        clean = {
+          scene: text(value['scene'], 12) ?? '',
+          setup: text(value['setup'], 8) ?? '',
+          take: text(value['take'], 6) ?? '',
+          circle: value['circle'] === true,
+        };
+        if (!clean.scene || !clean.take) throw new Error('A scene and a take are needed.');
+      }
+      library.current.assignClips(library.current.currentDay().number, list, clean);
+      mirrorQuick();
+    }),
+  );
+
   ipcMain.handle('vcdit:project-save-log-template', async (e) => {
     const window = BrowserWindow.fromWebContents(e.sender);
     const options = { title: 'Save the log template', defaultPath: 'VC DIT script log template.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] };

@@ -47,6 +47,7 @@ type FromProject = Pick<
   | 'organize'
   | 'media'
   | 'notes'
+  | 'takes'
   | 'packages'
   | 'deliveryDestinations'
   | 'delivered'
@@ -111,6 +112,7 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     organize: project.organize,
     media: project.media,
     notes: project.notes,
+    takes: project.takes,
     packages: DELIVERY_PACKAGES.map((pkg) => ({
       id: pkg.id,
       name: pkg.name,

@@ -23,6 +23,7 @@ export type ScreenId =
   | 'intake'
   | 'verify'
   | 'scenes'
+  | 'takes'
   | 'match'
   | 'vfx'
   | 'sync'

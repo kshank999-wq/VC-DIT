@@ -38,6 +38,8 @@ import { parseLut } from '../looks/lut-file';
 import type { ViewClip } from '../organize/view';
 import { SCENE_VIEW, SELECTS_VIEW, applyNaming } from '../../shared/project';
 import { segment } from '../media/rules';
+import { resolveAssignment, reportClipKey, SOURCE_WORD, splitSlate, takeNumber, type Assignment, type Claim } from '../organize/assign';
+import type { AssignedClip, CameraReportInput, CameraReportRow, MatchEntry, SetupEntry, SlateInput, TakesState } from '../../shared/project';
 import {
   DEFAULT_DELIVERY,
   DELIVERY_PACKAGES,
@@ -453,6 +455,39 @@ MIGRATIONS.push(`
 // A card cleared for camera after a fresh check (spec §8): when.
 MIGRATIONS.push(`alter table transfer add column cleared_at text;`);
 
+// Where clips go besides the script log (spec §4.4, §4.5): the camera report, and the DIT's own word.
+MIGRATIONS.push(`
+  create table camera_report (
+    id integer primary key,
+    day integer not null,
+    card text not null,
+    clip text not null,
+    scene text not null,
+    setup text not null default '',
+    take text not null,
+    circle integer not null default 0,
+    lens text not null default '',
+    notes text not null default '',
+    source text not null default 'entered' check (source in ('entered', 'csv', 'film-studio')),
+    position integer not null
+  );
+  create index camera_report_day_idx on camera_report (day, card, position);
+
+  -- The DIT's assignment of a clip (manual), a choice between sources that disagreed (decided), or "goes nowhere" (none).
+  create table clip_assign (
+    day integer not null,
+    card text not null,
+    clip_key text not null,
+    scene text not null default '',
+    setup text not null default '',
+    take text not null default '',
+    circle integer not null default 0,
+    how text not null check (how in ('manual', 'decided', 'none')),
+    made_at text not null,
+    primary key (day, card, clip_key)
+  );
+`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -595,6 +630,86 @@ export const DEFAULT_PRODUCTION: Production = {
   namingTokens: DEFAULT_NAMING,
   vfxMethod: 'Hard link',
   formatRule: 'two-local',
+};
+
+const CONFLICT = 'sources:';
+const pad2 = (take: string) => takeNumber(take).padStart(2, '0');
+/** How one source's word on a clip is named in Match Review: "Sc 14 / B / T03". */
+const claimLabel = (claim: Claim) => `Sc ${claim.scene} / ${claim.setup || '—'} / T${pad2(claim.take)}`;
+
+/** Clips whose sources disagree (or did, until the DIT decided), as Match Review entries. */
+const sourceConflicts = (assigned: Assignment[]): MatchEntry[] =>
+  assigned
+    .filter((item) => item.conflict || item.claims.some((claim) => claim.source === 'manual' && claim.from === 'Decided in Match Review') || (item.by === 'manual' && !item.slate && new Set(item.claims.map(claimLabel)).size > 1))
+    .map((item) => {
+      const said = item.claims.filter((claim) => claim.source !== 'manual');
+      const labels = [...new Set(said.map(claimLabel))];
+      const decided = item.claims.find((claim) => claim.source === 'manual');
+      return {
+        id: `${CONFLICT}${item.card}|${item.clip}`,
+        kind: 'sources' as const,
+        log: `${item.clip} · ${item.card}`,
+        reason: `What the sources say about this clip does not agree, so it is not placed until you pick one. ${said.map((claim) => `${SOURCE_WORD[claim.source]}: ${claimLabel(claim)}`).join('. ')}.`,
+        fields: said.map((claim): [string, string] => [SOURCE_WORD[claim.source], `${claimLabel(claim)}${claim.circle ? ' ◎' : ''}`]),
+        candidates: labels.map((label) => {
+          const from = said.filter((claim) => claimLabel(claim) === label);
+          return { clip: label, tc: '', confidence: Math.round((100 * from.length) / said.length), why: from.map((claim) => claim.from).join(' · ') };
+        }),
+        picked: 0,
+        resolution: decided ? { kind: 'matched' as const, clip: claimLabel(decided) } : item.by === 'manual' && !item.slate ? { kind: 'wild' as const } : null,
+      };
+    });
+
+/**
+ * The scene list with every clip the log does not already place: a take
+ * the camera report, the sound slate or the DIT gave it, so the Scene
+ * Organizer and the Files panel show where it went.
+ */
+const withAssignedTakes = (
+  scenes: (SceneEntry & { setups: SetupEntry[] })[],
+  assigned: Assignment[],
+  records: Map<string, SyncRecord>,
+): (SceneEntry & { setups: SetupEntry[] })[] => {
+  const out = scenes.map((scene) => ({ ...scene, setups: scene.setups.map((setup) => ({ ...setup, takes: [...setup.takes] })) }));
+  const shown = new Set(out.flatMap((scene) => scene.setups.flatMap((setup) => setup.takes.flatMap((take) => [take.clipA, take.clipB ?? '']))));
+  for (const item of assigned) {
+    if (!item.slate || item.by === 'log' || shown.has(item.clip)) continue;
+    const { scene: sceneId, setup: setupId, take, circle } = item.slate;
+    let scene = out.find((candidate) => candidate.id.toUpperCase() === sceneId.toUpperCase());
+    if (!scene) {
+      scene = { id: sceneId, description: '', status: 'Shot', notes: '', look: '', setups: [] };
+      out.push(scene);
+    }
+    const setupKey = setupId || '—';
+    let setup = scene.setups.find((candidate) => candidate.id === setupKey);
+    if (!setup) {
+      setup = { id: setupKey, lens: '', takes: [] };
+      scene.setups.push(setup);
+      scene.setups.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    }
+    const id = `${scene.id}|${setupKey}|${takeNumber(take)}`;
+    const existing = setup.takes.find((candidate) => candidate.id === id);
+    if (existing) {
+      if (!existing.clipB && existing.clipA !== item.clip) existing.clipB = item.clip;
+      continue;
+    }
+    const record = records.get(item.clip);
+    setup.takes.push({
+      id,
+      take: `T${pad2(take)}`,
+      clipA: item.clip,
+      clipB: null,
+      sound: record?.soundKey ?? '—',
+      tc: '—',
+      duration: '—',
+      circle,
+      vfx: false,
+      match: 'Matched',
+      sync: record ? (record.method === 'None' ? 'none' : record.method === 'Waveform' ? 'WF' : 'TC') : 'pending',
+    });
+    setup.takes.sort((a, b) => a.take.localeCompare(b.take, undefined, { numeric: true }));
+  }
+  return out;
 };
 
 export class ProductionDb {
@@ -1188,6 +1303,20 @@ export class ProductionDb {
 
   /** The DIT's decision on one row's clip: a candidate (by the label the screen showed), or none at all (wild, MOS, no camera). */
   resolveMatch(day: number, id: string, label: string | null): void {
+    // Sources that disagreed about a clip: the DIT picks what one of them said, or that it goes nowhere.
+    if (id.startsWith(CONFLICT)) {
+      const [card, clip] = id.slice(CONFLICT.length).split('|') as [string, string];
+      const assignment = this.assignments(day).find((item) => item.card === card && item.clip === clip);
+      if (!assignment) throw new Error('That clip is no longer in the day.');
+      if (label === null) {
+        this.assignClips(day, [{ card, clip }], null, 'none');
+        return;
+      }
+      const claim = assignment.claims.find((candidate) => candidate.source !== 'manual' && claimLabel(candidate) === label);
+      if (!claim) throw new Error('That is not one of the choices.');
+      this.assignClips(day, [{ card, clip }], { scene: claim.scene, setup: claim.setup, take: claim.take, circle: claim.circle }, 'decided');
+      return;
+    }
     const [entryId, refIndex] = id.split(':').map(Number) as [number, number];
     const entry = this.logEntries(day).find((candidate) => candidate.id === entryId);
     const row = this.rows<Record<string, SqlValue>>('select candidates from script_match where entry_id = ? and ref_index = ?', [entryId, refIndex])[0];
@@ -1264,7 +1393,13 @@ export class ProductionDb {
         }),
       })),
     }));
-    return { ...view, scenes, vfx: this.vfxShots(day, view.vfx).map(({ entry }) => entry) };
+    const assigned = this.assignments(day);
+    return {
+      ...view,
+      scenes: withAssignedTakes(scenes, assigned, records),
+      matches: [...view.matches, ...sourceConflicts(assigned)],
+      vfx: this.vfxShots(day, view.vfx).map(({ entry }) => entry),
+    };
   }
 
   // ------------------------------------------------ sync
@@ -2105,6 +2240,200 @@ export class ProductionDb {
     };
   }
 
+
+  // ------------------------------------------------ takes: where each clip goes
+
+  /** The day's camera report, card by card, in the order it was written. */
+  cameraReport(day: number): CameraReportRow[] {
+    return this.rows<Record<string, SqlValue>>('select * from camera_report where day = ? order by card, position, id', [day]).map((row) => ({
+      id: Number(row['id']),
+      card: String(row['card']),
+      clip: String(row['clip']),
+      scene: String(row['scene']),
+      setup: String(row['setup']),
+      take: String(row['take']),
+      circle: Number(row['circle']) === 1,
+      lens: String(row['lens']),
+      notes: String(row['notes']),
+      source: row['source'] as CameraReportRow['source'],
+    }));
+  }
+
+  /** One card's camera report, as entered or imported: it replaces what that card had. */
+  setCameraReport(day: number, card: string, rows: CameraReportInput[], source: CameraReportRow['source'] = 'entered') {
+    this.transaction(() => {
+      this.run('delete from camera_report where day = ? and card = ?', [day, card]);
+      for (const [position, row] of rows.entries()) {
+        this.run(
+          'insert into camera_report (day, card, clip, scene, setup, take, circle, lens, notes, source, position) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [day, card, row.clip, row.scene, row.setup, takeNumber(row.take), row.circle ? 1 : 0, row.lens, row.notes, source, position],
+        );
+      }
+    });
+  }
+
+  /**
+   * A camera report file (CSV, tab-separated, ALE…: read like a script log)
+   * into the day's report, card by card. A row names its card in a roll or
+   * card column, or in a full clip name; one that names neither is skipped.
+   */
+  importCameraReport(day: number, entries: LogEntry[], source: CameraReportRow['source'] = 'csv'): { cards: string[]; rows: number; skipped: string[] } {
+    const byCard = new Map<string, CameraReportInput[]>();
+    const skipped: string[] = [];
+    for (const entry of entries) {
+      const refs = entry.clipRefs.length ? entry.clipRefs : [''];
+      for (const ref of refs) {
+        const card = (entry.roll || reportClipKey('', ref)?.slice(0, 4) || '').toUpperCase().trim();
+        if (!card || !ref) {
+          skipped.push(`Line ${entry.line}: ${!card ? 'no card or roll' : 'no clip'} — skipped.`);
+          continue;
+        }
+        const rows = byCard.get(card) ?? [];
+        rows.push({ card, clip: ref, scene: entry.scene, setup: entry.setup, take: entry.take, circle: entry.circle || entry.print, lens: entry.lens, notes: entry.notes });
+        byCard.set(card, rows);
+      }
+    }
+    for (const [card, rows] of byCard) this.setCameraReport(day, card, rows, source);
+    return { cards: [...byCard.keys()], rows: [...byCard.values()].reduce((sum, rows) => sum + rows.length, 0), skipped };
+  }
+
+  /** The DIT's own word on where clips go (null: back to what the sources say). */
+  assignClips(day: number, clips: { card: string; clip: string }[], slate: SlateInput | null, how: 'manual' | 'decided' | 'none' = 'manual') {
+    this.transaction(() => {
+      for (const { card, clip } of clips) {
+        if (slate === null && how !== 'none') {
+          this.run('delete from clip_assign where day = ? and card = ? and clip_key = ?', [day, card, clip]);
+          continue;
+        }
+        this.run(
+          'insert or replace into clip_assign (day, card, clip_key, scene, setup, take, circle, how, made_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [day, card, clip, slate?.scene.trim().toUpperCase() ?? '', slate?.setup.trim().toUpperCase() ?? '', slate ? takeNumber(slate.take) : '', slate?.circle ? 1 : 0, how, now()],
+        );
+      }
+    });
+  }
+
+  /** The day's camera clips, one per clip (a clip spanning files counts once), card by card. */
+  private dayCameraClips(day: number): { card: string; clip: string }[] {
+    const clips = new Map<string, { card: string; clip: string }>();
+    for (const row of this.rows<Record<string, SqlValue>>("select card, file_name from clip where day = ? and kind = 'camera' order by card, path", [day])) {
+      const name = String(row['file_name']);
+      if (!VIDEO_FILE.test(name)) continue;
+      const card = String(row['card']);
+      const clip = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
+      if (!clips.has(`${card}|${clip}`)) clips.set(`${card}|${clip}`, { card, clip });
+    }
+    return [...clips.values()];
+  }
+
+  /** Every clip of the day with what each source says about it, and where that puts it. */
+  assignments(day: number): Assignment[] {
+    const claims = new Map<string, Claim[]>();
+    const add = (card: string, clip: string, claim: Claim) => {
+      const id = `${card}|${clip}`;
+      claims.set(id, [...(claims.get(id) ?? []), claim]);
+    };
+
+    // The script log.
+    const entries = new Map(this.logEntries(day).map((entry) => [entry.id, entry]));
+    for (const row of this.rows<Record<string, SqlValue>>(
+      `select m.entry_id, m.clip_card, m.clip_key from script_match m join script_entry e on e.id = m.entry_id
+       where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild' order by e.position, m.ref_index`,
+      [day],
+    )) {
+      const entry = entries.get(Number(row['entry_id']));
+      if (!entry) continue;
+      const card = String(row['clip_card']);
+      const clip = String(row['clip_key']);
+      if (claims.get(`${card}|${clip}`)?.some((claim) => claim.source === 'log')) continue;
+      add(card, clip, { source: 'log', scene: entry.scene, setup: entry.setup, take: entry.take, circle: entry.circle || entry.print, from: `Script log line ${entry.line}` });
+    }
+
+    // The camera report: its row's clip on its card.
+    const cardClips = new Map<string, Set<string>>();
+    for (const { card, clip } of this.dayCameraClips(day)) cardClips.set(card, (cardClips.get(card) ?? new Set()).add(clip));
+    for (const [index, row] of this.cameraReport(day).entries()) {
+      const key = reportClipKey(row.card, row.clip);
+      if (!key || !cardClips.get(row.card)?.has(key)) continue;
+      add(row.card, key, { source: 'report', scene: row.scene, setup: row.setup, take: row.take, circle: row.circle, from: `Camera report, ${row.card} line ${index + 1}` });
+    }
+
+    // The slate the sound recorder wrote, through the sync that pairs the sound file with the clip.
+    const scenes = new Set(this.scenes(day).map((scene) => scene.id.toUpperCase()));
+    const sounds = new Map<string, MediaMeta>();
+    for (const row of this.rows<Record<string, SqlValue>>("select card, file_name, meta from clip where day = ? and kind = 'sound' and meta is not null", [day])) {
+      const parsed = JSON.parse(String(row['meta'])) as MetaResult;
+      if (parsed.ok) sounds.set(`${String(row['card'])}|${String(row['file_name']).replace(/\.[^.]+$/, '')}`, parsed.meta);
+    }
+    for (const record of this.syncRecords(day)) {
+      if (!record.soundKey || !record.soundCard || record.method === 'None') continue;
+      const ixml = sounds.get(`${record.soundCard}|${record.soundKey}`)?.ixml;
+      if (!ixml?.scene || !ixml.take) continue;
+      const { scene, setup } = splitSlate(ixml.scene, scenes);
+      add(record.card, record.clipKey, { source: 'sound', scene, setup, take: ixml.take, circle: false, from: `Sound file ${record.soundKey}` });
+    }
+
+    // The DIT's own word.
+    const own = new Map(
+      this.rows<Record<string, SqlValue>>('select * from clip_assign where day = ?', [day]).map((row) => [`${String(row['card'])}|${String(row['clip_key'])}`, row]),
+    );
+
+    return this.dayCameraClips(day).map(({ card, clip }) => {
+      const id = `${card}|${clip}`;
+      const said = claims.get(id) ?? [];
+      const mine = own.get(id);
+      if (mine && mine['how'] === 'none') return { card, clip, slate: null, by: 'manual' as const, claims: said, conflict: false };
+      if (mine) {
+        const claim: Claim = {
+          source: 'manual',
+          scene: String(mine['scene']),
+          setup: String(mine['setup']),
+          take: String(mine['take']),
+          circle: Number(mine['circle']) === 1,
+          from: mine['how'] === 'decided' ? 'Decided in Match Review' : 'Assigned by the DIT',
+        };
+        return resolveAssignment(card, clip, [...said, claim]);
+      }
+      return resolveAssignment(card, clip, said);
+    });
+  }
+
+  /** What the Assign screen shows: every clip and where it goes, the camera report, and the report checked against the cards. */
+  takesView(day: number): TakesState {
+    const assignments = this.assignments(day);
+    const report = this.cameraReport(day);
+    const clips: AssignedClip[] = assignments.map((item) => ({
+      card: item.card,
+      clip: item.clip,
+      scene: item.slate?.scene ?? '',
+      setup: item.slate?.setup ?? '',
+      take: item.slate?.take ?? '',
+      circle: item.slate?.circle ?? false,
+      by: item.by,
+      conflict: item.conflict,
+      claims: item.claims.map(({ source, scene, setup, take, circle, from }) => ({ source, scene, setup, take, circle, from })),
+    }));
+    // The report against the cards that are in: a row naming a clip not on its card, a clip on a reported card the report leaves out.
+    const problems: string[] = [];
+    const onCard = new Map<string, Set<string>>();
+    for (const { card, clip } of clips) onCard.set(card, (onCard.get(card) ?? new Set()).add(clip));
+    const reported = new Map<string, Set<string>>();
+    for (const row of report) {
+      const key = reportClipKey(row.card, row.clip);
+      if (!key) {
+        problems.push(`${row.card}: "${row.clip}" is not a clip name VC DIT can read.`);
+        continue;
+      }
+      reported.set(row.card, (reported.get(row.card) ?? new Set()).add(key));
+      if (onCard.has(row.card) && !onCard.get(row.card)!.has(key)) problems.push(`${row.card}: the report names ${key} (Sc ${row.scene}${row.setup} T${row.take}), but it is not on the card.`);
+    }
+    for (const [card, keys] of reported) {
+      const missing = [...(onCard.get(card) ?? [])].filter((clip) => !keys.has(clip));
+      if (missing.length) problems.push(`${card}: ${missing.length} clip${missing.length === 1 ? '' : 's'} on the card ${missing.length === 1 ? 'is' : 'are'} not in the report (${missing.slice(0, 4).join(', ')}${missing.length > 4 ? '…' : ''}).`);
+    }
+    return { clips, report, reportProblems: problems };
+  }
+
   // ------------------------------------------------ the scene view
 
   /**
@@ -2114,25 +2443,6 @@ export class ProductionDb {
    */
   organizeViews(day: number): OrganizeView[] {
     const production = this.production();
-    const entries = new Map(this.logEntries(day).map((entry) => [entry.id, entry]));
-    const takes = new Map<string, StoredEntry>();
-    for (const row of this.rows<Record<string, SqlValue>>(
-      `select m.entry_id, m.clip_card, m.clip_key from script_match m join script_entry e on e.id = m.entry_id
-       where e.day = ? and m.state = 'matched' and m.clip_key is not null and m.decided != 'wild' order by e.position, m.ref_index`,
-      [day],
-    )) {
-      const entry = entries.get(Number(row['entry_id']));
-      const id = `${String(row['clip_card'])}|${String(row['clip_key'])}`;
-      if (entry && !takes.has(id)) takes.set(id, entry);
-    }
-    const clips = new Map<string, { card: string; clip: string }>();
-    for (const row of this.rows<Record<string, SqlValue>>("select card, file_name from clip where day = ? and kind = 'camera' order by card, path", [day])) {
-      const name = String(row['file_name']);
-      if (!VIDEO_FILE.test(name)) continue;
-      const card = String(row['card']);
-      const clip = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
-      if (!clips.has(`${card}|${clip}`)) clips.set(`${card}|${clip}`, { card, clip });
-    }
     const used = new Set<string>();
     const unique = (dir: string, clip: string) => {
       const relDir = used.has(dir.toUpperCase()) ? `${dir}_${segment(clip)}` : dir;
@@ -2140,30 +2450,29 @@ export class ProductionDb {
       return relDir;
     };
     const views: OrganizeView[] = [];
-    for (const { card, clip } of clips.values()) {
+    for (const { card, clip, slate } of this.assignments(day)) {
       const locations = this.clipLocations(day, card, clip);
       if (locations.length === 0) continue;
-      const entry = takes.get(`${card}|${clip}`);
       const base = {
         clip,
         card,
-        scene: entry?.scene ?? '',
-        setup: entry?.setup ?? '',
-        take: entry?.take ?? '',
+        scene: slate?.scene ?? '',
+        setup: slate?.setup ?? '',
+        take: slate?.take ?? '',
         files: locations[0]!.files.map((file) => ({ path: file.path, size: file.size, hash: file.hash })),
         locations: locations.map(({ legId, name, root, cardDir }) => ({ legId, name, root, cardDir })),
       };
-      if (!entry) {
+      if (!slate) {
         views.push({ ...base, kind: 'scene', relDir: unique(`${SCENE_VIEW}/UNMATCHED/${segment(card)}/${segment(clip)}`, clip) });
         continue;
       }
       const name = segment(
-        applyNaming(production.namingTokens, { prod: production.code || production.name, day, scene: entry.scene, setup: entry.setup, take: entry.take, clip }),
+        applyNaming(production.namingTokens, { prod: production.code || production.name, day, scene: slate.scene, setup: slate.setup, take: slate.take, clip }),
         clip,
       );
-      const path = `SCENE_${segment(entry.scene).padStart(3, '0')}/SETUP_${entry.setup ? segment(entry.setup) : 'NONE'}/${name}`;
+      const path = `SCENE_${segment(slate.scene).padStart(3, '0')}/SETUP_${slate.setup ? segment(slate.setup) : 'NONE'}/${name}`;
       views.push({ ...base, kind: 'scene', relDir: unique(`${SCENE_VIEW}/${path}`, clip) });
-      if (entry.circle || entry.print) views.push({ ...base, kind: 'select', relDir: unique(`${SELECTS_VIEW}/${path}`, clip) });
+      if (slate.circle) views.push({ ...base, kind: 'select', relDir: unique(`${SELECTS_VIEW}/${path}`, clip) });
     }
     return views;
   }

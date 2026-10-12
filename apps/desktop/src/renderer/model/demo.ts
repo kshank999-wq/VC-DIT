@@ -1,3 +1,4 @@
+import type { AssignedClip, TakesState } from '../../shared/project';
 import type {
   DailiesOptions,
   DeliveryDestination,
@@ -343,3 +344,26 @@ export const REPORTS: ReportRow[] = [
   { step: 'output', name: 'Look / LUT report', covers: '4 LUTs · 4 assignment rules', time: '14:05', status: 'Complete', screen: 'looks' },
   { step: 'output', name: 'Delivery manifest — Day 013', covers: '5 packages · 4 destinations', time: '22:05', status: 'Complete', screen: 'delivery' },
 ];
+
+// ---------------------------------------------------------------- takes: where each clip goes
+
+const claim = (source: AssignedClip['claims'][number]['source'], scene: string, setup: string, take: string, from: string, circle = false) => ({ source, scene, setup, take, circle, from });
+
+/** A015 as the camera report, the script log and the sound slate place it; one clip they disagree on, one nobody names yet. */
+export const TAKES: TakesState = {
+  clips: [
+    { card: 'A015', clip: 'A015C001', scene: '14', setup: 'B', take: '1', circle: false, by: 'log', conflict: false, claims: [claim('log', '14', 'B', '1', 'Script log line 12'), claim('report', '14', 'B', '1', 'Camera report, A015 line 1'), claim('sound', '14', 'B', '1', 'Sound file 14B-01')] },
+    { card: 'A015', clip: 'A015C002', scene: '14', setup: 'B', take: '2', circle: true, by: 'log', conflict: false, claims: [claim('log', '14', 'B', '2', 'Script log line 13', true), claim('report', '14', 'B', '2', 'Camera report, A015 line 2', true)] },
+    { card: 'A015', clip: 'A015C003', scene: '', setup: '', take: '', circle: false, by: null, conflict: true, claims: [claim('log', '14', 'B', '3', 'Script log line 14'), claim('report', '14', 'B', '4', 'Camera report, A015 line 3')] },
+    { card: 'A015', clip: 'A015C004', scene: '14', setup: 'C', take: '1', circle: false, by: 'report', conflict: false, claims: [claim('report', '14', 'C', '1', 'Camera report, A015 line 4')] },
+    { card: 'A015', clip: 'A015C005', scene: '14', setup: 'C', take: '2', circle: false, by: 'sound', conflict: false, claims: [claim('sound', '14', 'C', '2', 'Sound file 14C-02')] },
+    { card: 'A015', clip: 'A015C006', scene: '', setup: '', take: '', circle: false, by: null, conflict: false, claims: [] },
+  ],
+  report: [
+    { id: 1, card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '1', circle: false, lens: '35mm', notes: '', source: 'entered' },
+    { id: 2, card: 'A015', clip: 'C002', scene: '14', setup: 'B', take: '2', circle: true, lens: '35mm', notes: '', source: 'entered' },
+    { id: 3, card: 'A015', clip: 'C003', scene: '14', setup: 'B', take: '4', circle: false, lens: '35mm', notes: 'Rolled long', source: 'entered' },
+    { id: 4, card: 'A015', clip: 'C004', scene: '14', setup: 'C', take: '1', circle: false, lens: '50mm', notes: '', source: 'entered' },
+  ],
+  reportProblems: ['A015: 2 clips on the card are not in the report (A015C005, A015C006).'],
+};

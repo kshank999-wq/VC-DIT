@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState } from '../../shared/media';
-import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, NoteInput, OrganizeState, ProjectState } from '../../shared/project';
+import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -106,6 +106,8 @@ export interface AppState {
   media: ProjectState['media'] | null;
   /** The day's timecoded notes. */
   notes: DayNote[];
+  /** Where each camera clip goes, from the log, the camera report, the sound slate and the DIT. */
+  takes: TakesState;
   reportFilter: ReportFilter;
 }
 
@@ -157,6 +159,7 @@ export const initialState = (): AppState => ({
   organize: null,
   media: null,
   notes: structuredClone(demo.DAY_NOTES),
+  takes: structuredClone(demo.TAKES),
   reportFilter: 'all',
 });
 
@@ -180,6 +183,7 @@ export type Action =
   | { type: 'toggleDestination'; destination: string }
   | { type: 'setDestinationRelay'; destination: string; relay: boolean }
   | { type: 'cardCleared'; job: string; at: string }
+  | { type: 'assignTakes'; clips: { card: string; clip: string }[]; slate: SlateInput | null; step?: boolean }
   | { type: 'volumeEjected'; volume: string }
   | { type: 'setChecksum'; checksum: ChecksumMethod }
   | { type: 'startIngest' }
@@ -371,6 +375,24 @@ export const reducer = (state: AppState, action: Action): AppState => {
     }
     case 'engineState':
       return { ...state, ...fromEngine(state, action.media) };
+    case 'assignTakes': {
+      // The preview's stand-in for the database: the clips take the DIT's word.
+      const ids = new Set(action.clips.map((clip) => `${clip.card}|${clip.clip}`));
+      return {
+        ...state,
+        takes: {
+          ...state.takes,
+          clips: state.takes.clips.map((clip, index) => {
+            if (!ids.has(`${clip.card}|${clip.clip}`)) return clip;
+            if (!action.slate) return { ...clip, by: null, scene: '', setup: '', take: '', circle: false, claims: clip.claims.filter((claim) => claim.source !== 'manual') };
+            const step = action.step ? action.clips.findIndex((other) => other.card === clip.card && other.clip === clip.clip) : 0;
+            const take = String(Number(action.slate.take) + Math.max(0, step) || action.slate.take);
+            void index;
+            return { ...clip, by: 'manual' as const, conflict: false, scene: action.slate.scene, setup: action.slate.setup, take, circle: action.slate.circle };
+          }),
+        },
+      };
+    }
     case 'cardCleared':
       // The preview's stand-in for the engine: the card shows as cleared.
       return { ...state, jobs: state.jobs.map((job) => (job.id === action.job ? { ...job, clearedAt: action.at } : job)) };

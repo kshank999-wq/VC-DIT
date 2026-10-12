@@ -41,6 +41,7 @@ export const buildTree = (state: AppState): Node[] => {
   const go = (screen: ScreenId): Action => ({ type: 'go', screen });
   const color = (step: StepId) => stepVar(step);
   const shot = state.scenes.filter((scene) => scene.setups.length > 0);
+  const unplaced = state.takes.clips.filter((clip) => !clip.scene).length;
   const vfxScenes = [...new Set(state.vfx.map((item) => `${item.scene}|${item.setup}`))];
   const failed = state.jobs.some((job) => jobState(job, state.production.formatRule) === 'problem' || failedUploads(job).length > 0);
   const reports: [string, StepId, ScreenId][] = [
@@ -78,7 +79,7 @@ export const buildTree = (state: AppState): Node[] => {
               // A failed check shows here too: nothing is green while a copy failed.
               status: failed ? 'problem' : steps.verify.status === 'done' ? 'done' : undefined,
               action: go('verify'),
-              children: shot.map((scene) => ({
+              children: [...shot.map((scene): Node => ({
                 path: `ocf/${scene.id}`,
                 name: `SCENE_${pad3(scene.id)}`,
                 color: color('organize'),
@@ -92,6 +93,11 @@ export const buildTree = (state: AppState): Node[] => {
                   action: { type: 'selectSetup', key: `${scene.id}|${setup.id}` },
                 })),
               })),
+              // Clips nothing has placed yet: they wait here, by card, until assigned.
+              ...(unplaced
+                ? [{ path: 'ocf/UNMATCHED', name: 'UNMATCHED', color: 'var(--faint)', count: String(unplaced), status: 'needs' as const, action: go('takes') } satisfies Node]
+                : []),
+              ],
             },
             {
               path: 'snd',
@@ -303,6 +309,11 @@ export function FilesPanel() {
             </span>
           )}
         </div>
+        {!onDrive ? (
+          <button type="button" className="btn small files-assign" onClick={() => dispatch({ type: 'go', screen: 'takes' })} title="Put clips in their scene, setup and take folders on every destination">
+            + Assign clips to scenes and takes
+          </button>
+        ) : null}
         <input
           className="input"
           placeholder={onDrive ? 'Search this drive…' : 'Search clips, scenes, takes…'}

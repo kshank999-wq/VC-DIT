@@ -120,6 +120,8 @@ export interface MatchCandidate {
 /** A log entry the DIT has to decide (spec §4.5 Match Review). */
 export interface MatchEntry {
   id: string;
+  /** A script log row to pin to a clip (default), or a clip whose sources (log, camera report, sound slate) disagree. */
+  kind?: 'log' | 'sources';
   log: string;
   reason: string;
   fields: [string, string][];
@@ -283,6 +285,8 @@ export interface ProjectState {
   organize: OrganizeState;
   /** The day's timecoded notes, oldest first. */
   notes: DayNote[];
+  /** Where each camera clip of the day goes, from the log, the camera report, the sound slate and the DIT. */
+  takes: TakesState;
   /** The day's media in the production: what the Files panel counts. */
   media: { cameraFiles: number; soundFiles: number; cards: number; home: string | null };
   /** Productions opened before, newest first, for switching. */
@@ -532,4 +536,60 @@ export interface ReportEntry {
   card?: string;
   /** Its files on the drives (MHL, CSV, manifests), the first being the one to show. */
   files: string[];
+}
+
+// ---------------------------------------------------------------- takes: where each clip goes
+
+/** Who says where a clip goes. */
+export type AssignSource = 'log' | 'report' | 'sound' | 'manual';
+
+/** One line of the camera report (the AC's report): a clip on a card, and its slate. */
+export interface CameraReportRow {
+  id: number;
+  /** The card or roll: "A015". */
+  card: string;
+  /** As written: "C002", "2" or "A015C002". */
+  clip: string;
+  scene: string;
+  setup: string;
+  take: string;
+  circle: boolean;
+  lens: string;
+  notes: string;
+  /** Typed in VC DIT, imported from a file, or from VC Film Studio. */
+  source: 'entered' | 'csv' | 'film-studio';
+}
+
+export type CameraReportInput = Omit<CameraReportRow, 'id' | 'source'>;
+
+/** A camera clip of the day and where it goes. */
+export interface AssignedClip {
+  card: string;
+  clip: string;
+  /** Where it goes; empty while nothing names it or sources disagree. */
+  scene: string;
+  setup: string;
+  take: string;
+  circle: boolean;
+  /** Which source placed it. */
+  by: AssignSource | null;
+  /** Sources disagree: Match Review decides. */
+  conflict: boolean;
+  /** What each source said. */
+  claims: { source: AssignSource; scene: string; setup: string; take: string; circle: boolean; from: string }[];
+}
+
+export interface TakesState {
+  clips: AssignedClip[];
+  report: CameraReportRow[];
+  /** The camera report against the cards: rows naming a clip not on its card, clips on a reported card the report leaves out. */
+  reportProblems: string[];
+}
+
+/** Where a clip goes, as the DIT sets it. */
+export interface SlateInput {
+  scene: string;
+  setup: string;
+  take: string;
+  circle: boolean;
 }

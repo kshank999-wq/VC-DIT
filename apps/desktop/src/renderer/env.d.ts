@@ -97,6 +97,12 @@ interface ProjectApi {
   reveal: () => Promise<void>;
   importLog: () => Promise<ProjectResult>;
   resolveMatch: (id: string, clip: string | null) => Promise<ProjectResult>;
+  /** One card's camera report, replacing what it had. */
+  setCameraReport: (card: string, rows: import('../shared/project').CameraReportInput[]) => Promise<ProjectResult>;
+  importCameraReport: () => Promise<ProjectResult>;
+  saveReportTemplate: () => Promise<ProjectResult>;
+  /** Where clips go, in the DIT's own word; null takes them back to what the sources say. */
+  assign: (clips: { card: string; clip: string }[], slate: import('../shared/project').SlateInput | null) => Promise<ProjectResult>;
   saveLogTemplate: () => Promise<ProjectResult>;
   tagVfx: (clip: string, note: string) => Promise<ProjectResult>;
   mirrorVfx: () => Promise<ProjectResult>;

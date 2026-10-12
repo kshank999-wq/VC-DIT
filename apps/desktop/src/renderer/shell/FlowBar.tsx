@@ -47,6 +47,7 @@ export function FlowBar() {
 const SUB_TABS: Partial<Record<ScreenId, { screen: ScreenId; label: string }[]>> = {
   scenes: [
     { screen: 'scenes', label: 'Scene Organizer' },
+    { screen: 'takes', label: 'Assign takes' },
     { screen: 'match', label: 'Match Review' },
   ],
   looks: [
@@ -56,6 +57,7 @@ const SUB_TABS: Partial<Record<ScreenId, { screen: ScreenId; label: string }[]>>
   ],
 };
 SUB_TABS.match = SUB_TABS.scenes;
+SUB_TABS.takes = SUB_TABS.scenes;
 SUB_TABS.dailies = SUB_TABS.looks;
 SUB_TABS.delivery = SUB_TABS.looks;
 
