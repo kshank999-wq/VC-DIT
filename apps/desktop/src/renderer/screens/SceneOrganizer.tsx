@@ -359,6 +359,14 @@ function SceneFolders() {
           <span className="mono muted">↗</span>
         </button>
       ))}
+      {organize.check ? (
+        <p className="org-folders small" style={tone(statusVar(organize.check.total ? 'problem' : 'done'))}>
+          <span className="dot" aria-hidden="true" />{' '}
+          {organize.check.total
+            ? `${organize.check.total} not in place on the drives — see Assign takes`
+            : `Checked on ${organize.check.destinations.length} drive${organize.check.destinations.length === 1 ? '' : 's'}: all in place`}
+        </p>
+      ) : null}
     </div>
   );
 }

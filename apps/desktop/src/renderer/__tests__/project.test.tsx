@@ -43,7 +43,7 @@ const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   renders: [],
   dailiesActivity: null,
   ffmpeg: null,
-  organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
+  organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
   media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
   notes: [],
   takes: { clips: [], report: [], reportProblems: [] },
@@ -124,6 +124,8 @@ beforeEach(() => {
     importCameraReport: vi.fn(async () => ok(fresh())),
     saveReportTemplate: vi.fn(async () => ok(fresh())),
     assign: vi.fn(async () => ok(fresh())),
+    checkSceneFolders: vi.fn(async () => ok(fresh())),
+    repairSceneFolders: vi.fn(async () => ok(fresh())),
     saveLogTemplate: vi.fn(async () => ok(current)),
     tagVfx: vi.fn(async () => ok(current)),
     mirrorVfx: vi.fn(async () => ok(current)),
@@ -514,6 +516,7 @@ describe('a production from the database', () => {
         folders: [{ destination: 'RAID', path: '/Volumes/RAID/NIGHTJAR/SHOOT_DAY_001_2026-10-06/CAMERA_ORIGINALS/_BY_SCENE' }],
         problems: [{ clip: 'A001C002', destination: 'SHTL', error: 'A different file is already in the scene folder: CLIPS/A001C002.mov. It was not replaced.' }],
         activity: null,
+        check: null,
       },
     });
     render(

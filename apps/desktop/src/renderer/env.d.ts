@@ -128,6 +128,10 @@ interface ProjectApi {
   saveManifest: () => Promise<ProjectResult>;
   showManifest: (path: string) => Promise<void>;
   showSceneFolder: (path: string) => Promise<void>;
+  /** Read the scene folders back on every destination now. */
+  checkSceneFolders: () => Promise<ProjectResult>;
+  /** Put back what the check found missing or wrong. */
+  repairSceneFolders: () => Promise<ProjectResult>;
   reports: () => Promise<import('../shared/project').ReportEntry[]>;
   addNote: (note: Omit<import('../shared/project').NoteInput, 'at'>) => Promise<ProjectResult>;
   updateNote: (id: number, patch: Partial<Pick<import('../shared/project').DayNote, 'text' | 'scope' | 'scene' | 'setup' | 'take' | 'clip'>>) => Promise<ProjectResult>;

@@ -183,3 +183,9 @@
 .takes-run { width: 64px; height: 28px; }
 .takes-problems { border: 1px solid var(--s-needs); border-radius: 8px; padding: 8px 10px; display: grid; gap: 4px; }
 .takes-problems p { margin: 0; }
+.takes-side { display: grid; gap: 14px; }
+.folder-check { padding: 14px; display: grid; gap: 8px; }
+.folder-check-drives { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.folder-check-drives li { display: flex; justify-content: space-between; align-items: center; }
+.folder-check-findings { border: 1px solid var(--s-problem); border-radius: 8px; padding: 8px 10px; display: grid; gap: 3px; max-height: 220px; overflow: auto; }
+.folder-check-findings p { margin: 0; }

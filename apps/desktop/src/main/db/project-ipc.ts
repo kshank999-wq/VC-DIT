@@ -759,6 +759,9 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   ipcMain.handle('vcdit:film-studio-link', () => filmStudioLink(library.current.file));
   ipcMain.handle('vcdit:film-studio-link-set', (_e, key: unknown) => setFilmStudioKey(library.current.file, key));
   ipcMain.handle('vcdit:film-studio-link-clear', () => clearFilmStudioKey(library.current.file));
+  // Read the scene folders back on every destination now, or put back what the check found wrong.
+  ipcMain.handle('vcdit:project-organize-check', () => answer(() => organizing.check()));
+  ipcMain.handle('vcdit:project-organize-repair', () => answer(() => organizing.repair()));
   ipcMain.handle('vcdit:project-organize-show', (_e, path: unknown) => {
     // Only the scene folders VC DIT made.
     if (organizing.view().folders.some((folder) => folder.path === path)) void shell.openPath(String(path));

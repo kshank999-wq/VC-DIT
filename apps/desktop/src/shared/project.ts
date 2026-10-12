@@ -516,6 +516,18 @@ export interface OrganizeState {
   folders: { destination: string; path: string }[];
   problems: { clip: string; destination: string; error: string }[];
   activity: string | null;
+  /** The scene folders read back on every destination, after the last change. */
+  check: OrganizeCheck | null;
+}
+
+/** The scene folders read back: per destination, every clip in its take's folder as the card's own data. */
+export interface OrganizeCheck {
+  checkedAt: string;
+  destinations: { destination: string; clips: number; ok: number }[];
+  /** What is wrong, at most 50: a clip not placed, missing, not the card's data, a wrong reference. */
+  findings: { clip: string; destination: string; folder: string; problem: string; detail: string }[];
+  /** All of them, before the cut to 50. */
+  total: number;
 }
 
 // ------------------------------------------------ reports

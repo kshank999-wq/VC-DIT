@@ -88,10 +88,14 @@ export const dayEntries = async (db: ProductionDb, day: number, organize: Organi
       step: 'organize',
       screen: 'scenes',
       name: 'Scene folders and selects',
-      covers: `${plural(organize.placed, 'clip')} placed${organize.references ? ` · ${organize.references} as references` : ''}${organize.failed ? ` · ${organize.failed} not placed` : ''} · ${organize.folders.map((folder) => folder.destination).join(', ') || 'no drive yet'}`,
-      time: null,
-      status: organize.failed ? 'problem' : organize.pending ? 'working' : 'done',
-      word: organize.failed ? 'Problem' : organize.pending ? 'In progress' : 'Complete',
+      covers: `${plural(organize.placed, 'clip')} placed${organize.references ? ` · ${organize.references} as references` : ''}${organize.failed ? ` · ${organize.failed} not placed` : ''} · ${organize.folders.map((folder) => folder.destination).join(', ') || 'no drive yet'}${
+        organize.check
+          ? ` · checked on every drive: ${organize.check.destinations.map((drive) => `${drive.destination} ${drive.ok}/${drive.clips}`).join(', ')}${organize.check.total ? ` · ${plural(organize.check.total, 'problem')}` : ' · all in place'}`
+          : ''
+      }`,
+      time: organize.check ? organize.check.checkedAt : null,
+      status: organize.failed || organize.check?.total ? 'problem' : organize.pending ? 'working' : 'done',
+      word: organize.failed || organize.check?.total ? 'Problem' : organize.pending ? 'In progress' : 'Complete',
       files: organize.folders.map((folder) => folder.path),
     });
   }

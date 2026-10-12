@@ -1,6 +1,7 @@
 import { dirname, join } from 'node:path';
 import { SCENE_VIEW, SELECTS_VIEW, type OrganizeState } from '../../shared/project';
 import type { OrganizeLink, OrganizeView, ProductionDb } from '../db/production-db';
+import { checkViews } from './check';
 import { buildView, removeView } from './view';
 
 /**
@@ -25,12 +26,13 @@ export const viewRoot = (dayDir: string, kind: OrganizeView['kind']): string => 
 
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
-export const EMPTY_ORGANIZE: OrganizeState = { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null };
+export const EMPTY_ORGANIZE: OrganizeState = { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null };
 
 export class OrganizeService {
   private state: OrganizeState & { key: string } = { ...EMPTY_ORGANIZE, key: '' };
   private running: Promise<void> | null = null;
   private again = false;
+  private findings: Awaited<ReturnType<typeof checkViews>> = [];
 
   constructor(private readonly deps: OrganizeDeps) {}
 
@@ -139,6 +141,57 @@ export class OrganizeService {
         .slice(0, 20)
         .map((link) => ({ clip: link.clip, destination: link.destination, error: link.error ?? 'Not placed.' })),
       activity: null,
+      check: null,
     };
+
+    // Read every destination back: each clip in its take's folder, as the card's own data.
+    this.state = { ...this.state, activity: 'Checking the scene folders on every destination…' };
+    this.deps.changed();
+    const findings = await checkViews(views, db.organizeLinks(day));
+    if (this.deps.db() !== db) return;
+    this.findings = findings;
+    const destinations = new Map<string, { clips: number; wrong: Set<string> }>();
+    for (const view of views) {
+      if (view.kind !== 'scene') continue;
+      for (const location of view.locations) {
+        const entry = destinations.get(location.name) ?? { clips: 0, wrong: new Set<string>() };
+        entry.clips += 1;
+        destinations.set(location.name, entry);
+      }
+    }
+    for (const finding of findings) destinations.get(finding.destination)?.wrong.add(`${finding.card}|${finding.clip}`);
+    this.state.check = {
+      checkedAt: new Date().toISOString(),
+      destinations: [...destinations].map(([destination, entry]) => ({ destination, clips: entry.clips, ok: entry.clips - entry.wrong.size })),
+      findings: findings.slice(0, 50).map((finding) => ({
+        clip: finding.clip,
+        destination: finding.destination,
+        folder: finding.relDir,
+        problem: finding.problem,
+        detail: finding.detail,
+      })),
+      total: findings.length,
+    };
+    this.state.activity = null;
+  }
+
+  /**
+   * Put back what the check found missing or wrong: those clips are placed
+   * again (a different file where a link should go is still never replaced).
+   */
+  async repair(): Promise<void> {
+    await this.idle();
+    const db = this.deps.db();
+    const day = db.currentDay().number;
+    for (const finding of this.findings) {
+      if (finding.problem === 'card copy missing') continue;
+      db.removeOrganize(day, { kind: finding.kind, card: finding.card, clip: finding.clip, legId: finding.legId });
+    }
+    await this.run();
+  }
+
+  /** Read the folders back again now (someone may have moved things by hand). */
+  check(): Promise<void> {
+    return this.run();
   }
 }

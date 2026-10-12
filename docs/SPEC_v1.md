@@ -103,6 +103,15 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
 - Provide a Match Review screen for ambiguous or unmatched items; never silently guess when confidence is low.
 - Carry script-supervisor labels forward into folder organization, dailies metadata, VFX mirroring, and export manifests.
 
+#### 4.5.1 Where clips go: four sources, one answer
+
+- A camera clip's scene, setup and take can come from four sources: the **script supervisor's log**, the **camera report** (the AC's report), the **slate the sound recorder wrote** into the sound file synced to the clip (iXML scene/take), and the **DIT's own assignment**.
+- The DIT's own word wins. Otherwise the sources that name a clip must agree (scene and setup compared together, so "14"+"B" = "14B"; "T03" = "3"); one source alone is enough. When they disagree the clip is not placed (it waits under UNMATCHED) and **Match Review decides**, showing what each source said and where it came from. The decision is kept.
+- **Assign takes** (Organize) lists every clip of the day with where it goes and who says so, filters for clips not placed and sources that disagree, and places ticked clips by hand, one take each in a run ("C003–C006 as 22A takes 3–6"), or gives them back to the sources.
+- **The camera report** is entered card by card (lines, or runs of clips numbered take by take) or imported (CSV/TSV/ALE: Roll, Clip, Scene, Setup, Take, Circle, Lens, Notes; template provided), and checked against the cards: a line naming a clip not on its card, and clips on a reported card the report leaves out. A digital camera report from VC Film Studio will arrive the same way (planned).
+- The scene and setup folders (`CAMERA_ORIGINALS/_BY_SCENE/SCENE_###/SETUP_X/<take>`, circle takes also under `SELECTS_CIRCLE_TAKES`) follow these assignments on every destination holding the clip, uploads included, as hard links to the card copy, or a reference file where the drive cannot hold links.
+- **Read back on every drive**: after every change the folders are checked on every destination: each clip in its take's folder as the card's own data (the same file as the card copy, or a reference naming the clip and its files, with the card copy present). The result per drive ("RAID 212/212 in place") is shown in Assign takes and the Scene Organizer and goes into the day report; anything missing or wrong is listed and can be put back (a different file where a link would go is never replaced).
+
 ### 4.6 Picture / Sound Sync
 
 - Ingest picture and production sound as separate source classes.

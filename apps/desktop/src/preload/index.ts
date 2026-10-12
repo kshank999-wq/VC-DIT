@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('vcdit', {
     saveManifest: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-delivery-save-manifest'),
     showManifest: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-delivery-show', path),
     showSceneFolder: (path: string): Promise<void> => ipcRenderer.invoke('vcdit:project-organize-show', path),
+    checkSceneFolders: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-organize-check'),
+    repairSceneFolders: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-organize-repair'),
     reports: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-reports'),
     addNote: (note: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-note-add', note),
     updateNote: (id: number, patch: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-note-update', id, patch),

@@ -114,7 +114,7 @@ describe('the day\'s reports', () => {
       join(legs[1]!.targetDir, 'ascmhl', '0001_A015_20261007_143100Z.mhl'),
     ]);
     expect(byId['script']).toMatchObject({ status: 'done', covers: '2 entries · 2 matched · 0 to review · 1 VFX' });
-    expect(byId['scenes']).toMatchObject({ status: 'done', covers: '6 clips placed · RAID, SHUTTLE' });
+    expect(byId['scenes']).toMatchObject({ status: 'done', covers: '6 clips placed · RAID, SHUTTLE · checked on every drive: RAID 3/3, SHUTTLE 3/3 · all in place' });
     expect(byId['vfx']).toMatchObject({ status: 'needs', covers: '1 shot · 0 mirrored · 0 sent to VC VFX Prep' });
     expect(byId['delivery:dailies:shtl']).toMatchObject({ status: 'problem', covers: '20 files · 4.0 GB from RAID · 1 not verified' });
   });

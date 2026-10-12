@@ -275,3 +275,34 @@ describe('reading a slate', () => {
     expect(agree).toMatchObject({ conflict: false, by: 'log', slate: { scene: '14', setup: 'B', take: '3' } });
   });
 });
+
+describe('the scene folders read back on every drive', () => {
+  it('finds a clip taken out by hand or swapped for another file, and puts back what it can', async () => {
+    await organizer.run();
+    expect(organizer.view().check).toMatchObject({ total: 0, destinations: [{ destination: 'RAID', clips: 3, ok: 3 }, { destination: 'SHUTTLE', clips: 3, ok: 3 }] });
+
+    // Someone deletes a take's link on the shuttle, and replaces another's with a copy.
+    const take1 = scenes(1, 'SCENE_014', 'SETUP_A', 'HLC_D001_SC14A_T01_A015', 'A015R1AB', 'A015C001_261007_R1AB.mxf');
+    await rm(take1);
+    const take3 = scenes(1, 'SCENE_014', 'SETUP_B', 'HLC_D001_SC14B_T03_A015', 'A015R1AB', 'A015C002_261007_R1AB.mxf');
+    await rm(take3);
+    await cp(card(1, 'A015C002_261007_R1AB.mxf'), take3);
+
+    await organizer.check();
+    const check = organizer.view().check!;
+    expect(check.destinations.find((drive) => drive.destination === 'SHUTTLE')).toEqual({ destination: 'SHUTTLE', clips: 3, ok: 1 });
+    expect(check.findings.map((finding) => [finding.clip, finding.destination, finding.problem])).toEqual(
+      expect.arrayContaining([
+        ['A015C001', 'SHUTTLE', 'missing'],
+        ['A015C002', 'SHUTTLE', 'not the card copy'],
+      ]),
+    );
+
+    // Put back: the missing link comes back; a different file is never replaced, and is still reported.
+    await organizer.repair();
+    expect(await same(take1, card(1, 'A015C001_261007_R1AB.mxf'))).toBe(true);
+    const after = organizer.view().check!;
+    expect(after.findings.map((finding) => [finding.clip, finding.problem])).toEqual([['A015C002', 'not placed']]);
+    expect(after.findings[0]!.detail).toMatch(/not replaced/i);
+  });
+});

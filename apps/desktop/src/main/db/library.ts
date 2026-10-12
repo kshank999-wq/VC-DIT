@@ -132,7 +132,7 @@ export class Library {
       takes: db.takesView(day.number),
       media: db.mediaCounts(day.number),
       notes: db.notes(day.number),
-      organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null },
+      organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
       recent: this.index.recent,
     };
   }

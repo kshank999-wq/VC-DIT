@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import type { AssignedClip, AssignSource, CameraReportInput, CameraReportRow, ProjectResult, SlateInput } from '../../shared/project';
 import { projectApi } from '../state/engine';
 import { useStore } from '../state/store';
+import { FolderCheck } from '../ui/FolderCheck';
 import { Check, ScreenHeader, StatusText, statusVar, tone } from '../ui/kit';
 import './organize.css';
 
@@ -217,7 +218,10 @@ export function Takes() {
           })}
         </section>
 
-        <CameraReport cards={cards} report={takes.report} problems={takes.reportProblems} onAnswer={answer} />
+        <div className="takes-side">
+          <FolderCheck />
+          <CameraReport cards={cards} report={takes.report} problems={takes.reportProblems} onAnswer={answer} />
+        </div>
       </div>
     </div>
   );

@@ -80,4 +80,38 @@ describe('Assign takes', () => {
       ['C006', '14', 'C', '3'],
     ]);
   });
+
+  it('shows the folders read back on every drive, and puts back what is wrong', async () => {
+    const state = {
+      ...initialState(),
+      project: { file: '/p.vcdit', days: [], recent: [] },
+      organize: {
+        placed: 6,
+        references: 0,
+        failed: 0,
+        pending: 0,
+        folders: [],
+        problems: [],
+        activity: null,
+        check: {
+          checkedAt: '2026-10-07T18:00:00.000Z',
+          destinations: [
+            { destination: 'RAID', clips: 3, ok: 3 },
+            { destination: 'LucidLink', clips: 3, ok: 2 },
+          ],
+          findings: [{ clip: 'A015C001', destination: 'LucidLink', folder: 'CAMERA_ORIGINALS/_BY_SCENE/SCENE_014/SETUP_A/T01', problem: 'missing', detail: 'The reference file is not there.' }],
+          total: 1,
+        },
+      },
+    } as AppState;
+    const repairSceneFolders = vi.fn(async () => ({ ok: false as const, reason: '' }));
+    window.vcdit = { platform: 'darwin', desktop: true, project: { onChange: () => () => undefined, repairSceneFolders, checkSceneFolders: vi.fn() } } as unknown as Window['vcdit'];
+    mount(state);
+    const panel = screen.getByRole('region', { name: 'Scene folders on every drive' });
+    expect(panel.textContent).toContain('3/3 in place');
+    expect(panel.textContent).toContain('2/3 in place');
+    expect(within(panel).getByRole('alert').textContent).toMatch(/A015C001 on LucidLink: missing/);
+    fireEvent.click(within(panel).getByRole('button', { name: 'Put back 1' }));
+    await waitFor(() => expect(repairSceneFolders).toHaveBeenCalled());
+  });
 });
