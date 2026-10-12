@@ -89,11 +89,28 @@ void app.whenReady().then(async () => {
   delivery = project.delivery;
   organize = project.organize;
   const open = library;
-  media = await registerMedia((transfer) => {
-    open.current.saveTransfer(transfer);
-    // A card that just finished may hold clips the script log is waiting for.
-    if (transfer.finishedAt) project.cardIn(transfer.day);
-  });
+  media = await registerMedia(
+    (transfer) => {
+      open.current.saveTransfer(transfer);
+      // A card that just finished may hold clips the script log is waiting for.
+      if (transfer.finishedAt) project.cardIn(transfer.day);
+    },
+    {
+      // A workflow that starts a card by itself copies it into the production and day open now.
+      context: () => {
+        const production = open.current.production();
+        const day = open.current.currentDay();
+        return { production: { name: production.name, code: production.code }, day: { number: day.number, date: day.date } };
+      },
+      // What a workflow does once the card has verified: the day's dailies, with the production's own settings.
+      afterCard: async ({ day }) => {
+        if (open.current.currentDay().number !== day) return 'Dailies not started: another day is open now.';
+        if (project.dailies.busy()) return 'Dailies are already rendering; this card is in the next run.';
+        const { takes } = await project.dailies.start(open.current.dailiesSettings());
+        return `Dailies started: ${takes} take${takes === 1 ? '' : 's'}.`;
+      },
+    },
+  );
   media.load(open.current.transfers(open.current.currentDay().number));
   createMainWindow();
   app.on('activate', () => {

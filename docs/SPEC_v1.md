@@ -88,6 +88,14 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
 - **Per-drive speed.** Any destination fed from the backup has its own **Speed** (no limit, or 1 to 100 MB/s), remembered for that drive or folder: a shared NAS, a slow network drive. An upload goes at the lower of its own speed and the upload speed. Copies straight from the card are never limited.
 - Not yet: uploads through a service's API (Frame.io, Google Drive), which will use the same queue when those integrations land.
 
+#### 4.3.2 Saved workflows
+
+A workflow is a saved way to offload a kind of card: **any camera**, a **camera maker** (ARRI, RED, Sony, Blackmagic, Canon, Panasonic, DJI, as the card's contents show) or **sound cards**. It names its destinations (drives remembered by name and size, folders by place; each keeps its own From card / From backup choice and speed), its checksum, and two options: **start by itself** and **render the dailies when the card has verified**. Workflows are saved on the computer (Intake → Workflows…), from the destinations and checksum picked at the time; there is one per kind of card, and a maker's beats the one for any camera.
+
+- A card shows the workflow it matches. **Apply** ticks that workflow's destinations that are plugged in, and nothing else, and sets its checksum; picking a destination by hand afterwards drops the workflow.
+- **Start by itself**: once a matching card is in, a production is open and every one of the workflow's drives is mounted, the copy starts into the open day. Until then the card says why ("Waiting for SHUTTLE_02 to start ARRI to both."). A card already copied today and plugged in again is not started again; that is the DIT's call. Each card is tried once while it stays in.
+- **Dailies after**: once the card has verified on every drive it was copied to from the card, the day's dailies render with the production's dailies settings. The transfer row says what happened ("Dailies started: 12 takes.", or why not).
+
 ### 4.4 Naming & Folder Automation
 
 - Configurable naming convention centered on Production → Shoot Day → Scene → Setup → Take/Clip.

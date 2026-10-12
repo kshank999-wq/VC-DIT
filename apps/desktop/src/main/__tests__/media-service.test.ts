@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IngestRequest, MediaState } from '../../shared/media';
 import type { TransferRecord } from '../db/production-db';
-import { MediaService, type TransferRunner } from '../media/media-service';
+import { MediaService, type MediaServiceDeps, type TransferRunner } from '../media/media-service';
 import { writeReports } from '../media/reports';
 import { runTransfer } from '../media/transfer';
 import type { WorkerCommand, WorkerMessage, WorkerPlan } from '../media/transfer-worker';
@@ -452,6 +452,82 @@ describe('cascade copies: card → RAID → shuttle', () => {
     await service.setDriveLimit(mounts[2]!, null);
     expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.limit).toBeNull();
     expect(await service.setDriveLimit('/Volumes/gone', 1_000_000)).toEqual({ ok: false, reason: 'That destination is no longer available.' });
+  });
+});
+
+describe('saved workflows', () => {
+  const deps = () => (service as unknown as { deps: MediaServiceDeps }).deps;
+  const context = { production: { name: 'HALCYON', code: 'HLC' }, day: { number: 14, date: '2026-10-05' } };
+
+  it('matches a card by its maker first, else the workflow for any camera, and keeps one per kind of card', async () => {
+    const card = () => service.state().volumes.find((volume) => volume.name === 'A015')!;
+    expect(card().workflow).toBeNull();
+    const any = await service.saveWorkflow({ name: 'Main offload', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: false, dailies: false });
+    expect(any).toMatchObject({ ok: true });
+    expect(card().workflow).toBe(any.ok && any.id);
+    // The card is ARRI ("ARRI · MXF"): an ARRI workflow wins over the one for any camera.
+    const arri = await service.saveWorkflow({ name: 'ARRI to both', camera: 'arri', destinations: [mounts[1]!, mounts[2]!], checksum: 'xxHash64', autoStart: false, dailies: false });
+    expect(card().workflow).toBe(arri.ok && arri.id);
+    expect(service.state().workflows!.map((workflow) => [workflow.name, workflow.destinations.map((destination) => destination.name), workflow.here?.length, workflow.missing])).toEqual([
+      ['Main offload', ['RAID'], 1, []],
+      ['ARRI to both', ['RAID', 'SHUTTLE'], 2, []],
+    ]);
+    // Saving another ARRI workflow replaces the first; it is remembered on the computer.
+    await service.saveWorkflow({ name: 'ARRI to RAID', camera: 'arri', destinations: [mounts[1]!], checksum: 'xxHash64', autoStart: false, dailies: false });
+    expect(service.state().workflows!.map((workflow) => workflow.name)).toEqual(['Main offload', 'ARRI to RAID']);
+    expect(JSON.parse(await readFile(join(base, 'appdata', 'media.json'), 'utf8')).workflows).toHaveLength(2);
+    expect(await service.saveWorkflow({ name: '', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: false, dailies: false })).toEqual({ ok: false, reason: 'Give the workflow a name.' });
+    expect(await service.saveWorkflow({ name: 'X', camera: 'any', destinations: ['/nowhere'], checksum: 'MD5', autoStart: false, dailies: false })).toEqual({ ok: false, reason: 'A destination you picked is no longer available.' });
+    await service.removeWorkflow(any.ok ? any.id : '');
+    expect(service.state().workflows!.map((workflow) => workflow.name)).toEqual(['ARRI to RAID']);
+  });
+
+  it('starts a matching card by itself once its drives are in, once, and then renders the dailies', async () => {
+    const afterCard = vi.fn(async () => 'Dailies started: 2 takes.');
+    deps().context = () => context;
+    deps().afterCard = afterCard;
+    await service.saveWorkflow({ name: 'ARRI to both', camera: 'arri', destinations: [mounts[1]!, mounts[2]!], checksum: 'MD5', autoStart: true, dailies: true });
+    // The shuttle is not plugged in: it waits, and says for what.
+    const shuttle = mounts.pop()!;
+    await service.poll();
+    expect(service.state().autoStart).toEqual({ [mounts[0]!]: 'Waiting for SHUTTLE to start ARRI to both.' });
+    expect(service.state().jobs).toHaveLength(0);
+    mounts.push(shuttle);
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')).toBeTruthy());
+    await service.poll();
+    await settle();
+    const job = service.state().jobs[0]!;
+    expect(job).toMatchObject({ card: 'A015', checksum: 'MD5', workflow: 'ARRI to both' });
+    expect(job.legs.map((leg) => [leg.name, leg.verifyPct])).toEqual([
+      ['RAID', 100],
+      ['SHUTTLE', 100],
+    ]);
+    expect(service.state().autoStart).toEqual({});
+    await vi.waitFor(() => expect(service.state().jobs[0]!.followUp).toBe('Dailies started: 2 takes.'));
+    expect(afterCard).toHaveBeenCalledWith({ day: 14, card: 'A015', workflow: expect.objectContaining({ name: 'ARRI to both' }) });
+    // Polled again, still mounted: not copied a second time.
+    await service.poll();
+    await settle();
+    expect(service.state().jobs).toHaveLength(1);
+  });
+
+  it('does not start a card by itself with no production open, or one already copied today', async () => {
+    await service.saveWorkflow({ name: 'Any', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: true, dailies: false });
+    await service.poll();
+    expect(service.state().autoStart![mounts[0]!]).toBe('Open a production to start it.');
+    // Copied by hand, then plugged in again later: left for the DIT.
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    deps().context = () => context;
+    const card = mounts.shift()!;
+    await service.poll();
+    mounts.unshift(card);
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes.some((volume) => volume.name === 'A015')).toBe(true));
+    await service.poll();
+    expect(service.state().autoStart![mounts[0]!]).toMatch(/Copied earlier today/);
+    expect(service.state().jobs).toHaveLength(1);
   });
 });
 

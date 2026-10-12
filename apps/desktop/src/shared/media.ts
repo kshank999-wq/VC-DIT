@@ -1,3 +1,5 @@
+import type { Brand } from './brands';
+
 /**
  * What the media engine (src/main/media) and the screens say to each other
  * over IPC. Plain data only: sizes in bytes, times as ISO strings.
@@ -39,6 +41,8 @@ export interface MediaVolume {
   limit?: number | null;
   /** What the device itself is, from the system: its model, how it is connected, solid state or spinning. */
   device: DeviceInfo;
+  /** A card: the saved workflow it matches, by id. */
+  workflow?: string | null;
 }
 
 /** What the system says about the disk behind a volume. Any of it may be unknown. */
@@ -75,6 +79,34 @@ export interface MediaState {
   relaysPaused: boolean;
   /** Most bytes a second uploads may write, or null for no limit. */
   relayLimit: number | null;
+  /** Saved workflows, on this computer. */
+  workflows?: Workflow[];
+  /** Why a card that would start on its own has not: "Waiting for SHUTTLE_02.". By card (volume id). */
+  autoStart?: Record<string, string>;
+}
+
+/** Which cards a workflow is for: a camera maker, sound cards, or any camera card. */
+export type WorkflowCamera = 'any' | 'sound' | Brand;
+
+/**
+ * A saved way to offload a kind of card (Silverstack's presets): where it
+ * goes, how it is checked, whether it starts by itself, and what follows.
+ * Kept on the computer, like drive roles; drives are remembered by name and
+ * size, folders by their place.
+ */
+export interface Workflow {
+  id: string;
+  name: string;
+  camera: WorkflowCamera;
+  destinations: { key: string; name: string }[];
+  checksum: ChecksumMethod;
+  /** Start the copy as soon as a matching card and all its drives are in. */
+  autoStart: boolean;
+  /** Render the day's dailies (with the production's dailies settings) when the card has verified. */
+  dailies: boolean;
+  /** In the engine's state only: its destinations mounted now (ids), and the ones that are not (names). */
+  here?: string[];
+  missing?: string[];
 }
 
 export interface IngestRequest {
@@ -85,6 +117,8 @@ export interface IngestRequest {
   checksum: ChecksumMethod;
   production: { name: string; code: string };
   day: { number: number; date: string };
+  /** The workflow it follows, for what comes after the copy. */
+  workflow?: string | null;
 }
 
 export type IngestResult = { ok: true; jobs: string[] } | { ok: false; reason: string };
@@ -140,6 +174,9 @@ export interface JobSnapshot {
   finishedAt: string | null;
   /** When the card's ingested files were erased so it could go back to camera; null until then. */
   clearedAt: string | null;
+  /** The workflow it followed, by name, and what came after the copy ("Dailies started", or why not). */
+  workflow?: string | null;
+  followUp?: string | null;
 }
 
 /** The check made before a card is cleared, and again just before anything is erased. */

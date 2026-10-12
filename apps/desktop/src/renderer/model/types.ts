@@ -67,6 +67,8 @@ export interface Volume {
   local?: boolean;
   /** Its own speed limit for copies from the backup, bytes a second. */
   limit?: number | null;
+  /** A card: the saved workflow it matches, by id. */
+  workflow?: string | null;
   /** What the system says the device is: its model, bus, solid state, RAID. */
   device?: DeviceInfo;
 }
@@ -127,6 +129,9 @@ export interface TransferJob {
   /** The card's volume (its mount path), and when it was cleared for camera. */
   sourceId?: string;
   clearedAt?: string | null;
+  /** The workflow it followed (by name), and what came after the copy. */
+  workflow?: string | null;
+  followUp?: string | null;
 }
 
 export type SyncMethod = 'Timecode' | 'Waveform' | 'Manual' | 'None';

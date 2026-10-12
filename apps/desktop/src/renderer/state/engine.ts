@@ -250,7 +250,7 @@ export const dailiesSettings = (options: AppState['dailies']): DailiesSettings =
 
 const pct = (used: number, total: number) => (total > 0 ? Math.round((used / total) * 100) : 0);
 
-export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs' | 'relaysPaused' | 'relayLimit'> => {
+export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, 'volumes' | 'destinations' | 'jobs' | 'relaysPaused' | 'relayLimit' | 'workflows' | 'autoStart'> => {
   const volumes = media.volumes.map<Volume>((volume) => {
     const before = state.volumes.find((candidate) => candidate.id === volume.id);
     const used = Math.max(0, volume.totalBytes - volume.freeBytes);
@@ -275,6 +275,7 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       relay: volume.relay,
       local: volume.local ?? true,
       limit: volume.limit ?? null,
+      workflow: volume.workflow ?? null,
       device: volume.device,
     };
   });
@@ -324,8 +325,18 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
     etaSeconds: job.etaSeconds,
     sourceId: job.sourceId,
     clearedAt: job.clearedAt ?? null,
+    workflow: job.workflow ?? null,
+    followUp: job.followUp ?? null,
   }));
-  return { volumes, destinations, jobs, relaysPaused: media.relaysPaused ?? false, relayLimit: media.relayLimit ?? null };
+  return {
+    volumes,
+    destinations,
+    jobs,
+    relaysPaused: media.relaysPaused ?? false,
+    relayLimit: media.relayLimit ?? null,
+    workflows: media.workflows ?? [],
+    autoStart: media.autoStart ?? {},
+  };
 };
 
 /** What Intake asks the engine for: the ticked cards to the ticked destinations. */
@@ -338,6 +349,7 @@ export const ingestRequest = (state: AppState): IngestRequest => ({
   checksum: state.checksum,
   production: { name: state.production.name, code: state.production.code },
   day: { number: state.day.number, date: state.day.date },
+  workflow: state.appliedWorkflow,
 });
 
 export const formatRate = (bytesPerSecond: number): string => `${formatBytes(bytesPerSecond)}/s`;

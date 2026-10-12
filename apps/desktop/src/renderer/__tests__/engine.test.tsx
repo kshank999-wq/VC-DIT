@@ -136,6 +136,8 @@ beforeEach(() => {
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
     setDriveLimit: vi.fn(async () => ({ ok: true })),
+    saveWorkflow: vi.fn(async () => ({ ok: true, id: 'wf-1' })),
+    removeWorkflow: vi.fn(async () => undefined),
     checkClear: vi.fn(async () => CHECK),
     eject: vi.fn(async () => ({ ok: true })),
     clearCard: vi.fn(async () => ({ ok: true, removed: 1284, check: CHECK })),
@@ -182,6 +184,7 @@ describe('Intake on the media engine', () => {
       checksum: 'xxHash64',
       production: { name: 'HALCYON', code: 'HLC' },
       day: { number: 14, date: '2026-10-05' },
+      workflow: null,
     });
   });
 
@@ -519,6 +522,49 @@ describe('a shuttle on its way out', () => {
     expect(within(tile()).getByText('1 card verified · ready to go')).toBeTruthy();
     fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject SHTL_08' }));
     await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
+  });
+});
+
+describe('saved workflows on Intake', () => {
+  it('shows the workflow a card matches, applies it, and saves what is picked as a new one', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const workflow = { id: 'wf-1', name: 'ARRI to RAID', camera: 'arri' as const, destinations: [{ key: 'RAID|1000', name: 'RAID' }], checksum: 'MD5' as const, autoStart: true, dailies: false, here: [raid.id], missing: [] };
+    media.state.mockResolvedValueOnce({
+      volumes: [{ ...card, workflow: 'wf-1' }, raid, shuttle],
+      folders: [],
+      jobs: [],
+      relaysPaused: false,
+      relayLimit: null,
+      workflows: [workflow],
+      autoStart: { [card.id]: 'Waiting for SHTL_09 to start ARRI to RAID.' },
+    });
+    mount(<Intake />);
+    const sources = screen.getByRole('region', { name: 'Sources' });
+    await waitFor(() => within(sources).getByRole('button', { name: 'Apply' }));
+    expect(sources.querySelector('.workflow-chip')!.textContent).toMatch(/⚙ ARRI to RAID · starts by itself/);
+    expect(within(sources).getByText('Waiting for SHTL_09 to start ARRI to RAID.')).toBeTruthy();
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    const ticked = (name: string) => (within(out).getByRole('checkbox', { name: `Write to ${name}` }) as HTMLInputElement).checked;
+    expect([ticked('RAID'), ticked('SHTL_08')]).toEqual([true, true]);
+    fireEvent.click(within(sources).getByRole('button', { name: 'Apply' }));
+    expect([ticked('RAID'), ticked('SHTL_08')]).toEqual([true, false]);
+    expect(within(sources).getByRole('button', { name: 'Applied' })).toBeTruthy();
+    // Started now, it follows the workflow, with its checksum.
+    fireEvent.click(screen.getByRole('button', { name: /Start verified ingest/ }));
+    await waitFor(() => expect(media.ingest).toHaveBeenCalled());
+    expect(media.ingest.mock.calls[0]![0]).toMatchObject({ destinations: [raid.id], checksum: 'MD5', workflow: 'wf-1' });
+
+    // Save the shuttle too, for sound cards.
+    fireEvent.click(within(out).getByRole('checkbox', { name: 'Write to SHTL_08' }));
+    fireEvent.click(within(out).getByRole('button', { name: /Workflows/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Workflows' });
+    expect(within(dialog).getByText(/ARRI to RAID/)).toBeTruthy();
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Cards it is for' }), { target: { value: 'sound' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Workflow name' }), { target: { value: 'Sound to both' } });
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: /Start by itself/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save workflow' }));
+    await waitFor(() => expect(media.saveWorkflow).toHaveBeenCalled());
+    expect(media.saveWorkflow.mock.calls[0]![0]).toEqual({ name: 'Sound to both', camera: 'sound', destinations: [raid.id, shuttle.id], checksum: 'MD5', autoStart: true, dailies: false });
   });
 });
 

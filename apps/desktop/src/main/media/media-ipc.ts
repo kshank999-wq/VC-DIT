@@ -7,7 +7,7 @@ import { inside, listFolder, searchFolder } from './browse';
 import { segment } from './rules';
 import type { TransferRecord } from '../db/production-db';
 import { licensing } from '../licensing-ipc';
-import { MediaService } from './media-service';
+import { MediaService, type MediaServiceDeps } from './media-service';
 import transferWorkerPath from './transfer-worker?modulePath';
 
 /**
@@ -18,13 +18,17 @@ import transferWorkerPath from './transfer-worker?modulePath';
 
 const ROLES: VolumeRole[] = ['Camera', 'Sound', 'Destination', 'Shuttle', 'Archive', 'Other'];
 
-export const registerMedia = async (record: (transfer: TransferRecord) => void): Promise<MediaService> => {
+export const registerMedia = async (
+  record: (transfer: TransferRecord) => void,
+  hooks: Pick<MediaServiceDeps, 'context' | 'afterCard'> = {},
+): Promise<MediaService> => {
   const service = new MediaService({
     dataDir: app.getPath('userData'),
     workerPath: transferWorkerPath,
     tool: { name: 'VC DIT', version: app.getVersion() },
     canStartTransfers: () => licensing.canStartTransfers(),
     onRecord: record,
+    ...hooks,
     onChange: (state) => {
       for (const window of BrowserWindow.getAllWindows()) window.webContents.send('vcdit:media', state);
     },
@@ -102,6 +106,21 @@ export const registerMedia = async (record: (transfer: TransferRecord) => void):
   ipcMain.handle('vcdit:media-clear', (_e, jobId: unknown, value: unknown) => service.clearCard(String(jobId), rule(value)));
 
   ipcMain.handle('vcdit:media-eject', (_e, volumeId: unknown) => service.eject(String(volumeId)));
+
+  // Saved workflows: where a kind of card goes, and whether it starts by itself.
+  ipcMain.handle('vcdit:media-save-workflow', (_e, input: unknown) => {
+    const value = (input ?? {}) as Record<string, unknown>;
+    return service.saveWorkflow({
+      id: typeof value['id'] === 'string' ? value['id'] : undefined,
+      name: String(value['name'] ?? ''),
+      camera: String(value['camera'] ?? '') as Parameters<MediaService['saveWorkflow']>[0]['camera'],
+      destinations: Array.isArray(value['destinations']) ? value['destinations'].slice(0, 20).map(String) : [],
+      checksum: String(value['checksum'] ?? '') as Parameters<MediaService['saveWorkflow']>[0]['checksum'],
+      autoStart: value['autoStart'] === true,
+      dailies: value['dailies'] === true,
+    });
+  });
+  ipcMain.handle('vcdit:media-remove-workflow', (_e, id: unknown) => service.removeWorkflow(String(id)));
 
   ipcMain.handle('vcdit:media-retry', (_e, jobId: unknown, legId: unknown) => service.retry(String(jobId), String(legId)));
   ipcMain.handle('vcdit:media-show', (_e, path: unknown) => {

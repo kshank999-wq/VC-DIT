@@ -5,6 +5,7 @@ import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { limitWord, UPLOAD_LIMITS, UploadControls } from '../ui/UploadControls';
+import { WorkflowChip, WorkflowsButton } from '../ui/Workflows';
 import { EjectAllButton } from '../ui/EjectAll';
 import { ShuttleOut } from '../ui/ShuttleOut';
 import { CardEject, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
@@ -167,6 +168,7 @@ export function Intake() {
                     </span>
                     <span className="offload-sub faint">{volume.detected}</span>
                   </label>
+                  <WorkflowChip volume={volume} />
                   <div className="offload-tile-foot">
                     <select className="select offload-role" aria-label={`Role of ${volume.name}`} value={volume.role} disabled={volume.ingested} onChange={(event) => setRole(volume, event.target.value as VolumeRole)}>
                       {ROLES.map((role) => (
@@ -291,7 +293,10 @@ export function Intake() {
 
         {/* ------------------------------------------------ destinations */}
         <section className="offload-col" aria-label="Destinations">
-          <h2 className="offload-head">Destinations</h2>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h2 className="offload-head">Destinations</h2>
+            <WorkflowsButton />
+          </div>
           <div className="offload-tiles">
             {state.destinations.map((destination) => (
               <DestinationTile
@@ -412,6 +417,13 @@ function TransferRow({
           )}
           <span className="strong mono">{leg.name}</span>
           <span className="faint mono offload-path">{tail(leg.targetDir)}</span>
+          {job.workflow && leg === job.legs[0] ? (
+            <span className="faint small">
+              {' '}
+              · ⚙ {job.workflow}
+              {job.followUp ? ` · ${job.followUp}` : ''}
+            </span>
+          ) : null}
         </div>
         <ProgressBar pct={legProgress(leg)} color={statusVar(status)} label={`${card} to ${leg.name}`} />
         <div className="offload-row-foot">

@@ -62,6 +62,17 @@ interface MediaApi {
   setRelayLimit: (bytesPerSecond: number | null) => Promise<void>;
   /** A destination's own speed limit for copies from the backup (bytes a second), or null for none. */
   setDriveLimit: (id: string, bytesPerSecond: number | null) => Promise<{ ok: boolean; reason?: string }>;
+  /** Save the destinations picked now (ids) as a workflow for a kind of card. */
+  saveWorkflow: (workflow: {
+    id?: string;
+    name: string;
+    camera: import('../shared/media').WorkflowCamera;
+    destinations: string[];
+    checksum: import('../shared/media').ChecksumMethod;
+    autoStart: boolean;
+    dailies: boolean;
+  }) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
+  removeWorkflow: (id: string) => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
   /** Eject a card or drive, as Finder or Explorer would; ok once it has really gone. */

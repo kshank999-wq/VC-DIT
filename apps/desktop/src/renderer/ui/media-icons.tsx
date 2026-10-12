@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { DeviceInfo } from '../../shared/media';
 import type { IconSize } from '../state/store';
+import { BRAND_NAME, type Brand } from '../../shared/brands';
 
 /** Pixel sizes for each preference (Preferences → Icon size): a source or destination tile, a transfer row, a list line. */
 export const ICON_PX: Record<IconSize, { tile: number; row: number; list: number }> = {
@@ -176,30 +177,7 @@ export function DeviceIcon({ look, size = 64, path, brand }: { look: MediaLook; 
 
 // ---------------------------------------------------------------- camera makers
 
-export type Brand = 'arri' | 'red' | 'sony' | 'blackmagic' | 'canon' | 'panasonic' | 'dji';
-
-export const BRAND_NAME: Record<Brand, string> = {
-  arri: 'ARRI',
-  red: 'RED',
-  sony: 'SONY',
-  blackmagic: 'Blackmagic',
-  canon: 'Canon',
-  panasonic: 'Panasonic',
-  dji: 'DJI',
-};
-
-/** The camera maker, from what the engine found on the card ("ARRI · ARRIRAW", "VENICE 2 · X-OCN ST"). */
-export const brandOf = (detected: string | null | undefined): Brand | null => {
-  const text = detected ?? '';
-  if (/\barri\b|alexa|amira/i.test(text)) return 'arri';
-  if (/\bred\b|r3d|v-raptor|komodo|monstro|helium/i.test(text)) return 'red';
-  if (/sony|venice|burano|fx[369]|x-ocn|xavc/i.test(text)) return 'sony';
-  if (/blackmagic|braw|ursa|pocket/i.test(text)) return 'blackmagic';
-  if (/canon|cinema raw|c[37]0|c[35]00/i.test(text)) return 'canon';
-  if (/panasonic|varicam|lumix|\bp2\b/i.test(text)) return 'panasonic';
-  if (/\bdji\b|ronin|inspire|mavic/i.test(text)) return 'dji';
-  return null;
-};
+export { BRAND_NAME, brandOf, type Brand } from '../../shared/brands';
 
 /**
  * The maker's logo files, where the production has put them in

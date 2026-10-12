@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
-import type { MediaState } from '../../shared/media';
+import type { MediaState, Workflow } from '../../shared/media';
 import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, DriveSeal, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
@@ -52,6 +52,11 @@ export interface AppState {
   relaysPaused: boolean;
   /** Most bytes a second uploads may write, or null for no limit (media engine). */
   relayLimit: number | null;
+  /** Saved workflows, and why a card one would start has not started (media engine). */
+  workflows: Workflow[];
+  autoStart: Record<string, string>;
+  /** The workflow the DIT applied to the next ingest, for what follows the copy. */
+  appliedWorkflow: string | null;
   /** The open production's file, its days and the recent productions, when the database is in use. */
   project: { file: string; days: ShootDay[]; recent: { file: string; name: string }[] } | null;
   screen: ScreenId;
@@ -117,6 +122,9 @@ export const initialState = (): AppState => ({
   engine: false,
   relaysPaused: false,
   relayLimit: null,
+  workflows: [],
+  autoStart: {},
+  appliedWorkflow: null,
   project: null,
   screen: 'today',
   filesOpen: true,
@@ -184,6 +192,8 @@ export type Action =
   | { type: 'setVolumeRole'; volume: string; role: VolumeRole }
   | { type: 'toggleVolume'; volume: string }
   | { type: 'toggleDestination'; destination: string }
+  /** Tick a workflow's destinations (those plugged in), and nothing else, and use its checksum. */
+  | { type: 'applyWorkflow'; workflow: Workflow }
   | { type: 'setDestinationRelay'; destination: string; relay: boolean }
   | { type: 'cardCleared'; job: string; at: string }
   | { type: 'assignTakes'; clips: { card: string; clip: string }[]; slate: SlateInput | null; step?: boolean }
@@ -325,6 +335,8 @@ export const reducer = (state: AppState, action: Action): AppState => {
         ),
       };
     case 'toggleDestination': {
+      // Picked by hand now: the next ingest follows no workflow.
+      state = { ...state, appliedWorkflow: null };
       const fixed = state.destinations.find((destination) => destination.id === action.destination);
       if (fixed) {
         return { ...state, destinations: state.destinations.map((destination) => (destination === fixed ? { ...destination, selected: !destination.selected } : destination)) };
@@ -333,6 +345,16 @@ export const reducer = (state: AppState, action: Action): AppState => {
       const volume = state.volumes.find((candidate) => candidate.id === action.destination);
       if (!volume || !DESTINATION_ROLES.includes(volume.role)) return state;
       return { ...state, volumes: state.volumes.map((candidate) => (candidate === volume ? { ...candidate, included: !candidate.included } : candidate)) };
+    }
+    case 'applyWorkflow': {
+      const here = new Set(action.workflow.here ?? []);
+      return {
+        ...state,
+        destinations: state.destinations.map((destination) => ({ ...destination, selected: here.has(destination.id) })),
+        volumes: state.volumes.map((volume) => (DESTINATION_ROLES.includes(volume.role) ? { ...volume, included: here.has(volume.id) } : volume)),
+        checksum: action.workflow.checksum,
+        appliedWorkflow: action.workflow.id,
+      };
     }
     case 'setDestinationRelay':
       return {

@@ -16,7 +16,10 @@ import {
   type MediaState,
   type MediaVolume,
   type VolumeRole,
+  type Workflow,
+  type WorkflowCamera,
 } from '../../shared/media';
+import { BRAND_NAME, brandOf } from '../../shared/brands';
 import type { TransferRecord } from '../db/production-db';
 import type { ReportContext } from './reports';
 import { cardFolder, destinationProblem, headroom, isRemote, reportsFolder } from './rules';
@@ -58,6 +61,10 @@ export interface MediaServiceDeps {
   pollEveryMs?: number;
   /** Keep a transfer in the production's database: when it is queued, and again when it ends. */
   onRecord?: (record: TransferRecord) => void;
+  /** The production and day open now, for a workflow that starts a card by itself; null when none is. */
+  context?: () => { production: { name: string; code: string }; day: { number: number; date: string } } | null;
+  /** A card that followed a workflow has verified: do what comes after (render the dailies). Says what happened. */
+  afterCard?: (card: { day: number; card: string; workflow: Workflow }) => Promise<string | null>;
   /** Tests: where volumes are found, and how a transfer is run, instead of the system's mounts and a worker thread. */
   mounts?: () => Promise<Mount[]>;
   startWorker?: (plan: WorkerPlan) => TransferRunner;
@@ -84,6 +91,7 @@ interface Settings {
   relayLimit: number | null;
   /** Most bytes a second a copy from the backup may write to one drive or folder, by volume (name and size) or folder id. */
   limits?: Record<string, number>;
+  workflows?: Workflow[];
 }
 
 interface Leg {
@@ -128,6 +136,9 @@ interface Job {
   startedAt: string | null;
   finishedAt: string | null;
   clearedAt: string | null;
+  /** The workflow it follows (id), and what came after the copy. */
+  workflow: string | null;
+  followUp: string | null;
 }
 
 interface Work {
@@ -185,6 +196,11 @@ const reachable = (path: string): boolean => {
 export class MediaService {
   /** Drives kept back from copies and ejecting (being sealed), by root: why. */
   private readonly holds = new Map<string, string>();
+  /** Cards a workflow would start by itself: why it has not yet. */
+  private readonly autoNotes = new Map<string, string>();
+  /** Cards a workflow has already tried to start, while they stay mounted. */
+  private readonly autoTried = new Set<string>();
+  private autoStarting = false;
   private readonly platform: NodeJS.Platform;
   private settings: Settings = { roles: {}, folders: [], relay: {}, relaysPaused: false, relayLimit: null };
   private readonly volumes = new Map<string, VolumeEntry>();
@@ -384,12 +400,23 @@ export class MediaService {
   state(): MediaState {
     return {
       volumes: [...this.volumes.values()]
-        .map((entry) => ({ ...entry.volume, relay: this.relayFor(entry.volume.id), local: this.isLocal(entry.volume.id), limit: this.limitFor(entry.volume.id) }))
+        .map((entry) => ({
+          ...entry.volume,
+          relay: this.relayFor(entry.volume.id),
+          local: this.isLocal(entry.volume.id),
+          limit: this.limitFor(entry.volume.id),
+          workflow: this.workflowFor(entry.volume)?.id ?? null,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name)),
       folders: this.folders(),
       jobs: this.jobs.map((job) => this.snapshot(job)),
       relaysPaused: this.settings.relaysPaused,
       relayLimit: this.settings.relayLimit,
+      workflows: this.workflows().map((workflow) => {
+        const { ids, missing } = this.resolveWorkflow(workflow);
+        return { ...workflow, here: ids, missing };
+      }),
+      autoStart: Object.fromEntries(this.autoNotes),
     };
   }
 
@@ -456,11 +483,121 @@ export class MediaService {
         }
       })();
     }
-    for (const path of [...this.volumes.keys()]) if (!seen.has(path)) this.volumes.delete(path);
+    for (const path of [...this.volumes.keys()]) {
+      if (seen.has(path)) continue;
+      this.volumes.delete(path);
+      this.autoTried.delete(path);
+      this.autoNotes.delete(path);
+    }
     for (const folder of this.settings.folders) this.folderCapacity.set(folder.id, await capacityOf(folder.path));
     // A backup plugged back in, or a destination's wait over: carry on uploading.
     this.nextRelay();
+    await this.autoStartCards();
     this.emit();
+  }
+
+  // ------------------------------------------------ saved workflows
+
+  workflows(): Workflow[] {
+    return this.settings.workflows ?? [];
+  }
+
+  /** The workflow a card follows: its maker's, else the one for any camera; a sound card's, for sound. */
+  workflowFor(volume: MediaVolume): Workflow | null {
+    if (!SOURCE_ROLES.includes(volume.role)) return null;
+    const all = this.workflows();
+    if (volume.role === 'Sound') return all.find((workflow) => workflow.camera === 'sound') ?? null;
+    const brand = brandOf(volume.detected);
+    return (brand && all.find((workflow) => workflow.camera === brand)) || all.find((workflow) => workflow.camera === 'any') || null;
+  }
+
+  /** Save a workflow from the destinations picked now (by id); the same id replaces it. */
+  async saveWorkflow(input: { id?: string; name: string; camera: WorkflowCamera; destinations: string[]; checksum: IngestRequest['checksum']; autoStart: boolean; dailies: boolean }): Promise<{ ok: true; id: string } | { ok: false; reason: string }> {
+    const name = String(input.name ?? '').trim().slice(0, 60);
+    if (!name) return { ok: false, reason: 'Give the workflow a name.' };
+    const cameras: WorkflowCamera[] = ['any', 'sound', ...(Object.keys(BRAND_NAME) as WorkflowCamera[])];
+    if (!cameras.includes(input.camera)) return { ok: false, reason: 'Say which cards it is for.' };
+    if (!['xxHash64', 'MD5', 'SHA-1'].includes(input.checksum)) return { ok: false, reason: 'Pick a checksum.' };
+    const destinations: Workflow['destinations'] = [];
+    for (const id of input.destinations ?? []) {
+      const key = this.driveKey(id);
+      const drive = this.destinations().find((candidate) => candidate.id === id);
+      if (!key || !drive) return { ok: false, reason: 'A destination you picked is no longer available.' };
+      if (!destinations.some((destination) => destination.key === key)) destinations.push({ key, name: drive.name });
+    }
+    if (destinations.length === 0) return { ok: false, reason: 'Pick at least one destination for it.' };
+    const all = this.workflows();
+    const id = input.id && all.some((workflow) => workflow.id === input.id) ? input.id : `wf-${Date.now().toString(36)}-${all.length}`;
+    // One workflow per kind of card: saving another for the same cards replaces it.
+    const kept = all.filter((workflow) => workflow.id !== id && workflow.camera !== input.camera);
+    this.settings.workflows = [...kept, { id, name, camera: input.camera, destinations, checksum: input.checksum, autoStart: input.autoStart === true, dailies: input.dailies === true }];
+    await this.saveSettings();
+    this.autoTried.clear();
+    this.emit(true);
+    return { ok: true, id };
+  }
+
+  async removeWorkflow(id: string): Promise<void> {
+    this.settings.workflows = this.workflows().filter((workflow) => workflow.id !== id);
+    await this.saveSettings();
+    this.emit(true);
+  }
+
+  /** A workflow's destinations as they are mounted now (ids), and the ones that are not here (names). */
+  resolveWorkflow(workflow: Workflow): { ids: string[]; missing: string[] } {
+    const ids: string[] = [];
+    const missing: string[] = [];
+    const here = this.destinations();
+    for (const destination of workflow.destinations) {
+      const found = here.find((candidate) => this.driveKey(candidate.id) === destination.key);
+      if (found) ids.push(found.id);
+      else missing.push(destination.name);
+    }
+    return { ids, missing };
+  }
+
+  /**
+   * Start, by itself, each card whose workflow says so, once every drive it
+   * names is in. A card copied earlier today and plugged in again is not
+   * started again: that is for the DIT to decide.
+   */
+  private async autoStartCards(): Promise<void> {
+    if (this.autoStarting) return;
+    this.autoStarting = true;
+    try {
+      for (const { volume } of [...this.volumes.values()]) {
+        const workflow = this.workflowFor(volume);
+        if (!workflow?.autoStart || volume.ingested || this.autoTried.has(volume.id)) {
+          if (!workflow?.autoStart) this.autoNotes.delete(volume.id);
+          continue;
+        }
+        const note = (why: string) => this.autoNotes.set(volume.id, why);
+        if (this.jobs.some((job) => job.card === volume.name && !job.clearedAt)) {
+          note('Copied earlier today, so it was not started again. Start it by hand to copy it again.');
+          continue;
+        }
+        const context = this.deps.context?.();
+        if (!context) {
+          note('Open a production to start it.');
+          continue;
+        }
+        if (!this.deps.canStartTransfers()) {
+          note('Activate VC DIT to start it.');
+          continue;
+        }
+        const { ids, missing } = this.resolveWorkflow(workflow);
+        if (missing.length) {
+          note(`Waiting for ${missing.join(', ')} to start ${workflow.name}.`);
+          continue;
+        }
+        this.autoTried.add(volume.id);
+        const result = await this.ingest({ sources: [volume.id], destinations: ids, checksum: workflow.checksum, production: context.production, day: context.day, workflow: workflow.id });
+        if (result.ok) this.autoNotes.delete(volume.id);
+        else note(`${workflow.name} did not start: ${result.reason}`);
+      }
+    } finally {
+      this.autoStarting = false;
+    }
   }
 
   private folders(): FolderDestination[] {
@@ -680,6 +817,8 @@ export class MediaService {
         startedAt: null,
         finishedAt: null,
         clearedAt: null,
+        workflow: request.workflow && this.workflows().some((workflow) => workflow.id === request.workflow) ? request.workflow : null,
+        followUp: null,
       };
       this.jobs.push(job);
       this.record(job);
@@ -732,8 +871,25 @@ export class MediaService {
     if (!this.queue.some((queued) => queued.job === job)) job.finishedAt = new Date().toISOString();
     this.record(job);
     this.queueRelays(job);
+    this.followUp(job);
     this.emit(true);
     this.next();
+  }
+
+  /** A card that followed a workflow and verified everywhere it was copied from the card: what comes after. */
+  private followUp(job: Job): void {
+    const workflow = this.workflows().find((candidate) => candidate.id === job.workflow);
+    if (!workflow?.dailies || !job.finishedAt || job.followUp || !this.deps.afterCard) return;
+    const verified = job.legs.filter((leg) => !leg.relay).every((leg) => job.files.every((file) => VERIFIED.has(leg.outcomes.get(file.path)?.state ?? '')));
+    if (!verified) {
+      job.followUp = 'Dailies not started: the card did not verify everywhere.';
+      return;
+    }
+    job.followUp = 'Starting dailies…';
+    void this.deps
+      .afterCard({ day: job.day, card: job.card, workflow })
+      .then((said) => (job.followUp = said), (cause: unknown) => (job.followUp = `Dailies not started: ${cause instanceof Error ? cause.message : String(cause)}`))
+      .finally(() => this.emit(true));
   }
 
   /** The backup an upload reads from: the local copy with the most verified files (the first picked, of equals). */
@@ -1022,6 +1178,8 @@ export class MediaService {
         startedAt: record.startedAt,
         finishedAt: record.finishedAt ?? record.startedAt ?? new Date(0).toISOString(),
         clearedAt: record.clearedAt ?? null,
+        workflow: null,
+        followUp: null,
       });
     }
     for (const job of this.jobs) if (job.legs.some((leg) => leg.relay)) this.queueRelays(job);
@@ -1204,6 +1362,8 @@ export class MediaService {
       startedAt: job.startedAt,
       finishedAt: job.finishedAt,
       clearedAt: job.clearedAt,
+      workflow: this.workflows().find((workflow) => workflow.id === job.workflow)?.name ?? null,
+      followUp: job.followUp,
     };
   }
 
