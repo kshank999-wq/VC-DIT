@@ -6,7 +6,7 @@ import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
 import { EjectAllButton } from '../ui/EjectAll';
-import { cardBackedUp, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, NOT_BACKED_UP, type CardStage } from '../ui/ClearCard';
+import { CardEject, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
@@ -182,13 +182,7 @@ export function Intake() {
                         Clear card…
                       </button>
                     ) : null}
-                    {cardBackedUp(job) && stage !== 'copying' && stage !== 'waiting' ? (
-                      <EjectButton volume={volume} primary={stage === 'cleared'} />
-                    ) : (
-                      <button type="button" className="btn small" disabled aria-label={`Eject ${volume.name} (locked until backed up)`} title={`${volume.name} is not backed up yet. ${NOT_BACKED_UP}`}>
-                        🔒 Eject after backup
-                      </button>
-                    )}
+                    <CardEject job={job} volume={volume} primary={stage === 'cleared'} />
                   </div>
                 </div>
               );

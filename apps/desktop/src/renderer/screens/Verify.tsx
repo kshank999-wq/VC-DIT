@@ -5,7 +5,7 @@ import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { UploadControls } from '../ui/UploadControls';
 import { EjectAllButton } from '../ui/EjectAll';
-import { ClearCardDialog, clearedWord, EjectButton, volumeOfJob } from '../ui/ClearCard';
+import { CardEject, ClearCardDialog, clearedWord, volumeOfJob } from '../ui/ClearCard';
 import { useState } from 'react';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
 import './ingest.css';
@@ -125,16 +125,14 @@ export function Verify() {
                 {job.checksum}
               </span>
               <span className="grow" />
-              {job.clearedAt ? (
-                <>
-                  <span className="muted small">{clearedWord(job)}</span>
-                  {volumeOfJob(state, job) ? <EjectButton volume={volumeOfJob(state, job)!} /> : null}
-                </>
-              ) : head.status === 'done' && volumeOfJob(state, job) ? (
+              {job.clearedAt ? <span className="muted small">{clearedWord(job)}</span> : null}
+              {!job.clearedAt && head.status === 'done' && volumeOfJob(state, job) ? (
                 <button type="button" className="btn small" onClick={() => setClearing(job)}>
                   Clear card…
                 </button>
               ) : null}
+              {/* Still plugged in: its Eject, locked until it is backed up on at least one drive. */}
+              {volumeOfJob(state, job) ? <CardEject job={job} volume={volumeOfJob(state, job)!} primary={!!job.clearedAt} /> : null}
               <Pill status={head.status}>{head.word}</Pill>
             </div>
             <div className="verify-legs">

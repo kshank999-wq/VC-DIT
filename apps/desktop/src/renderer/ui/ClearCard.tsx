@@ -309,4 +309,20 @@ export function EjectButton({ volume, primary = false, onEjected }: { volume: Vo
   );
 }
 
+/**
+ * A camera or sound card's Eject, with the safeguard: locked until the card
+ * is backed up on at least one drive (and never while it is being read).
+ * Used wherever a card is shown; the engine checks again before ejecting.
+ */
+export function CardEject({ job, volume, primary = false }: { job: TransferJob | undefined; volume: Volume; primary?: boolean }) {
+  const { state } = useStore();
+  const stage = job ? cardStage(state, job) : null;
+  if (cardBackedUp(job) && stage !== 'copying' && stage !== 'waiting') return <EjectButton volume={volume} primary={primary} />;
+  return (
+    <button type="button" className="btn small" disabled aria-label={`Eject ${volume.name} (locked until backed up)`} title={`${volume.name} is not backed up yet. ${NOT_BACKED_UP}`}>
+      🔒 Eject after backup
+    </button>
+  );
+}
+
 export const clearedWord = (job: TransferJob) => (job.clearedAt ? `Cleared ${time(job.clearedAt)}` : '');

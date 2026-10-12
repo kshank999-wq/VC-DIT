@@ -457,6 +457,16 @@ describe('clearing a card for camera', () => {
     expect((await within(tile()).findByRole('alert')).textContent).toMatch(/Another app is using it/);
   });
 
+  it('on Verify, locks a card\'s Eject until it is backed up on one drive', async () => {
+    mount(<Verify />);
+    await waitFor(() => expect(media.state).toHaveBeenCalled());
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
+    expect((screen.getByRole('button', { name: 'Eject A015 (locked until backed up)' }) as HTMLButtonElement).disabled).toBe(true);
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false }] });
+    fireEvent.click(screen.getByRole('button', { name: '⏏ Eject A015' }));
+    await waitFor(() => expect(media.eject).toHaveBeenCalledWith(card.id));
+  });
+
   it('says why when the check fails, and offers no way to clear', async () => {
     media.checkClear.mockResolvedValueOnce({ ...CHECK, ok: false, copies: [CHECK.copies[0]!, { name: 'SHTL', ok: false, problem: '3 copies missing or a different size now. Is the drive plugged in?', files: 1281 }], problems: ['SHTL: 3 copies missing or a different size now. Is the drive plugged in?'] });
     mount(<Verify />);
