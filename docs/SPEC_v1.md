@@ -210,6 +210,7 @@ Implementation note: the visible folder model should be configurable. Internally
 
 - Camera and sound originals are treated as protected source media.
 - VC DIT never formats a card, and shows 'Safe to Format' only after the required verified copies succeed (the production's format rule, §4.3.1).
+- **A camera or sound card cannot be ejected from VC DIT until it is backed up:** everything on it now has verified on at least one drive copied straight from the card (an upload does not count), with nothing new or changed since. Until then its Eject button is locked ("Eject after backup") and Eject all leaves it in; the engine checks the card again before ejecting. A cleared or empty card may go. (Finder or Explorer can still eject it; VC DIT cannot stop that.)
 - **Clearing a card for camera** is the one erase it offers, and only on the operator's say-so:
   - When a card that is still plugged in becomes safe, VC DIT says so (a notice in the app, and the system notification when the window is in the background). Its tile in Sources turns green; while copying it is blue, a problem red, cleared grey.
   - **Clear card…** (on the tile, the notice, and Verify) first makes a fresh check: the card holds exactly the files that were copied (a new or changed clip stops it), and every copy the production's rule relies on verified at ingest and is still there now at the same size; under the two-local rule there must be at least two.

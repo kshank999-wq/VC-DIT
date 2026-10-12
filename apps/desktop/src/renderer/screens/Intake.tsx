@@ -6,7 +6,7 @@ import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
 import { EjectAllButton } from '../ui/EjectAll';
-import { cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
+import { cardBackedUp, cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, NOT_BACKED_UP, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
 
@@ -175,17 +175,21 @@ export function Intake() {
                       </span>
                     )}
                   </div>
-                  {/* Clear when safe; eject any time it is not being read (never mid-copy). */}
-                  {stage === 'copying' || stage === 'waiting' ? null : (
-                    <div className="offload-eject">
-                      {stage === 'safe' ? (
-                        <button type="button" className="btn small" onClick={() => setClearing(job!)}>
-                          Clear card…
-                        </button>
-                      ) : null}
+                  {/* Clear when safe. Eject only once it is backed up on at least one drive: until then the button is locked. */}
+                  <div className="offload-eject">
+                    {stage === 'safe' ? (
+                      <button type="button" className="btn small" onClick={() => setClearing(job!)}>
+                        Clear card…
+                      </button>
+                    ) : null}
+                    {cardBackedUp(job) && stage !== 'copying' && stage !== 'waiting' ? (
                       <EjectButton volume={volume} primary={stage === 'cleared'} />
-                    </div>
-                  )}
+                    ) : (
+                      <button type="button" className="btn small" disabled aria-label={`Eject ${volume.name} (locked until backed up)`} title={`${volume.name} is not backed up yet. ${NOT_BACKED_UP}`}>
+                        🔒 Eject after backup
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}

@@ -27,6 +27,16 @@ export const volumeOfJob = (state: AppState, job: TransferJob): Volume | undefin
 export const jobOfVolume = (state: AppState, volume: Volume): TransferJob | undefined =>
   [...state.jobs].reverse().find((job) => (job.sourceId ? job.sourceId === volume.id && (job.card ?? job.id) === volume.name : job.id === volume.name));
 
+/**
+ * May this card come out? Only once everything on it has verified on at
+ * least one drive copied straight from the card (or it has been cleared).
+ * The engine checks again, against what is on the card now, before ejecting.
+ */
+export const cardBackedUp = (job: TransferJob | undefined): boolean =>
+  !!job && (!!job.clearedAt || job.legs.some((leg) => !leg.relay && legState(leg) === 'verified'));
+
+export const NOT_BACKED_UP = 'It can be ejected once everything on it has been copied and verified on at least one drive.';
+
 /** Where a card stands for clearing: still copying, safe to clear (and plugged in), cleared, or a problem. */
 export type CardStage = 'copying' | 'waiting' | 'eject' | 'safe' | 'problem' | 'cleared';
 export const cardStage = (state: AppState, job: TransferJob): CardStage => {

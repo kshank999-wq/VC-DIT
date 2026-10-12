@@ -215,11 +215,19 @@ describe('Intake on the media engine', () => {
     expect((screen.getByRole('button', { name: /Start verified ingest/ }) as HTMLButtonElement).disabled || screen.queryByText(/copies straight from the card/)).toBeTruthy();
   });
 
-  it('offers to eject a card that has not been copied, and a cleared or problem one, but not one copying', async () => {
+  it('will not eject a card until it is backed up on at least one drive', async () => {
     mount(<Intake />);
     const sources = screen.getByRole('region', { name: 'Sources' });
     await waitFor(() => within(sources).getByText('A015'));
-    fireEvent.click(within(sources).getByRole('button', { name: '⏏ Eject A015' }));
+    const tile = () => within(sources).getByText('A015').closest('.offload-tile') as HTMLElement;
+    // Not copied: locked.
+    expect((within(tile()).getByRole('button', { name: 'Eject A015 (locked until backed up)' }) as HTMLButtonElement).disabled).toBe(true);
+    // Copying: still locked.
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [job()] });
+    expect(within(tile()).getByRole('button', { name: 'Eject A015 (locked until backed up)' })).toBeTruthy();
+    // Verified on one drive (not yet safe to clear under the two-copy rule): it may come out.
+    push({ volumes: [{ ...card, ingested: true }, raid], folders: [], relaysPaused: false, relayLimit: null, jobs: [{ ...job({ copyPct: 100, verifyPct: 100 }), running: false }] });
+    fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject A015' }));
     await waitFor(() => expect(media.eject).toHaveBeenCalledWith(card.id));
   });
 
@@ -520,7 +528,8 @@ describe('eject all', () => {
     const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
     const box = (name: string) => within(dialog).getByRole('checkbox', { name: `Eject ${name}` }) as HTMLInputElement;
     expect([box('A015').checked, box('SHTL_08').checked]).toEqual([true, true]);
-    expect(box('B010').checked).toBe(false);
+    // B010 is not backed up: it stays in.
+    expect([box('B010').checked, box('B010').disabled]).toEqual([false, true]);
     // C001 is copying, to the RAID: neither is offered.
     expect([box('C001').disabled, box('RAID').disabled]).toEqual([true, true]);
     expect(within(dialog).getByText('Being copied to')).toBeTruthy();
@@ -540,7 +549,8 @@ describe('eject all', () => {
     const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
     expect(within(dialog).getByText('Main backup')).toBeTruthy();
     expect((within(dialog).getByRole('checkbox', { name: 'Eject RAID' }) as HTMLInputElement).checked).toBe(false);
-    expect(within(dialog).getByText('Not copied yet')).toBeTruthy();
+    expect(within(dialog).getByText('Not backed up · stays in')).toBeTruthy();
+    expect((within(dialog).getByRole('checkbox', { name: 'Eject A015' }) as HTMLInputElement).disabled).toBe(true);
     expect(within(dialog).getByRole('button', { name: '⏏ Eject 0' })).toHaveProperty('disabled', true);
   });
 

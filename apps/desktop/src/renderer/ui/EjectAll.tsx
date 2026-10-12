@@ -3,7 +3,7 @@ import { legState } from '../model/status';
 import type { Volume } from '../model/types';
 import { engine } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore, type AppState } from '../state/store';
-import { cardStage, jobOfVolume } from './ClearCard';
+import { cardBackedUp, cardStage, jobOfVolume } from './ClearCard';
 import { Check, StatusText } from './kit';
 
 /**
@@ -24,9 +24,10 @@ const rowsOf = (state: AppState): Row[] =>
         const job = jobOfVolume(state, volume);
         const stage = job ? cardStage(state, job) : null;
         if (stage === 'copying' || stage === 'waiting') return { volume, note: 'Being copied', ticked: false, busy: true };
-        if (stage === null) return { volume, note: 'Not copied yet', ticked: false, busy: false };
-        const note = { cleared: 'Cleared', safe: 'Safe to clear', eject: "Copied · not safe to clear yet", problem: 'A copy failed' }[stage];
-        return { volume, note, ticked: true, busy: false };
+        // Not backed up on at least one drive: it stays in.
+        if (!cardBackedUp(job)) return { volume, note: stage === null ? 'Not backed up · stays in' : 'Not fully backed up · stays in', ticked: false, busy: true };
+        const note = stage ? { cleared: 'Cleared', safe: 'Safe to clear', eject: 'Copied · not safe to clear yet', problem: 'A copy failed' }[stage] : null;
+        return { volume, note: note ?? '', ticked: true, busy: false };
       }
       const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.id === volume.id));
       const busy = legs.some((leg) => !leg.failed && legState(leg) !== 'verified' && legState(leg) !== 'waiting');
@@ -106,7 +107,7 @@ function EjectAllDialog({ onClose }: { onClose: () => void }) {
             );
           })}
         </ul>
-        <p className="muted small">Anything being copied is left in. Cards not copied yet and the main backup are not ticked unless you tick them.</p>
+        <p className="muted small">A card stays in until everything on it has verified on at least one drive, and anything being copied stays in. The main backup is not ticked unless you tick it.</p>
         <div className="row clear-actions">
           {done ? (
             <>

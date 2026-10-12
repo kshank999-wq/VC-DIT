@@ -985,6 +985,34 @@ export class MediaService {
   }
 
   /**
+   * Why a camera or sound card may not come out yet, or null when it may:
+   * everything on it now must have verified on at least one drive, copied
+   * straight from the card (an upload does not count), with nothing new or
+   * changed on it since. A card already cleared, or empty, may go.
+   */
+  private async notBackedUp(volume: MediaVolume): Promise<string | null> {
+    if (!SOURCE_ROLES.includes(volume.role)) return null;
+    const jobs = this.jobs.filter((job) => job.sourceRoot === volume.mountPath && job.card === volume.name);
+    if (jobs.at(-1)?.clearedAt) return null;
+    let onCard: SourceFile[];
+    try {
+      onCard = (await listSource(volume.mountPath)).files;
+    } catch {
+      return `${volume.name} cannot be read, so VC DIT cannot tell that it is backed up. Eject it from Finder or Explorer if you are sure.`;
+    }
+    if (onCard.length === 0) return null;
+    const backedUp = jobs.some((job) => {
+      const copied = new Map(job.files.map((file) => [file.path, file]));
+      if (!onCard.every((file) => copied.get(file.path)?.size === file.size)) return false;
+      return job.legs.some((leg) => !leg.relay && onCard.every((file) => VERIFIED.has(leg.outcomes.get(file.path)?.state ?? '')));
+    });
+    if (backedUp) return null;
+    return jobs.length === 0
+      ? `${volume.name} has not been backed up. It can be ejected once everything on it has been copied and verified on at least one drive.`
+      : `${volume.name} is not fully backed up: not everything on it has verified on any one drive (or something on it is new or changed). Copy it again, then eject.`;
+  }
+
+  /**
    * Eject a card or drive, as Finder or Explorer would. Not while anything
    * reads from or writes to it. Done only when it has really gone.
    */
@@ -993,6 +1021,8 @@ export class MediaService {
     if (!entry) return { ok: true };
     const { volume } = entry;
     if (this.inUse(volumeId) || this.inUse(volume.mountPath)) return { ok: false, reason: `${volume.name} is being copied. Eject it when the transfer has finished.` };
+    const unsafe = await this.notBackedUp(volume);
+    if (unsafe) return { ok: false, reason: unsafe };
     const failed = await (this.deps.eject ? this.deps.eject(volume.mountPath) : ejectVolume(volume.mountPath, this.platform));
     // Gone from the system's list, or still there: the list says which.
     for (let i = 0; i < 20; i += 1) {

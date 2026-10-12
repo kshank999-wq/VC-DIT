@@ -483,4 +483,25 @@ describe('clearing a card for camera', () => {
     expect(await service.eject(mounts[0]!)).toEqual({ ok: false, reason: 'A015 is being copied. Eject it when the transfer has finished.' });
     await settle();
   });
+
+  it('will not eject a card that is not backed up on at least one drive, or has something new on it', async () => {
+    const ejected: string[] = [];
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(mounts[0]!)).toEqual({
+      ok: false,
+      reason: 'A015 has not been backed up. It can be ejected once everything on it has been copied and verified on at least one drive.',
+    });
+    // One drive is enough to let it out (not to clear it).
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'), 'shot after the copy');
+    expect((await service.eject(mounts[0]!)).reason).toMatch(/^A015 is not fully backed up/);
+    await rm(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'));
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'A015')]);
+  });
 });
