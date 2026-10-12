@@ -495,3 +495,52 @@ describe('a shuttle on its way out', () => {
     await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
   });
 });
+
+describe('eject all', () => {
+  it('ticks what can go, leaves the main backup and fresh cards unticked, never offers one being copied, and ejects each in turn', async () => {
+    const shuttle = { ...raid, id: '/Volumes/SHTL_08', name: 'SHTL_08', mountPath: '/Volumes/SHTL_08', role: 'Shuttle' as const, suggestedRole: 'Shuttle' as const };
+    const fresh = { ...card, id: '/Volumes/B010', name: 'B010', mountPath: '/Volumes/B010' };
+    const copying = { ...card, id: '/Volumes/C001', name: 'C001', mountPath: '/Volumes/C001', ingested: true };
+    const done = { copyPct: 100, verifyPct: 100 };
+    const twoCopies = [{ ...leg, ...done }, { ...leg, ...done, id: shuttle.id, name: 'SHTL_08' }];
+    media.state.mockResolvedValueOnce({
+      volumes: [{ ...card, ingested: true }, fresh, copying, raid, shuttle],
+      folders: [],
+      relaysPaused: false,
+      relayLimit: null,
+      jobs: [
+        { ...job(done), legs: twoCopies, running: false, clearedAt: '2026-10-06T19:00:00Z' },
+        { ...job(), id: 'C001', card: 'C001', sourceId: copying.id, legs: [{ ...leg, copyPct: 20 }] },
+      ],
+    });
+    media.eject.mockImplementation(async (id: string) => (id === shuttle.id ? { ok: false, reason: 'SHTL_08 was not ejected. Another app may be using it.' } : { ok: true }));
+    mount(<Intake />);
+    await waitFor(() => screen.getByText('B010'));
+    fireEvent.click(screen.getByRole('button', { name: '⏏ Eject all…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
+    const box = (name: string) => within(dialog).getByRole('checkbox', { name: `Eject ${name}` }) as HTMLInputElement;
+    expect([box('A015').checked, box('SHTL_08').checked]).toEqual([true, true]);
+    expect(box('B010').checked).toBe(false);
+    // C001 is copying, to the RAID: neither is offered.
+    expect([box('C001').disabled, box('RAID').disabled]).toEqual([true, true]);
+    expect(within(dialog).getByText('Being copied to')).toBeTruthy();
+
+    fireEvent.click(within(dialog).getByRole('button', { name: '⏏ Eject 2' }));
+    await within(dialog).findByRole('button', { name: 'Done' });
+    expect(media.eject.mock.calls.map((call) => call[0])).toEqual([card.id, shuttle.id]);
+    expect(within(dialog).getByText('Ejected')).toBeTruthy();
+    expect(within(dialog).getByText(/SHTL_08 was not ejected/)).toBeTruthy();
+    expect(within(dialog).getByText(/1 could not be ejected/)).toBeTruthy();
+  });
+
+  it('lists the main backup unticked when nothing is copying to it', async () => {
+    mount(<Intake />);
+    await waitFor(() => screen.getByText('A015'));
+    fireEvent.click(screen.getByRole('button', { name: '⏏ Eject all…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Eject cards and drives' });
+    expect(within(dialog).getByText('Main backup')).toBeTruthy();
+    expect((within(dialog).getByRole('checkbox', { name: 'Eject RAID' }) as HTMLInputElement).checked).toBe(false);
+    expect(within(dialog).getByText('Not copied yet')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: '⏏ Eject 0' })).toHaveProperty('disabled', true);
+  });
+});

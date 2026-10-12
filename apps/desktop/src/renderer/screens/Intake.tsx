@@ -5,6 +5,7 @@ import { engine, formatEta, formatRate, ingestRequest } from '../state/engine';
 import { DESTINATION_ROLES, SOURCE_ROLES, useStore } from '../state/store';
 import { Check, ProgressBar, ScreenHeader, StartButton, StatusText, statusVar, stepVar, tone } from '../ui/kit';
 import { UploadControls } from '../ui/UploadControls';
+import { EjectAllButton } from '../ui/EjectAll';
 import { cardStage, ClearCardDialog, clearedWord, EjectButton, jobOfVolume, type CardStage } from '../ui/ClearCard';
 import { brandOf, DeviceIcon, ICON_PX, folderLook, KIND_WORD, volumeLook, type MediaLook } from '../ui/media-icons';
 import './ingest.css';
@@ -126,7 +127,10 @@ export function Intake() {
       <div className="offload">
         {/* ------------------------------------------------ sources */}
         <section className="offload-col" aria-label="Sources">
-          <h2 className="offload-head">Sources</h2>
+          <div className="offload-transfers-head">
+            <h2 className="offload-head">Sources</h2>
+            <EjectAllButton />
+          </div>
           {sourceVolumes.length === 0 ? (
             <p className="offload-empty muted" role="status">
               No cards yet. Plug in a camera card, sound card or card reader; it shows up here within a few seconds.
