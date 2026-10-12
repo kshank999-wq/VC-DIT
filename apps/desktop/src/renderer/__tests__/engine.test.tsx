@@ -543,4 +543,10 @@ describe('eject all', () => {
     expect(within(dialog).getByText('Not copied yet')).toBeTruthy();
     expect(within(dialog).getByRole('button', { name: '⏏ Eject 0' })).toHaveProperty('disabled', true);
   });
+
+  it('is on Verify too', async () => {
+    mount(<Verify />);
+    fireEvent.click(await screen.findByRole('button', { name: '⏏ Eject all…' }));
+    expect(screen.getByRole('dialog', { name: 'Eject cards and drives' })).toBeTruthy();
+  });
 });

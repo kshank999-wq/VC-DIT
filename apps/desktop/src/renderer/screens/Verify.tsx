@@ -4,6 +4,7 @@ import type { Status, TransferJob, TransferLeg } from '../model/types';
 import { engine, formatEta, formatRate } from '../state/engine';
 import { useStore } from '../state/store';
 import { UploadControls } from '../ui/UploadControls';
+import { EjectAllButton } from '../ui/EjectAll';
 import { ClearCardDialog, clearedWord, EjectButton, volumeOfJob } from '../ui/ClearCard';
 import { useState } from 'react';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
@@ -77,13 +78,16 @@ export function Verify() {
             : "Each card is copied, then checked. It's safe to format only when the copies it relies on say Verified, and never while one has failed."
         }
         actions={
-          media ? (
-            uploads.length ? <UploadControls /> : null
-          ) : (
-            <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
-              Export transfer logs
-            </button>
-          )
+          <>
+            {media ? (
+              uploads.length ? <UploadControls /> : null
+            ) : (
+              <button type="button" className="btn" title="Writes ASC MHL + CSV to 08_REPORTS">
+                Export transfer logs
+              </button>
+            )}
+            <EjectAllButton />
+          </>
         }
       />
 
