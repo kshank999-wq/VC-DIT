@@ -1,0 +1,14 @@
+.DS_Store
+node_modules/
+dist/
+*.log
+.env
+*.tsbuildinfo
+out/
+__pycache__/
+release/
+.next/
+.env*.local
+
+# FFmpeg, fetched at packaging time (apps/desktop/scripts/fetch-ffmpeg.mjs)
+apps/desktop/build/ffmpeg/

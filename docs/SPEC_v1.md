@@ -69,6 +69,41 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 - Do not mark a card safe to format until all required destinations pass verification.
 - Generate transfer logs/manifests that can be exported with the production package.
 
+#### 4.3.1 Relay uploads: the card comes out, the upload carries on
+
+Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) can take hours on set internet, and the card is needed back in the camera long before that. So a slow destination is fed from the main backup, not from the card:
+
+- In Destinations, each destination is either **From card** or **Upload from backup**. Cloud folders and network shares default to Upload; local drives, RAIDs and shuttles to From card. The operator can switch either, and the choice is remembered for that drive or folder. An ingest needs at least one From-card destination.
+- Ingest copies the card to the From-card destinations and verifies them as before. The upload then starts on its own: it reads the backup with the most verified files (the RAID, normally) and writes to each upload destination, checking every file against the checksum taken **from the card**, not a new one from the backup. A backup copy that no longer matches the card is not uploaded.
+- Uploads have their own queue, one at a time, running alongside card copies, so the next card never waits behind an upload.
+- **Pause uploads / Resume uploads** (Intake and Verify) holds every upload; a stopped upload can be retried. If the backup is unplugged, the upload waits ("Waiting for RAID: plug it back in") and carries on when it is back. If the destination stops responding (internet down, filespace unmounted), it tries again a minute later. Paused, cut off, or closed with the app, an upload carries on later from the last verified file, the next time that day is open.
+- Transfers shows each upload as card → backup ↑ destination with its own progress, file, speed and time left. Verify shows each card's uploads under it.
+- **When a card is safe to format** is a production setting (Project setup → Safe to format when):
+  - **Two local copies verified** (default): once at least two From-card copies have verified and none failed. Uploads do not count and do not hold the card up.
+  - **Every destination verified, uploads included.**
+  Before that, a card whose local copies are done shows **Can come out · don't format yet**. A failed upload still shows as a problem to deal with.
+- Quitting with uploads unfinished asks first, and says they will carry on from the backup next time. The transfer record keeps each upload and the backup it came from.
+- **Upload speed** (beside Pause uploads): no limit, or 1 to 100 MB/s, shown with the Mbit/s an internet connection is sold in, so an upload can be held to a share of the set's connection. It applies to all uploads together, changes a running upload at once, is remembered on that computer, and never slows a card copy.
+- **Cascade copies (card → RAID → shuttle).** A drive on the cart (a shuttle, a second RAID) can also be fed from the backup: its switch reads **From backup** instead of Upload from backup. The card is copied to the RAID alone, so it is free sooner, and the shuttle is then copied from the RAID, every file checked against the card's checksum as an upload is. Cascade copies have their own lane, beside the uploads (a shuttle never waits behind a cloud upload), are not paused by Pause uploads and are not held to the upload speed. A verified cascade copy counts as a local copy for **Two local copies verified**; an upload still does not. A shuttle with a cascade copy still to come stays locked against ejecting.
+- **Per-drive speed.** Any destination fed from the backup has its own **Speed** (no limit, or 1 to 100 MB/s), remembered for that drive or folder: a shared NAS, a slow network drive. An upload goes at the lower of its own speed and the upload speed. Copies straight from the card are never limited.
+- Not yet: uploads through a service's API (Frame.io, Google Drive), which will use the same queue when those integrations land.
+
+#### 4.3.3 Relinking copies that moved
+
+The production knows every copy by the folder it was written to. When a drive comes back under a new drive letter or name ("RAID 1"), or a production folder is moved, Verify lists **Copies not where they were**: each drive, where it was, and the cards and days whose copies are missing there. **Find…** asks where it is now (the drive, or the folder its media was moved to). For each card's copy VC DIT looks first where it would be if only the drive moved, then for a folder with the card's name a few levels down, and accepts it only when every file that verified there is present at the size it was copied at and the smallest file with a checksum on record reads back to that checksum. Proved copies are pointed at their new place (and known by the drive's new place, so its eject and seal safeguards recognise it); anything not found is named. Refused while a transfer is running.
+
+#### 4.3.2 Saved workflows
+
+A workflow is a saved way to offload a kind of card: **any camera**, a **camera maker** (ARRI, RED, Sony, Blackmagic, Canon, Panasonic, DJI, as the card's contents show) or **sound cards**. It names its destinations (drives remembered by name and size, folders by place; each keeps its own From card / From backup choice and speed), its checksum, and two options: **start by itself** and **render the dailies when the card has verified**. Workflows are saved on the computer (Intake → Workflows…), from the destinations and checksum picked at the time; there is one per kind of card, and a maker's beats the one for any camera.
+
+- A card shows the workflow it matches. **Apply** ticks that workflow's destinations that are plugged in, and nothing else, and sets its checksum; picking a destination by hand afterwards drops the workflow.
+- **Start by itself**: once a matching card is in, a production is open and every one of the workflow's drives is mounted, the copy starts into the open day. Until then the card says why ("Waiting for SHUTTLE_02 to start ARRI to both."). A card already copied today and plugged in again is not started again; that is the DIT's call. Each card is tried once while it stays in.
+- **Dailies after**: once the card has verified on every drive it was copied to from the card, the day's dailies render with the production's dailies settings. The transfer row says what happened ("Dailies started: 12 takes.", or why not).
+
+#### 4.3.4 LTO tape (LTFS)
+
+A destination can be an **LTO tape** (the LTO tape box on its tile; an LTFS volume is one unless the DIT says otherwise). A tape is always fed from the backup, never from the card, and not card by card: each card's copy to it waits ("Waiting for the tape run"), and **Write to tape (N cards)** writes every waiting card in one run. The run reads the backup and writes every file in turn, keeping the backup's folders, then reads every file back from the tape in the same order and checks it against the checksum taken from the card, so the tape streams instead of winding back and forth for each card. There is one run for each backup and checksum. Each card then gets its own ASC MHL in its folder on the tape, and its transfer log in the day's REPORTS. A file whose backup copy no longer matches the card is refused; a file stopped part-way waits for the next run; a failed one can be retried and goes in the next run. **Stop tape run** stops it. The tape cannot be ejected while a card waits for it or failed on it, and a verified tape copy counts as a local copy. A tape's own speed limit applies to its runs.
+
 ### 4.4 Naming & Folder Automation
 
 - Configurable naming convention centered on Production → Shoot Day → Scene → Setup → Take/Clip.
@@ -77,6 +112,7 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 - Circle/select status is metadata and/or a clearly organized subview; it must not cause the only copy of non-select material to be omitted.
 - Naming templates must be customizable because productions differ in slate and camera naming conventions.
 - Original camera filenames should be preserved or mapped non-destructively; the system should avoid renaming protected originals unless explicitly required by an approved workflow.
+- **Renaming on offload** (Project setup → Phone & mirrorless clips; off by default): the copies of .mov and .mp4 clips, and their same-named sidecars (.thm, .lrf, .xml, .srt), are named after their card, so C0001.MP4 on card B002 lands as B002_C0001.MP4 and two cards' clips never share a name in the edit. The card is never touched: the copy reads it by its own names, and clearing and ejecting check it by them. The clip record keeps both names. Other camera originals (MXF, R3D, BRAW, ARRIRAW) keep their names; a clip already named after its card, or whose new name another file on the card already has, keeps its name. Uploads and cascade copies read the renamed copy on the backup.
 
 ### 4.5 Script Supervisor Import & Matching
 
@@ -86,10 +122,21 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 - Provide a Match Review screen for ambiguous or unmatched items; never silently guess when confidence is low.
 - Carry script-supervisor labels forward into folder organization, dailies metadata, VFX mirroring, and export manifests.
 
+#### 4.5.1 Where clips go: four sources, one answer
+
+- A camera clip's scene, setup and take can come from four sources: the **script supervisor's log**, the **camera report** (the AC's report), the **slate the sound recorder wrote** into the sound file synced to the clip (iXML scene/take), and the **DIT's own assignment**.
+- The DIT's own word wins. Otherwise the sources that name a clip must agree (scene and setup compared together, so "14"+"B" = "14B"; "T03" = "3"); one source alone is enough. When they disagree the clip is not placed (it waits under UNMATCHED) and **Match Review decides**, showing what each source said and where it came from. The decision is kept.
+- **Assign takes** (Organize) lists every clip of the day with where it goes and who says so, filters for clips not placed and sources that disagree, and places ticked clips by hand, one take each in a run ("C003–C006 as 22A takes 3–6"), or gives them back to the sources.
+- **The camera report** is entered card by card (lines, or runs of clips numbered take by take) or imported (CSV/TSV/ALE: Roll, Clip, Scene, Setup, Take, Circle, Lens, Notes; template provided), and checked against the cards: a line naming a clip not on its card, and clips on a reported card the report leaves out. It can also be pulled from **VC Film Studio**, where the 2nd AC enters it on a phone (Get from Film Studio, with the production's upload key; the day is found by date, then number). A pull replaces Film Studio's rolls whole and takes out rolls Film Studio no longer has; a roll typed here or imported from a file is kept, and the DIT is told which. Stop and filter go in front of the notes.
+- The scene and setup folders (`CAMERA_ORIGINALS/_BY_SCENE/SCENE_###/SETUP_X/<take>`, circle takes also under `SELECTS_CIRCLE_TAKES`) follow these assignments on every destination holding the clip, uploads included, as hard links to the card copy, or a reference file where the drive cannot hold links.
+- **Read back on every drive**: after every change the folders are checked on every destination: each clip in its take's folder as the card's own data (the same file as the card copy, or a reference naming the clip and its files, with the card copy present). The result per drive ("RAID 212/212 in place") is shown in Assign takes and the Scene Organizer and goes into the day report; anything missing or wrong is listed and can be put back (a different file where a link would go is never replaced).
+
 ### 4.6 Picture / Sound Sync
 
 - Ingest picture and production sound as separate source classes.
 - Primary automatic sync: matching production timecode.
+- **Timecode from the camera's audio (LTC).** A clip whose file has no timecode of its own (a mirrorless camera, a DSLR or a drone fed by a sync box through its microphone input) is checked for SMPTE LTC on each audio channel, over its first six seconds; the first channel that gives three frames in a row counting up gives the clip's start timecode, worked back to its first frame. Drop-frame LTC is read as drop-frame. A clip's own timecode always wins.
+- **Image sequences** (ARRIRAW .ari, CinemaDNG, EXR, DPX) are one clip each: a frame is known by a long frame number (six digits or more), or a dot before it as in shot.0001.exr, so stills such as DSC01234.DNG are not taken for one. The clip is named by its camera key where it has one (A001C001), else by the sequence's name. Its timecode is read once, from its first frame (CinemaDNG: TimeCodes and FrameRate tags), and its length is its frames at that rate. The Files panel shows a sequence as one line: Clip0001.[000001-003200].dng, its frames and their size together.
 - Fallback sync: waveform/audio analysis when scratch audio is available.
 - Manual offset/slate correction controls for exceptions.
 - Batch sync by scene/setup/take and display confidence/status.
@@ -97,7 +144,7 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 
 ### 4.7 LUT & Look Manager
 
-- Import production LUTs and organize them per production.
+- Import production LUTs and organize them per production: .cube and .3dl, and ASC CDLs (.cc, .ccc, .cdl). Each correction in a CDL becomes a look of its own; its slope, offset, power and saturation are kept for editorial, and a 33-point .cube baked from them is what previews and dailies apply.
 - Support assignment by project default, camera, shoot day, scene, setup, or clip where appropriate.
 - Preview footage through the selected LUT/look.
 - Generate dailies/proxies with the viewing look applied when requested, while preserving untouched camera originals.
@@ -125,6 +172,7 @@ The core VC DIT product handles ingestion, checksum verification, media organiza
 - Multi-destination output comparable to the multi-destination ingest workflow.
 - Destination types: removable/local storage, production storage/NAS, network locations, and Frame.io integration where authorized.
 - Export selectable package types: camera originals archive, editorial handoff, synced dailies, VFX package, reports/logs, or combined production-day package.
+- The editorial handoff's lists, written fresh with each delivery into the day's EDITORIAL folder: an Avid ALE (with ASC_SOP and ASC_SAT where the clip's look is a CDL), a sync CSV, FCPXML 1.10 for Final Cut Pro and DaVinci Resolve (the day as an event; scene, take, camera roll and notes as metadata; circled takes keyworded; synced sound as a synced clip), Final Cut Pro 7 XML for Premiere Pro (bins by scene; each clip a merged clip of picture and its synced sound, one track per channel, lined up by the sync offset), and an ASC CDL collection (.ccc) of each clip's CDL by clip name. File references point at the copies on the drive the lists are written to.
 - Preflight destination capacity and warn before transfer.
 - Verify copied deliverables and generate a delivery manifest showing files, destinations, timestamps, checksum/verification state, and failures/retries.
 - Allow saved destination presets for recurring daily handoffs.
@@ -192,7 +240,16 @@ Implementation note: the visible folder model should be configurable. Internally
 ## 8. Safety / Data Integrity Requirements
 
 - Camera and sound originals are treated as protected source media.
-- No delete/format action should occur as part of V1; VC DIT may display 'Safe to Format' only after required verified copies succeed.
+- VC DIT never formats a card, and shows 'Safe to Format' only after the required verified copies succeed (the production's format rule, §4.3.1).
+- **A camera or sound card cannot be ejected from VC DIT until it is backed up:** everything on it now has verified on at least one drive copied straight from the card (an upload does not count), with nothing new or changed since. Until then its Eject button is locked ("Eject after backup") and Eject all leaves it in; the engine checks the card again before ejecting. A cleared or empty card may go. (Finder or Explorer can still eject it; VC DIT cannot stop that.)
+- **A shuttle (or any drive copies go to) cannot be ejected from VC DIT until every card copied to it has verified there:** one still to copy, being copied, or whose copy failed keeps it in ("Eject when verified"; Eject all leaves it in), until the failed copy is retried and verifies.
+- **Sealing a drive before it leaves set** (Seal…, on a shuttle or archive once everything on it has verified): every file the production copied to that drive, on every day, is checked against the drive (found by mount path or by name, so a changed drive letter does not matter). By default each file is read back and its checksum compared; the quick option checks presence and size only. A file missing or changed blocks the seal. Files in its card folders the production does not know are listed, not refused. A sealed drive gets `PRODUCTION/SEALS/SEAL_<drive>_<time>.csv` (every file, its size and checksum, and how it was checked) and a `.json` summary carrying the CSV's SHA-256. While sealing, nothing is copied to the drive and it cannot be ejected. The drive shows when it was sealed, and says so if a card was copied to it afterwards.
+- **Clearing a card for camera** is the one erase it offers, and only on the operator's say-so:
+  - When a card that is still plugged in becomes safe, VC DIT says so (a notice in the app, and the system notification when the window is in the background). Its tile in Sources turns green; while copying it is blue, a problem red, cleared grey.
+  - **Clear card…** (on the tile, the notice, and Verify) first makes a fresh check: the card holds exactly the files that were copied (a new or changed clip stops it), and every copy the production's rule relies on verified at ingest and is still there now at the same size; under the two-local rule there must be at least two.
+  - Then two confirmations: "All of this is backed up. Clear the card?" and "Are you sure? This permanently erases …". The check is made once more immediately before anything is erased.
+  - Only the ingested files are erased, then any folders left empty; nothing else on the card is touched. The camera department formats the card in the camera before shooting on it again.
+  - The clearing is recorded with the transfer, and a note (`<CARD>_cleared_<time>.json`) is written beside the transfer log on each copy relied on.
 - All automatic organization should be reversible/non-destructive.
 - Every transfer should be auditable through logs and checksums.
 - Failed verification must be obvious and must prevent a green/completed status.

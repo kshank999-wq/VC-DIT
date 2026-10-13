@@ -1,0 +1,180 @@
+import { app, BrowserWindow, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
+import { join } from 'node:path';
+import { registerLicensing } from './licensing-ipc';
+import type { Library } from './db/library';
+import { registerProject } from './db/project-ipc';
+import type { MediaService } from './media/media-service';
+import type { DailiesService } from './dailies/dailies-service';
+import type { DeliveryService } from './delivery/delivery-service';
+import type { OrganizeService } from './organize/organize-service';
+import type { SyncService } from './sync/sync-service';
+import type { VfxService } from './vfx/vfx-service';
+import { registerMedia } from './media/media-ipc';
+
+/**
+ * Electron main process for VC DIT.
+ *
+ * It owns the window, the license, the production database (src/main/db)
+ * and the media engine (src/main/media: volume detection, the verified
+ * multi-destination copy, checksums, manifests). The engine lives here and in worker threads, never in the
+ * renderer: it touches camera originals, and only this side has the disk.
+ * See docs/ARCHITECTURE.md.
+ */
+
+const createMainWindow = (): BrowserWindow => {
+  const window = new BrowserWindow({
+    width: 1440,
+    height: 900,
+    minWidth: 1100,
+    minHeight: 700,
+    title: 'VC DIT',
+    backgroundColor: '#0b0a07',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  window.once('ready-to-show', () => window.show());
+  // Links open in the browser, never inside the app.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    void shell.openExternal(url);
+    return { action: 'deny' };
+  });
+  if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) void window.loadURL(process.env['ELECTRON_RENDERER_URL']);
+  else void window.loadFile(join(__dirname, '../renderer/index.html'));
+  return window;
+};
+
+let library: Library | null = null;
+let media: MediaService | null = null;
+let vfx: VfxService | null = null;
+let sync: SyncService | null = null;
+let dailies: DailiesService | null = null;
+let delivery: DeliveryService | null = null;
+let organize: OrganizeService | null = null;
+
+/**
+ * The one device the app may use: an audio input, for a sync box's LTC
+ * (notes are stamped with its timecode). No camera, screen or anything else.
+ */
+const allowAudioInputOnly = () => {
+  session.defaultSession.setPermissionRequestHandler((_contents, permission, grant, details) => {
+    const types = 'mediaTypes' in details ? (details.mediaTypes ?? []) : [];
+    grant(permission === 'media' && types.length > 0 && types.every((type) => type === 'audio'));
+  });
+  session.defaultSession.setPermissionCheckHandler((_contents, permission) => permission === 'media');
+  // macOS asks the person once; elsewhere the input is simply there.
+  ipcMain.handle('vcdit:microphone', async () =>
+    process.platform === 'darwin' ? systemPreferences.askForMediaAccess('microphone') : true,
+  );
+};
+
+void app.whenReady().then(async () => {
+  allowAudioInputOnly();
+  // Before the first window, so it opens knowing whether transfers may start and which production is open.
+  await registerLicensing();
+  const project = await registerProject({
+    busy: () => media?.busy() ?? false,
+    opened: (transfers) => media?.load(transfers),
+    destinations: () => media?.destinations() ?? [],
+    hold: (id, why) => (media ? media.hold(id, why) : { ok: false, reason: 'The media engine is still starting.' }),
+  });
+  library = project.library;
+  vfx = project.vfx;
+  sync = project.sync;
+  dailies = project.dailies;
+  delivery = project.delivery;
+  organize = project.organize;
+  const open = library;
+  media = await registerMedia(
+    (transfer) => {
+      open.current.saveTransfer(transfer);
+      // A card that just finished may hold clips the script log is waiting for.
+      if (transfer.finishedAt) project.cardIn(transfer.day);
+    },
+    {
+      // A workflow that starts a card by itself copies it into the production and day open now.
+      context: () => {
+        const production = open.current.production();
+        const day = open.current.currentDay();
+        return { production: { name: production.name, code: production.code }, day: { number: day.number, date: day.date } };
+      },
+      // What a workflow does once the card has verified: the day's dailies, with the production's own settings.
+      afterCard: async ({ day }) => {
+        if (open.current.currentDay().number !== day) return 'Dailies not started: another day is open now.';
+        if (project.dailies.busy()) return 'Dailies are already rendering; this card is in the next run.';
+        const { takes } = await project.dailies.start(open.current.dailiesSettings());
+        return `Dailies started: ${takes} take${takes === 1 ? '' : 's'}.`;
+      },
+    },
+  );
+  media.load(open.current.transfers(open.current.currentDay().number));
+  createMainWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+  });
+}).catch((cause: unknown) => {
+  // A start that fails must say so, not sit there with no window.
+  const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
+  console.error('VC DIT could not start:', detail);
+  dialog.showErrorBox('VC DIT could not start', detail);
+  app.exit(1);
+});
+
+// Quitting mid-transfer leaves a card not safe to format: ask first. Then
+// let the transfer clean up and the production database finish writing.
+let quitting = false;
+app.on('before-quit', (event) => {
+  if (quitting) return;
+  if (media?.cardBusy()) {
+    const choice = dialog.showMessageBoxSync({
+      type: 'warning',
+      buttons: ['Keep copying', 'Quit anyway'],
+      defaultId: 0,
+      cancelId: 0,
+      message: 'A transfer is still running.',
+      detail: 'If you quit now, the card being copied is not safe to format. Unverified copies are removed; start the ingest again to finish it.',
+    });
+    if (choice === 0) {
+      event.preventDefault();
+      return;
+    }
+  } else if (media && media.relaysPending() > 0) {
+    const pending = media.relaysPending();
+    const choice = dialog.showMessageBoxSync({
+      type: 'question',
+      buttons: ['Keep uploading', 'Quit'],
+      defaultId: 0,
+      cancelId: 0,
+      message: `${pending} upload${pending === 1 ? ' is' : 's are'} not finished.`,
+      detail: 'The cards are already safe on the backup. If you quit, the uploads carry on from the backup, from the last verified file, the next time this day is open in VC DIT.',
+    });
+    if (choice === 0) {
+      event.preventDefault();
+      return;
+    }
+  }
+  event.preventDefault();
+  quitting = true;
+  void (async () => {
+    if (media?.busy()) {
+      media.stop();
+      await media.idle(15_000);
+    }
+    dailies?.stop();
+    delivery?.stop();
+    await delivery?.idle();
+    await vfx?.idle();
+    await sync?.idle();
+    await organize?.idle();
+    await library?.close().catch(() => undefined);
+    app.quit();
+  })();
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});

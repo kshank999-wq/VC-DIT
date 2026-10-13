@@ -1,0 +1,19 @@
+{
+  "name": "vc-dit",
+  "private": true,
+  "description": "VC DIT: on-set workflow platform for Digital Imaging Technicians",
+  "type": "module",
+  "workspaces": [
+    "apps/desktop",
+    "apps/web"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck -w @vcdit/desktop && npm run typecheck -w @vcdit/web",
+    "test": "npm test -w @vcdit/desktop && npm test -w @vcdit/web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}

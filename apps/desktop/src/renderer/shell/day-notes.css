@@ -1,0 +1,36 @@
+/* The toolbar's timecode and notes. */
+.tb-anchor { position: relative; flex: none; }
+.tb-popover {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: 340px; max-height: 70vh; overflow: auto;
+  display: grid; gap: 12px; padding: 14px; border: 1px solid var(--border-strong); border-radius: 8px;
+  background: var(--card); box-shadow: 0 12px 32px rgb(0 0 0 / 0.18);
+}
+.tb-popover.wide { width: 460px; }
+.tb-head { display: flex; align-items: baseline; gap: 10px; }
+.tb-head strong { flex: 1; font-size: 13.5px; }
+
+.tc-button {
+  display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--border-strong); background: var(--card); color: var(--text); cursor: pointer; font-size: 13px;
+}
+.tc-button:hover { background: var(--hover); }
+.tc-lamp { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); }
+.tc-value { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 92px; text-align: left; }
+.tc-word { font: 600 9.5px 'IBM Plex Mono'; letter-spacing: 0.08em; color: var(--tone, var(--muted)); border: 1px solid currentColor; border-radius: 3px; padding: 1px 4px; }
+.tc-source { display: flex; align-items: center; gap: 8px; font-size: 12.5px; cursor: pointer; }
+.tc-section { padding-top: 10px; border-top: 1px solid var(--border); }
+.tc-meter { flex: 1; height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; align-self: center; }
+.tc-meter > span { display: block; height: 100%; background: var(--s-done); }
+
+.note-count { margin-left: 6px; font-size: 11px; padding: 0 6px; border-radius: 8px; background: var(--selected); }
+.note-stamp { font-weight: 600; font-size: 13px; }
+.note-text { height: auto; padding: 8px 10px; resize: vertical; font: inherit; line-height: 1.4; }
+.note-shot { width: 64px; }
+.note-list { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--border); }
+.note-row { display: grid; gap: 4px; }
+.note-meta { font-size: 11.5px; }
+.note-body { margin: 0; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; }
+.link.danger { color: var(--s-problem); }
+.tb-popover .small { font-size: 12px; margin: 0; line-height: 1.45; }
+.tb-popover .gap-8 { gap: 8px; }
+.tb-popover p { margin: 0; }

@@ -1,0 +1,804 @@
+import { EventEmitter } from 'node:events';
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { IngestRequest, MediaState } from '../../shared/media';
+import type { TransferRecord } from '../db/production-db';
+import { MediaService, type MediaServiceDeps, type TransferRunner } from '../media/media-service';
+import { writeReports } from '../media/reports';
+import { runTransfer } from '../media/transfer';
+import type { WorkerCommand, WorkerMessage, WorkerPlan } from '../media/transfer-worker';
+
+/** The worker thread, run in-process: same messages, same order. */
+const inProcess = (plan: WorkerPlan, corrupt: { path: string; leg: string } | null): TransferRunner => {
+  const events = new EventEmitter();
+  const controller = new AbortController();
+  setImmediate(async () => {
+    const result = await runTransfer(plan.sourceRoot, plan.files, plan.legs, plan.method, {
+      signal: controller.signal,
+      sourceLost: plan.sourceLost,
+      chunkBytes: plan.chunkBytes,
+      limit: () => limit,
+      onProgress: (progress) => events.emit('message', { type: 'progress', progress } satisfies WorkerMessage),
+      afterCopy: async (legId, written, file) => {
+        if (corrupt && legId === corrupt.leg && file.path === corrupt.path) await writeFile(written, 'damaged');
+      },
+    });
+    const reports = await writeReports(result, plan.legs, plan.contexts, plan.allLegs);
+    events.emit('message', { type: 'done', result, reports } satisfies WorkerMessage);
+    events.emit('exit', 0);
+  });
+  let limit = plan.limit ?? null;
+  const postMessage = (message: WorkerCommand) => {
+    commands.push(message);
+    if (message === 'stop') controller.abort();
+    else limit = message.bytesPerSecond;
+  };
+  return Object.assign(events, { postMessage }) as unknown as TransferRunner;
+};
+
+let base: string;
+let licensed: boolean;
+let corrupt: { path: string; leg: string } | null;
+let mounts: string[];
+let service: MediaService;
+let states: MediaState[];
+let records: TransferRecord[];
+let plans: WorkerPlan[];
+let commands: WorkerCommand[];
+
+const settle = () =>
+  vi.waitFor(
+    () => {
+      if (service.busy()) throw new Error('still copying');
+    },
+    { timeout: 5000, interval: 10 },
+  );
+
+const request = (sources: string[], destinations: string[]): IngestRequest => ({
+  sources,
+  destinations,
+  checksum: 'xxHash64',
+  production: { name: 'HALCYON', code: 'HLC' },
+  day: { number: 14, date: '2026-10-05' },
+});
+
+beforeEach(async () => {
+  base = await mkdtemp(join(tmpdir(), 'vcdit-service-'));
+  licensed = true;
+  corrupt = null;
+  states = [];
+  records = [];
+  plans = [];
+  commands = [];
+  const card = join(base, 'A015');
+  await mkdir(join(card, 'A015R1AB'), { recursive: true });
+  await writeFile(join(card, 'A015R1AB', 'A015C001_261005_R1AB.mxf'), 'take one');
+  await writeFile(join(card, 'A015R1AB', 'A015C002_261005_R1AB.mxf'), 'take two');
+  await mkdir(join(base, 'RAID'));
+  await mkdir(join(base, 'SHUTTLE'));
+  mounts = [card, join(base, 'RAID'), join(base, 'SHUTTLE')];
+  service = new MediaService({
+    dataDir: join(base, 'appdata'),
+    workerPath: 'unused',
+    tool: { name: 'VC DIT', version: 'test' },
+    canStartTransfers: () => licensed,
+    onChange: (state) => states.push(state),
+    onRecord: (record) => records.push(structuredClone(record)),
+    platform: 'linux',
+    pollEveryMs: 60_000,
+    mounts: async () => mounts.map((path) => ({ path, name: path.split(/[\\/]/).pop()! })),
+    startWorker: (plan) => {
+      plans.push(plan);
+      return inProcess(plan, corrupt);
+    },
+  });
+  await service.start();
+  await vi.waitFor(() => expect(service.state().volumes).toHaveLength(3));
+  await service.setRole(join(base, 'RAID'), 'Destination');
+  await service.setRole(join(base, 'SHUTTLE'), 'Shuttle');
+});
+
+afterEach(async () => {
+  service.stop();
+  await rm(base, { recursive: true, force: true });
+});
+
+describe('the media service', () => {
+  it('recognises the card and remembers roles given to volumes', async () => {
+    const card = service.state().volumes.find((volume) => volume.name === 'A015')!;
+    expect(card).toMatchObject({ role: 'Camera', suggestedRole: 'Camera', detected: 'ARRI · MXF', ingested: false });
+    expect(service.state().volumes.find((volume) => volume.name === 'RAID')!.role).toBe('Destination');
+  });
+
+  it('ingests a card to two destinations: safe to format once both verify, with logs on each', async () => {
+    const result = await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    expect(result).toEqual({ ok: true, jobs: ['A015'] });
+    await settle();
+    const job = service.state().jobs[0]!;
+    expect(job).toMatchObject({ id: 'A015', fileCount: 2, totalBytes: 16, running: false, queued: false });
+    expect(job.legs.map((leg) => [leg.name, leg.copyPct, leg.verifyPct, leg.failed])).toEqual([
+      ['RAID', 100, 100, false],
+      ['SHUTTLE', 100, 100, false],
+    ]);
+    const reports = join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'REPORTS', 'ingest_verification');
+    expect((await readdir(reports)).sort().map((name) => name.replace(/\d{8}_\d{6}Z/, 'T'))).toEqual(['A015_T.csv', 'A015_T.json']);
+    // Kept in the production database when queued, and again with every result when done.
+    expect(records.map((record) => record.finishedAt === null)).toEqual([true, false]);
+    expect(records[1]).toMatchObject({ id: 'A015', day: 14, card: 'A015', sound: false, checksum: 'xxHash64' });
+    expect(records[1]!.files.map((file) => file.hash)).toEqual([expect.stringMatching(/^[0-9a-f]{16}$/), expect.stringMatching(/^[0-9a-f]{16}$/)]);
+    expect(Object.values(records[1]!.destinations[0]!.outcomes)).toEqual([{ state: 'verified' }, { state: 'verified' }]);
+    expect(service.state().volumes.find((volume) => volume.name === 'A015')!.ingested).toBe(true);
+    // The screens heard about it as it went.
+    expect(states.some((state) => state.jobs[0]?.running)).toBe(true);
+  });
+
+  it('marks a destination failed when a copy does not verify, and a retry copies just that file again', async () => {
+    corrupt = { path: 'A015R1AB/A015C002_261005_R1AB.mxf', leg: mounts[2]! };
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    await settle();
+    let legs = service.state().jobs[0]!.legs;
+    expect(legs[0]!.failed).toBe(false);
+    expect(legs[1]).toMatchObject({ failed: true, problemFiles: 1, error: expect.stringMatching(/1 file did not verify: Checksum mismatch/) });
+
+    corrupt = null;
+    expect(service.retry('A015', 'SHUTTLE')).toEqual({ ok: true, jobs: ['A015'] });
+    await settle();
+    legs = service.state().jobs[0]!.legs;
+    expect(legs[1]).toMatchObject({ failed: false, copyPct: 100, verifyPct: 100, error: null });
+  });
+
+  it('refuses what must not happen', async () => {
+    const [card, raid, shuttle] = mounts as [string, string, string];
+    licensed = false;
+    expect(await service.ingest(request([card], [raid]))).toEqual({ ok: false, reason: expect.stringMatching(/Activate/) });
+    licensed = true;
+    expect(await service.ingest(request([raid], [shuttle]))).toEqual({ ok: false, reason: expect.stringMatching(/not marked as a camera or sound card/) });
+    await service.setRole(shuttle, 'Sound');
+    expect(await service.ingest(request([card], [shuttle]))).toEqual({ ok: false, reason: expect.stringMatching(/not marked as a destination/) });
+    // A folder on a card can't even be added as a destination.
+    expect(await service.addFolder(join(card, 'A015R1AB'))).toEqual({ ok: false, reason: expect.stringMatching(/never written/) });
+    expect(await service.ingest(request([card], [raid, raid]))).toEqual({ ok: false, reason: expect.stringMatching(/picked twice/) });
+    expect(service.state().jobs).toHaveLength(0);
+  });
+
+  it('will not change the role of a card while it is being copied', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    expect(await service.setRole(mounts[0]!, 'Destination')).toEqual({ ok: false, reason: expect.stringMatching(/transfer is using/) });
+    await settle();
+    expect(await service.setRole(mounts[0]!, 'Other')).toEqual({ ok: true });
+  });
+
+  it('takes folders as destinations, and a second ingest of the same card gets its own entry', async () => {
+    const folder = join(base, 'NAS', 'Dailies');
+    await mkdir(folder, { recursive: true });
+    expect(await service.addFolder(folder)).toEqual({ ok: true });
+    const id = service.state().folders[0]!.id;
+    expect(service.state().folders[0]).toMatchObject({ name: 'Dailies', online: true });
+    await service.ingest(request([mounts[0]!], [id]));
+    await settle();
+    await service.ingest(request([mounts[0]!], [id]));
+    await settle();
+    const jobs = service.state().jobs;
+    expect(jobs.map((job) => job.id)).toEqual(['A015', 'A015 (2)']);
+    // The second pass found the first one's verified copies and kept them.
+    expect(jobs[1]!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+  });
+
+  it('shows a day\'s kept transfers after a restart, and one cut off mid-copy as failed until it is copied again', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    const finished = records.at(-1)!;
+    const cutOff: TransferRecord = { ...structuredClone(records[0]!), id: 'B010', card: 'B010', destinations: records[0]!.destinations.map((d) => ({ ...d, outcomes: {} })) };
+
+    expect(service.load([finished, cutOff])).toBe(true);
+    const [done, broken] = service.state().jobs;
+    expect(done).toMatchObject({ id: 'A015', queued: false, running: false });
+    expect(done!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+    expect(broken!.legs[0]).toMatchObject({ failed: true, error: expect.stringMatching(/closed before this transfer finished/) });
+
+    // Copying it again from the card (here the same card stands in for it) puts it right.
+    expect(service.retry('B010', mounts[1]!)).toEqual({ ok: true, jobs: ['B010'] });
+    await settle();
+    expect(service.state().jobs[1]!.legs[0]).toMatchObject({ failed: false, verifyPct: 100 });
+    // A new ingest of a card already listed today gets its own entry.
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    expect(service.state().jobs.map((job) => job.id)).toEqual(['A015', 'B010', 'A015 (2)']);
+    await settle();
+  });
+
+  it('will not swap the day\'s transfers while one is running', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    expect(service.load([])).toBe(false);
+    await settle();
+    expect(service.load([])).toBe(true);
+    expect(service.state().jobs).toEqual([]);
+  });
+});
+
+describe('uploads relayed from the backup', () => {
+  const cloudDir = () => join(base, 'Dropbox', 'Dailies');
+  const addCloud = async () => {
+    await mkdir(cloudDir(), { recursive: true });
+    expect(await service.addFolder(cloudDir())).toEqual({ ok: true });
+    return `folder:${cloudDir()}`;
+  };
+  const uploaded = (name: string) => join(cloudDir(), 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', name);
+  const onRaid = (name: string) => join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', name);
+
+  it('feeds a cloud folder from the verified RAID, not the card, checking each file against the card', async () => {
+    const cloud = await addCloud();
+    // A Dropbox folder is an upload unless the operator says otherwise; the RAID is fed from the card.
+    expect(service.state().folders[0]!.relay).toBe(true);
+    expect(service.state().volumes.find((volume) => volume.name === 'RAID')!.relay).toBe(false);
+
+    expect(await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]))).toEqual({ ok: true, jobs: ['A015'] });
+    await settle();
+    const job = service.state().jobs[0]!;
+    expect(job.legs.map((leg) => [leg.name, leg.relay, leg.relayFrom, leg.failed, leg.copyPct, leg.verifyPct])).toEqual([
+      ['RAID', false, null, false, 100, 100],
+      ['SHUTTLE', false, null, false, 100, 100],
+      ['Dailies', true, 'RAID', false, 100, 100],
+    ]);
+    // Two runs: the card to RAID and SHUTTLE, then the RAID's copy to the cloud, each file expected to match the card.
+    expect(plans.map((plan) => [plan.sourceRoot, plan.legs.map((leg) => leg.name)])).toEqual([
+      [mounts[0], ['RAID', 'SHUTTLE']],
+      [join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015'), ['Dailies']],
+    ]);
+    expect(plans[1]!.files.every((file) => typeof file.expected === 'string' && file.expected.length > 0)).toBe(true);
+    expect(await readFile(uploaded('A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    // Kept as an upload from the RAID.
+    expect(records.at(-1)!.destinations[2]).toMatchObject({ relay: true, relayFrom: mounts[1], error: null });
+    expect(service.relaysPending()).toBe(0);
+  });
+
+  it('will not upload a backup copy that no longer matches the card', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    // The card is done; the upload waits, paused.
+    let job = service.state().jobs[0]!;
+    expect(job.legs[2]).toMatchObject({ relay: true, waiting: 'Paused', failed: false });
+    expect(service.relaysPending()).toBe(1);
+    // Something changes the RAID's copy before the upload reads it.
+    await writeFile(onRaid('A015C001_261005_R1AB.mxf'), 'tampered');
+    await service.pauseRelays(false);
+    await settle();
+    job = service.state().jobs[0]!;
+    expect(job.legs[2]).toMatchObject({ failed: true, problemFiles: 1 });
+    expect(job.legs[2]!.error).toMatch(/no longer matches the checksum/);
+    expect(await readFile(uploaded('A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    await expect(readFile(uploaded('A015C001_261005_R1AB.mxf'))).rejects.toThrow();
+  });
+
+  it('waits for an unplugged backup, then carries on when it is back', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    await rename(join(base, 'RAID'), join(base, 'RAID-away'));
+    await service.pauseRelays(false);
+    expect(service.state().jobs[0]!.legs[2]!.waiting).toBe('Waiting for RAID: plug it back in to carry on.');
+    expect(service.busy()).toBe(false);
+    await rename(join(base, 'RAID-away'), join(base, 'RAID'));
+    await service.poll();
+    await settle();
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ failed: false, copyPct: 100, verifyPct: 100, waiting: null });
+  });
+
+  it('carries on after a restart from what the database kept, uploading only what was left', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    const kept = records.at(-1)!;
+    expect(kept.finishedAt).not.toBeNull();
+    expect(Object.keys(kept.destinations[2]!.outcomes)).toEqual([]);
+    service.stop();
+
+    // A new start of the app, uploads not paused there.
+    const again = new MediaService({
+      dataDir: join(base, 'appdata-2'),
+      workerPath: 'unused',
+      tool: { name: 'VC DIT', version: 'test' },
+      canStartTransfers: () => true,
+      onChange: () => undefined,
+      onRecord: (record) => records.push(structuredClone(record)),
+      platform: 'linux',
+      pollEveryMs: 60_000,
+      mounts: async () => mounts.map((path) => ({ path, name: path.split(/[\\/]/).pop()! })),
+      startWorker: (plan) => {
+        plans.push(plan);
+        return inProcess(plan, null);
+      },
+    });
+    await again.start();
+    service = again;
+    expect(again.load([kept])).toBe(true);
+    await settle();
+    expect(again.state().jobs[0]!.legs[2]).toMatchObject({ relay: true, relayFrom: 'RAID', failed: false, copyPct: 100, verifyPct: 100 });
+    expect(await readFile(uploaded('A015C001_261005_R1AB.mxf'), 'utf8')).toBe('take one');
+  });
+
+  it('stops one upload for good until it is retried, then sends it from the backup', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    expect(service.stopJob('A015', cloud)).toEqual({ ok: true });
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ failed: true, error: 'Upload stopped. Retry to carry on from the backup.' });
+    await service.pauseRelays(false);
+    expect(service.busy()).toBe(false);
+    expect(service.retry('A015', cloud)).toEqual({ ok: true, jobs: ['A015'] });
+    await settle();
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ failed: false, copyPct: 100, verifyPct: 100 });
+  });
+
+  it('needs one destination fed from the card, and remembers the choice', async () => {
+    const cloud = await addCloud();
+    expect(await service.ingest(request([mounts[0]!], [cloud]))).toEqual({
+      ok: false,
+      reason: 'Pick at least one destination that copies straight from the card, like the RAID. Uploads are fed from it once the card has verified there.',
+    });
+    expect(await service.setRelay(cloud, false)).toEqual({ ok: true });
+    expect(service.state().folders[0]!.relay).toBe(false);
+    expect(await service.setRelay(mounts[2]!, true)).toEqual({ ok: true });
+    expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.relay).toBe(true);
+  });
+
+  it('lets the shuttle go while an upload reads from the RAID, but not the RAID', async () => {
+    const cloud = await addCloud();
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    // The upload is waiting on the RAID: the RAID stays, the shuttle may go.
+    expect(service.relaysPending()).toBe(1);
+    const ejected: string[] = [];
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(mounts[1]!)).toEqual({ ok: false, reason: 'RAID is being copied. Eject it when the transfer has finished.' });
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'SHUTTLE')]);
+  });
+
+  it('holds uploads to the speed set, changing a running upload at once, and never limits a card copy', async () => {
+    const cloud = await addCloud();
+    // 400 kB of media, uploaded at most 1 MB/s: well under a second, but measurably held.
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C001_261005_R1AB.mxf'), Buffer.alloc(400_000, 1));
+    await service.setRelayLimit(1_000_000);
+    expect(service.state().relayLimit).toBe(1_000_000);
+    await service.pauseRelays(true);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    expect(plans[0]).toMatchObject({ limit: null });
+    const started = Date.now();
+    await service.pauseRelays(false);
+    expect(plans[1]).toMatchObject({ limit: 1_000_000, chunkBytes: 1024 * 1024 });
+    // Changed while the upload runs: the worker is told at once.
+    await service.setRelayLimit(800_000);
+    expect(commands).toContainEqual({ type: 'limit', bytesPerSecond: 800_000 });
+    await settle();
+    expect(Date.now() - started).toBeGreaterThanOrEqual(350);
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ failed: false, copyPct: 100, verifyPct: 100 });
+    // Nonsense is no limit; a tiny limit is raised to 100 kB/s, so an upload always moves.
+    await service.setRelayLimit(-5);
+    expect(service.state().relayLimit).toBeNull();
+    await service.setRelayLimit(10);
+    expect(service.state().relayLimit).toBe(100_000);
+  });
+});
+
+describe('cascade copies: card → RAID → shuttle', () => {
+  const cloudDir = () => join(base, 'Dropbox', 'Dailies');
+  const addCloud = async () => {
+    await mkdir(cloudDir(), { recursive: true });
+    await service.addFolder(cloudDir());
+    return `folder:${cloudDir()}`;
+  };
+
+  it('copies a shuttle from the verified RAID, in its own lane: not paused with uploads, not held to their limit', async () => {
+    const cloud = await addCloud();
+    expect(await service.setRelay(mounts[2]!, true)).toEqual({ ok: true });
+    const shuttle = service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!;
+    expect(shuttle).toMatchObject({ relay: true, local: true, limit: null });
+    expect(service.state().folders[0]).toMatchObject({ relay: true, local: false });
+    await service.setRelayLimit(1_000_000);
+    await service.pauseRelays(true);
+
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    const job = service.state().jobs[0]!;
+    // The card went to the RAID alone; the shuttle was copied from the RAID while uploads stayed paused.
+    expect(plans.map((plan) => [plan.sourceRoot === mounts[0] ? 'card' : 'RAID', plan.legs.map((leg) => leg.name), plan.limit])).toEqual([
+      ['card', ['RAID'], null],
+      ['RAID', ['SHUTTLE'], null],
+    ]);
+    expect(job.legs.map((leg) => [leg.name, leg.relay, leg.local, leg.relayFrom, leg.copyPct, leg.verifyPct, leg.waiting])).toEqual([
+      ['RAID', false, true, null, 100, 100, null],
+      ['SHUTTLE', true, true, 'RAID', 100, 100, null],
+      ['Dailies', true, false, 'RAID', 0, 0, 'Paused'],
+    ]);
+    // Checked against the card's own checksums, so it is a second local copy: the card can be cleared.
+    expect(plans[1]!.files.every((file) => typeof file.expected === 'string')).toBe(true);
+    expect(await service.checkClear('A015', 'two-local')).toMatchObject({ ok: true, copies: [{ name: 'RAID', ok: true }, { name: 'SHUTTLE', ok: true }] });
+    expect(records.at(-1)!.destinations.map((destination) => destination.local)).toEqual([true, true, false]);
+
+    await service.pauseRelays(false);
+    await settle();
+    expect(plans[2]).toMatchObject({ limit: 1_000_000 });
+    expect(service.state().jobs[0]!.legs[2]).toMatchObject({ copyPct: 100, verifyPct: 100 });
+  });
+
+  it('holds a drive to its own speed limit, and an upload to the lower of its own and the upload limit', async () => {
+    const cloud = await addCloud();
+    await service.setRelay(mounts[2]!, true);
+    expect(await service.setDriveLimit(mounts[2]!, 25_000_000)).toEqual({ ok: true });
+    expect(await service.setDriveLimit(cloud, 500_000)).toEqual({ ok: true });
+    expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.limit).toBe(25_000_000);
+    expect(service.state().folders[0]!.limit).toBe(500_000);
+    await service.setRelayLimit(1_000_000);
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!, cloud]));
+    await settle();
+    expect(plans.slice(1).map((plan) => [plan.legs[0]!.name, plan.limit]).sort()).toEqual([
+      ['Dailies', 500_000],
+      ['SHUTTLE', 25_000_000],
+    ]);
+    // Taken off: no limit; a drive that is gone is refused.
+    await service.setDriveLimit(mounts[2]!, null);
+    expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')!.limit).toBeNull();
+    expect(await service.setDriveLimit('/Volumes/gone', 1_000_000)).toEqual({ ok: false, reason: 'That destination is no longer available.' });
+  });
+});
+
+describe('LTO tape', () => {
+  const tapeRoot = () => join(base, 'TAPE');
+  const onTape = (card: string, file: string) => join(tapeRoot(), 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', card, `${card}R1AB`, file);
+  /** A second card, and a tape: an Archive volume marked as tape. */
+  const setUp = async () => {
+    const second = join(base, 'B001');
+    await mkdir(join(second, 'B001R1AB'), { recursive: true });
+    await writeFile(join(second, 'B001R1AB', 'B001C001_261005_R1AB.mxf'), 'b take one');
+    await mkdir(tapeRoot());
+    mounts.push(second, tapeRoot());
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes).toHaveLength(5));
+    await service.setRole(tapeRoot(), 'Archive');
+    expect(service.state().volumes.find((volume) => volume.name === 'TAPE')!.tape).toBe(false);
+    expect(await service.setTape(tapeRoot(), true)).toEqual({ ok: true });
+    return second;
+  };
+
+  it('knows an LTFS volume is a tape, and a tape is always fed from the backup', async () => {
+    await setUp();
+    const tape = service.state().volumes.find((volume) => volume.name === 'TAPE')!;
+    expect(tape).toMatchObject({ tape: true, relay: true });
+    await service.setTape(tapeRoot(), false);
+    (service as unknown as { volumes: Map<string, { volume: { filesystem: string } }> }).volumes.get(tapeRoot())!.volume.filesystem = 'ltfs';
+    // Not tape by choice wins; with no choice, LTFS is tape.
+    expect(service.tapeFor(tapeRoot())).toBe(false);
+    (service as unknown as { settings: { tape: Record<string, boolean> } }).settings.tape = {};
+    expect(service.tapeFor(tapeRoot())).toBe(true);
+  });
+
+  it('holds the day\'s cards for the tape run, then writes them all in one pass and reads them back in one', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    const second = await setUp();
+    await service.ingest(request([mounts[0]!, second], [mounts[1]!, tapeRoot()]));
+    await settle();
+    // Each card went to the RAID alone; the tape waits for its run, and cannot leave yet.
+    expect(plans.map((plan) => plan.legs.map((leg) => leg.name))).toEqual([['RAID'], ['RAID']]);
+    const tapeLegs = () => service.state().jobs.map((job) => job.legs.find((leg) => leg.name === 'TAPE')!);
+    expect(tapeLegs().map((leg) => [leg.tape, leg.relay, leg.waiting])).toEqual([
+      [true, true, expect.stringMatching(/Waiting for the tape run/)],
+      [true, true, expect.stringMatching(/Waiting for the tape run/)],
+    ]);
+    expect((await service.eject(tapeRoot())).ok).toBe(false);
+    // A file changes on the RAID before the run: it is refused, the rest go.
+    await writeFile(join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'B001', 'B001R1AB', 'B001C001_261005_R1AB.mxf'), 'b TAMPERED');
+
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: true, cards: 2 });
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: false, reason: 'The tape is already being written.' });
+    expect(service.busy()).toBe(true);
+    await settle();
+    // One run, from the RAID, both cards' files, keeping their folders; reports written per card afterwards.
+    expect(plans).toHaveLength(3);
+    expect(plans[2]).toMatchObject({ sourceRoot: mounts[1], reports: false });
+    expect(plans[2]!.files.map((file) => file.path)).toEqual([
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015R1AB/A015C001_261005_R1AB.mxf',
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015R1AB/A015C002_261005_R1AB.mxf',
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/B001/B001R1AB/B001C001_261005_R1AB.mxf',
+    ]);
+    expect(await readFile(onTape('A015', 'A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    await expect(readFile(onTape('B001', 'B001C001_261005_R1AB.mxf'))).rejects.toThrow();
+    const [a, b] = tapeLegs();
+    expect(a).toMatchObject({ failed: false, verifyPct: 100, waiting: null });
+    expect(b).toMatchObject({ failed: true, problemFiles: 1 });
+    // Each card has its own ASC MHL in its folder on the tape.
+    expect((await readdir(join(tapeRoot(), 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'ascmhl'))).some((name) => name.endsWith('.mhl'))).toBe(true);
+    expect(records.filter((record) => record.id === 'A015').at(-1)!.destinations[1]).toMatchObject({ tape: true });
+    // B001 failed on tape: the tape still may not leave.
+    expect((await service.eject(tapeRoot())).ok).toBe(false);
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: false, reason: 'Nothing is waiting for this tape.' });
+  });
+});
+
+describe('renaming on offload', () => {
+  it('copies .mp4 clips named after the card, reads the card by its own names, and clears and ejects it as usual', async () => {
+    const card = mounts[0]!;
+    await mkdir(join(card, 'DCIM'), { recursive: true });
+    await writeFile(join(card, 'DCIM', 'C0001.MP4'), 'phone clip');
+    await writeFile(join(card, 'DCIM', 'C0001.THM'), 'thumb');
+    const cloudDir = join(base, 'Dropbox');
+    await mkdir(cloudDir);
+    await service.addFolder(cloudDir);
+    await service.ingest({ ...request([card], [mounts[1]!, mounts[2]!, `folder:${cloudDir}`]), rename: true });
+    await settle();
+    const dir = (root: string) => join(root, 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015');
+    for (const root of [mounts[1]!, mounts[2]!, cloudDir]) {
+      expect((await readdir(join(dir(root), 'DCIM'))).sort()).toEqual(['A015_C0001.MP4', 'A015_C0001.THM']);
+      // The MXF clips are camera originals in another format: their names stay.
+      expect(await readdir(join(dir(root), 'A015R1AB'))).toContain('A015C001_261005_R1AB.mxf');
+    }
+    expect(await readFile(join(dir(cloudDir), 'DCIM', 'A015_C0001.MP4'), 'utf8')).toBe('phone clip');
+    const job = service.state().jobs[0]!;
+    expect(job.legs.every((leg) => leg.verifyPct === 100 && !leg.failed)).toBe(true);
+    // Kept with both names, for a restart.
+    expect(records.at(-1)!.files.find((file) => file.path === 'DCIM/A015_C0001.MP4')).toMatchObject({ source: 'DCIM/C0001.MP4' });
+    // The card is unchanged, and safe: cleared by its own names.
+    expect((await readdir(join(card, 'DCIM'))).sort()).toEqual(['C0001.MP4', 'C0001.THM']);
+    expect(await service.checkClear('A015', 'two-local')).toMatchObject({ ok: true, files: 4 });
+    expect(await service.clearCard('A015', 'two-local')).toMatchObject({ ok: true, removed: 4 });
+    await expect(readdir(join(card, 'DCIM'))).rejects.toThrow();
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(card)).toEqual({ ok: true });
+  });
+
+  it('lets a renamed card out once it is backed up, matching the card by its own names', async () => {
+    const card = mounts[0]!;
+    await writeFile(join(card, 'C0002.MP4'), 'another');
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    await service.ingest({ ...request([card], [mounts[1]!]), rename: true });
+    await settle();
+    expect(await service.eject(card)).toEqual({ ok: true });
+  });
+});
+
+describe('saved workflows', () => {
+  const deps = () => (service as unknown as { deps: MediaServiceDeps }).deps;
+  const context = { production: { name: 'HALCYON', code: 'HLC' }, day: { number: 14, date: '2026-10-05' } };
+
+  it('matches a card by its maker first, else the workflow for any camera, and keeps one per kind of card', async () => {
+    const card = () => service.state().volumes.find((volume) => volume.name === 'A015')!;
+    expect(card().workflow).toBeNull();
+    const any = await service.saveWorkflow({ name: 'Main offload', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: false, dailies: false });
+    expect(any).toMatchObject({ ok: true });
+    expect(card().workflow).toBe(any.ok && any.id);
+    // The card is ARRI ("ARRI · MXF"): an ARRI workflow wins over the one for any camera.
+    const arri = await service.saveWorkflow({ name: 'ARRI to both', camera: 'arri', destinations: [mounts[1]!, mounts[2]!], checksum: 'xxHash64', autoStart: false, dailies: false });
+    expect(card().workflow).toBe(arri.ok && arri.id);
+    expect(service.state().workflows!.map((workflow) => [workflow.name, workflow.destinations.map((destination) => destination.name), workflow.here?.length, workflow.missing])).toEqual([
+      ['Main offload', ['RAID'], 1, []],
+      ['ARRI to both', ['RAID', 'SHUTTLE'], 2, []],
+    ]);
+    // Saving another ARRI workflow replaces the first; it is remembered on the computer.
+    await service.saveWorkflow({ name: 'ARRI to RAID', camera: 'arri', destinations: [mounts[1]!], checksum: 'xxHash64', autoStart: false, dailies: false });
+    expect(service.state().workflows!.map((workflow) => workflow.name)).toEqual(['Main offload', 'ARRI to RAID']);
+    expect(JSON.parse(await readFile(join(base, 'appdata', 'media.json'), 'utf8')).workflows).toHaveLength(2);
+    expect(await service.saveWorkflow({ name: '', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: false, dailies: false })).toEqual({ ok: false, reason: 'Give the workflow a name.' });
+    expect(await service.saveWorkflow({ name: 'X', camera: 'any', destinations: ['/nowhere'], checksum: 'MD5', autoStart: false, dailies: false })).toEqual({ ok: false, reason: 'A destination you picked is no longer available.' });
+    await service.removeWorkflow(any.ok ? any.id : '');
+    expect(service.state().workflows!.map((workflow) => workflow.name)).toEqual(['ARRI to RAID']);
+  });
+
+  it('starts a matching card by itself once its drives are in, once, and then renders the dailies', async () => {
+    const afterCard = vi.fn(async () => 'Dailies started: 2 takes.');
+    deps().context = () => context;
+    deps().afterCard = afterCard;
+    await service.saveWorkflow({ name: 'ARRI to both', camera: 'arri', destinations: [mounts[1]!, mounts[2]!], checksum: 'MD5', autoStart: true, dailies: true });
+    // The shuttle is not plugged in: it waits, and says for what.
+    const shuttle = mounts.pop()!;
+    await service.poll();
+    expect(service.state().autoStart).toEqual({ [mounts[0]!]: 'Waiting for SHUTTLE to start ARRI to both.' });
+    expect(service.state().jobs).toHaveLength(0);
+    mounts.push(shuttle);
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes.find((volume) => volume.name === 'SHUTTLE')).toBeTruthy());
+    await service.poll();
+    await settle();
+    const job = service.state().jobs[0]!;
+    expect(job).toMatchObject({ card: 'A015', checksum: 'MD5', workflow: 'ARRI to both' });
+    expect(job.legs.map((leg) => [leg.name, leg.verifyPct])).toEqual([
+      ['RAID', 100],
+      ['SHUTTLE', 100],
+    ]);
+    expect(service.state().autoStart).toEqual({});
+    await vi.waitFor(() => expect(service.state().jobs[0]!.followUp).toBe('Dailies started: 2 takes.'));
+    expect(afterCard).toHaveBeenCalledWith({ day: 14, card: 'A015', workflow: expect.objectContaining({ name: 'ARRI to both' }) });
+    // Polled again, still mounted: not copied a second time.
+    await service.poll();
+    await settle();
+    expect(service.state().jobs).toHaveLength(1);
+  });
+
+  it('does not start a card by itself with no production open, or one already copied today', async () => {
+    await service.saveWorkflow({ name: 'Any', camera: 'any', destinations: [mounts[1]!], checksum: 'MD5', autoStart: true, dailies: false });
+    await service.poll();
+    expect(service.state().autoStart![mounts[0]!]).toBe('Open a production to start it.');
+    // Copied by hand, then plugged in again later: left for the DIT.
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    deps().context = () => context;
+    const card = mounts.shift()!;
+    await service.poll();
+    mounts.unshift(card);
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes.some((volume) => volume.name === 'A015')).toBe(true));
+    await service.poll();
+    expect(service.state().autoStart![mounts[0]!]).toMatch(/Copied earlier today/);
+    expect(service.state().jobs).toHaveLength(1);
+  });
+});
+
+describe('clearing a card for camera', () => {
+  const onCard = () => readdir(join(mounts[0]!, 'A015R1AB')).catch(() => null);
+  const ingestBoth = async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    await settle();
+  };
+
+  it('checks, then erases only what was ingested, leaving both copies and a note beside each log', async () => {
+    await ingestBoth();
+    const check = await service.checkClear('A015', 'two-local');
+    expect(check).toMatchObject({ ok: true, files: 2, bytes: 16, problems: [] });
+    expect('copies' in check && check.copies.map((copy) => [copy.name, copy.ok])).toEqual([
+      ['RAID', true],
+      ['SHUTTLE', true],
+    ]);
+    expect(await onCard()).toHaveLength(2);
+
+    const result = await service.clearCard('A015', 'two-local');
+    expect(result).toMatchObject({ ok: true, removed: 2 });
+    // The card's media is gone (its emptied folder too); the copies are not.
+    expect(await onCard()).toBeNull();
+    expect(await readFile(join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C001_261005_R1AB.mxf'), 'utf8')).toBe('take one');
+    expect(await readFile(join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    const reports = join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'REPORTS', 'ingest_verification');
+    expect((await readdir(reports)).some((name) => /^A015_cleared_\d{8}T\d{6}Z\.json$/.test(name))).toBe(true);
+    expect(service.state().jobs[0]!.clearedAt).not.toBeNull();
+    expect(records.at(-1)!.clearedAt).toBe(service.state().jobs[0]!.clearedAt);
+    // Once is enough.
+    expect(await service.clearCard('A015', 'two-local')).toEqual({ ok: false, reason: 'A015 was already cleared.' });
+  });
+
+  it('will not clear a card with a new clip on it, and erases nothing', async () => {
+    await ingestBoth();
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'), 'take three');
+    const result = await service.clearCard('A015', 'two-local');
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.reason).toMatch(/1 file on the card was not part of this ingest \(new clips\?\), e\.g\. A015R1AB\/A015C003/);
+    expect(await onCard()).toHaveLength(3);
+  });
+
+  it('will not clear when a copy it relies on has gone, or there is only one', async () => {
+    await ingestBoth();
+    await rm(join(base, 'SHUTTLE', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'A015R1AB', 'A015C002_261005_R1AB.mxf'));
+    const check = await service.checkClear('A015', 'two-local');
+    expect(check.problems).toEqual(['SHUTTLE: 1 copy missing or a different size now. Is the drive plugged in?']);
+    expect((await service.clearCard('A015', 'two-local')).ok).toBe(false);
+    expect(await onCard()).toHaveLength(2);
+  });
+
+  it('needs two local copies under the default rule; one will do only under every-destination', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    expect((await service.checkClear('A015', 'two-local')).problems).toEqual([
+      'Only one local copy. This production needs two verified local copies before a card is cleared.',
+    ]);
+    expect(await service.checkClear('A015', 'every')).toMatchObject({ ok: true });
+  });
+
+  it('will not check a card that is not plugged in, or one still copying', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    expect(await service.checkClear('A015', 'two-local')).toEqual({ ok: false, problems: ['A015 is still being copied.'] });
+    await settle();
+    mounts = mounts.slice(1);
+    await service.poll();
+    expect(await service.checkClear('A015', 'two-local')).toEqual({ ok: false, problems: ['A015 is not plugged in.'] });
+  });
+
+  it('ejects a card once it is not in use, and only says so when it has really gone', async () => {
+    await ingestBoth();
+    const ejected: string[] = [];
+    const eject = async (path: string) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    (service as unknown as { deps: { eject: typeof eject } }).deps.eject = eject;
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'A015')]);
+    expect(service.state().volumes.map((volume) => volume.name)).not.toContain('A015');
+
+    // A drive the system will not let go of stays, and the reason is given.
+    (service as unknown as { deps: { eject: () => Promise<string> } }).deps.eject = async () => 'Another app is using it. Close anything showing its files, then eject again.';
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: false, reason: 'RAID was not ejected. Another app is using it. Close anything showing its files, then eject again.' });
+  });
+
+  it('will not eject a card while it is being copied', async () => {
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: false, reason: 'A015 is being copied. Eject it when the transfer has finished.' });
+    await settle();
+  });
+
+  it('will not eject a card that is not backed up on at least one drive, or has something new on it', async () => {
+    const ejected: string[] = [];
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      ejected.push(path);
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    expect(await service.eject(mounts[0]!)).toEqual({
+      ok: false,
+      reason: 'A015 has not been backed up. It can be ejected once everything on it has been copied and verified on at least one drive.',
+    });
+    // One drive is enough to let it out (not to clear it).
+    await service.ingest(request([mounts[0]!], [mounts[1]!]));
+    await settle();
+    await writeFile(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'), 'shot after the copy');
+    expect((await service.eject(mounts[0]!)).reason).toMatch(/^A015 is not fully backed up/);
+    await rm(join(mounts[0]!, 'A015R1AB', 'A015C003_261005_R1AB.mxf'));
+    expect(await service.eject(mounts[0]!)).toEqual({ ok: true });
+    expect(ejected).toEqual([join(base, 'A015')]);
+  });
+
+  it('keeps a drive being sealed from copies and ejecting until it is let go', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    // Not while a transfer is writing to it.
+    expect(service.hold(mounts[2]!, 'being sealed')).toEqual({ ok: false, reason: 'SHUTTLE is being copied to. Try again when the transfer has finished.' });
+    await settle();
+    const held = service.hold(mounts[2]!, 'being sealed');
+    if (!held.ok) throw new Error(held.reason);
+    expect(held).toMatchObject({ root: mounts[2], name: 'SHUTTLE' });
+    expect(service.hold(mounts[2]!, 'being sealed')).toEqual({ ok: false, reason: 'SHUTTLE is already being sealed.' });
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: false, reason: 'SHUTTLE is being sealed. Eject it when that has finished.' });
+    expect(await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]))).toEqual({ ok: false, reason: 'SHUTTLE is being sealed. Copy to it when that has finished.' });
+    held.release();
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+  });
+
+  it('will not let a shuttle go until every card copied to it has verified there', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    corrupt = { path: 'A015R1AB/A015C002_261005_R1AB.mxf', leg: mounts[2]! };
+    await service.ingest(request([mounts[0]!], [mounts[1]!, mounts[2]!]));
+    await settle();
+    expect(await service.eject(mounts[2]!)).toEqual({
+      ok: false,
+      reason: 'SHUTTLE has 1 card whose copy failed there. Retry the copy (Verify) so everything on it is verified, then eject.',
+    });
+    corrupt = null;
+    service.retry('A015', mounts[2]!);
+    await settle();
+    expect(await service.eject(mounts[2]!)).toEqual({ ok: true });
+  });
+});

@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#ffffff;color:#141414;font-family:'IBM Plex Sans',system-ui,sans-serif;-webkit-font-smoothing:antialiased}a{color:oklch(0.74 0.12 240)}a:hover{color:#141414}*{box-sizing:border-box}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:#f5f5f3}*{scrollbar-color:#dededa #f5f5f3}::-webkit-scrollbar-thumb{background:#dededa;border-radius:6px;border:2px solid #ffffff}input[type=range]{accent-color:#141414}[data-scr]>*{flex-shrink:0}</style>
+</helmet>
+<div style="height:100vh;min-width:1280px;display:grid;grid-template-rows:52px auto minmax(0,1fr);grid-template-columns:minmax(0,1fr) {{ filesCol }};background:#ffffff">
+
+<header style="grid-column:1 / 3;display:flex;align-items:center;gap:20px;padding:0 18px;border-bottom:1px solid #dededa;background:#f5f5f3">
+  <div style="display:flex;align-items:baseline;gap:8px;width:150px;flex:none;white-space:nowrap">
+    <span style="font:700 15px/1 'IBM Plex Sans';letter-spacing:.02em;white-space:nowrap">VC DIT</span>
+    <span style="font:500 10px/1 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">V1.0</span>
+  </div>
+  <div style="flex:none;white-space:nowrap;display:flex;align-items:center;gap:10px;padding:0 12px;height:32px;border:1px solid #dededa;border-radius:6px;background:#ffffff">
+    <span style="font:600 12.5px 'IBM Plex Sans'">HALCYON</span>
+    <span style="font:500 11px 'IBM Plex Mono';color:#64625d">HLC</span>
+    <span style="width:1px;height:16px;background:#c9c9c4"></span>
+    <span style="font:500 12px 'IBM Plex Mono'">DAY 014</span>
+    <span style="font:400 12px 'IBM Plex Mono';color:#55534e">Mon 05 Oct 2026</span>
+    <span style="color:#64625d;font-size:10px">▾</span>
+  </div>
+  <div style="display:flex;gap:4px;padding:3px;border:1px solid #dededa;border-radius:8px">
+    <span onClick="{{ go.dash }}" style="cursor:pointer;height:28px;padding:0 12px;display:inline-flex;align-items:center;white-space:nowrap;border-radius:5px;font:600 12.5px 'IBM Plex Sans';background:{{ top.today.bg }};color:{{ top.today.fg }}">Today</span>
+    <span onClick="{{ go.setup }}" style="cursor:pointer;height:28px;padding:0 12px;display:inline-flex;align-items:center;white-space:nowrap;border-radius:5px;font:600 12.5px 'IBM Plex Sans';background:{{ top.proj.bg }};color:{{ top.proj.fg }}">Project setup</span>
+  </div>
+  <div style="display:flex;align-items:center;flex:1;min-width:0;justify-content:center">
+    <span onClick="{{ overall.go }}" style="cursor:pointer;display:inline-flex;align-items:center;gap:9px;height:30px;padding:0 14px;border-radius:15px;white-space:nowrap;background:{{ overall.bg }};color:{{ overall.c }};font:700 12.5px 'IBM Plex Sans'"><span style="width:8px;height:8px;border-radius:4px;background:{{ overall.c }}"></span>{{ overall.t }}</span>
+  </div>
+  <button onClick="{{ go.reports }}" style="height:30px;padding:0 12px;border-radius:6px;border:1px solid #c9c9c4;background:{{ top.rep.bg }};color:{{ top.rep.fg }};font:600 12.5px 'IBM Plex Sans';cursor:pointer;display:flex;align-items:center;gap:8px;white-space:nowrap"><span style="width:9px;height:11px;border-radius:1px;border:1.5px solid currentColor"></span>Reports</button>
+  <button onClick="{{ toggleFiles }}" style="height:30px;padding:0 12px;border-radius:6px;border:1px solid #c9c9c4;background:{{ filesBtn.bg }};color:{{ filesBtn.fg }};font:600 12.5px 'IBM Plex Sans';cursor:pointer;display:flex;align-items:center;gap:8px"><span style="width:12px;height:9px;border-radius:2px;border:1.5px solid currentColor"></span>Files</button>
+  <div style="display:flex;align-items:center;gap:14px">
+    <span style="font:500 13px 'IBM Plex Mono';letter-spacing:.04em">{{ clock }}</span>
+    <div style="display:flex;align-items:center;gap:8px"><span title="M. Reyes · DIT" style="width:26px;height:26px;border-radius:13px;background:#dededa;display:grid;place-items:center;font:600 10.5px 'IBM Plex Sans'">MR</span></div>
+  </div>
+</header>
+
+<div style="grid-column:1 / 3;display:flex;align-items:stretch;gap:0;padding:10px 14px;border-bottom:1px solid #dededa;background:#f5f5f3">
+  <sc-for list="{{ flow }}" as="f" hint-placeholder-count="6">
+    <div onClick="{{ f.go }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:8px;cursor:pointer;background:{{ f.bg }};border:1px solid {{ f.b }}" style-hover="background:#f0f0ee">
+      <span style="flex:none;width:26px;height:26px;border-radius:6px;background:{{ f.c }};color:#ffffff;display:grid;place-items:center;font:700 13px 'IBM Plex Mono'">{{ f.n }}</span>
+      <div style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1"><span style="font:700 13.5px 'IBM Plex Sans';color:{{ f.nameC }}">{{ f.name }}</span><span style="font:500 11.5px 'IBM Plex Mono';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ f.sub }}</span></div>
+      <span title="{{ f.st.t }}" style="flex:none;width:9px;height:9px;border-radius:5px;background:{{ f.st.c }}"></span>
+    </div>
+    <sc-if value="{{ f.arrow }}" hint-placeholder-val="{{ true }}"><span style="align-self:center;flex:none;padding:0 6px;color:#8c8c87;font:600 14px 'IBM Plex Mono'">→</span></sc-if>
+  </sc-for>
+</div>
+
+<main style="min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+<sc-if value="{{ hasSub }}" hint-placeholder-val="{{ false }}"><div style="flex:none;display:flex;gap:6px;padding:12px 28px 0"><sc-for list="{{ subtabs }}" as="t" hint-placeholder-count="2"><span onClick="{{ t.go }}" style="cursor:pointer;height:30px;padding:0 14px;display:inline-flex;align-items:center;border-radius:6px;font:600 12.5px 'IBM Plex Sans';background:{{ t.bg }};color:{{ t.fg }};border:1px solid #c9c9c4">{{ t.t }}</span></sc-for></div></sc-if>
+
+<!-- 01 DASHBOARD -->
+<sc-if value="{{ on.dash }}" hint-placeholder-val="{{ true }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:32px 36px 44px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <span style="font:500 13px 'IBM Plex Sans';color:#55534e">Day 014 · Hangar &amp; Rooftop · Mon 05 Oct</span>
+    <h1 style="margin:0;font:600 34px/1.15 'IBM Plex Sans';color:{{ overall.c }};text-wrap:pretty">{{ overall.headline }}</h1>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px">
+    <sc-for list="{{ tiles }}" as="t" hint-placeholder-count="4">
+      <div onClick="{{ t.go }}" style="cursor:pointer;background:#ffffff;border:1px solid #dededa;border-top:4px solid {{ t.c }};border-radius:10px;padding:18px 20px;display:flex;flex-direction:column;gap:10px;min-height:160px" style-hover="background:#f2f2f0">
+        <span style="font:600 12px 'IBM Plex Mono';letter-spacing:.1em;color:{{ t.c }}">{{ t.name }}</span>
+        <span style="font:600 19px/1.3 'IBM Plex Sans';text-wrap:pretty">{{ t.line }}</span>
+        <span style="font:400 13px/1.45 'IBM Plex Sans';color:#55534e">{{ t.sub }}</span>
+        <div style="margin-top:auto;display:flex;align-items:center;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:7px;font:600 12.5px 'IBM Plex Sans';color:{{ t.st.c }}"><span style="width:8px;height:8px;border-radius:4px;background:{{ t.st.c }}"></span>{{ t.st.t }}</span><span style="font:500 13px 'IBM Plex Sans';color:#55534e">Open →</span></div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:12px">
+    <span style="font:600 15px 'IBM Plex Sans'">Do these next</span>
+    <sc-for list="{{ alerts }}" as="a" hint-placeholder-count="3">
+      <div style="display:flex;align-items:center;gap:16px;padding:16px 18px;background:#ffffff;border:1px solid #dededa;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.04)">
+        <span style="width:10px;height:10px;border-radius:5px;background:{{ a.c }};flex:none"></span>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0"><span style="font:600 14.5px 'IBM Plex Sans'">{{ a.t }}</span><span style="font:400 13px 'IBM Plex Sans';color:#55534e">{{ a.d }}</span></div>
+        <span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.08em;color:{{ a.sc }}">{{ a.sec }}</span>
+        <button onClick="{{ a.go }}" style="height:36px;padding:0 16px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 13px 'IBM Plex Sans';cursor:pointer">{{ a.cta }}</button>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- 02 PROJECT & SHOOT DAY -->
+<sc-if value="{{ on.setup }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:#141414"><span style="width:10px;height:10px;border-radius:3px;background:#141414"></span>PROJECT SETUP</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Production settings</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Saved per production — you set this up once, not every card.</span></div><span style="font:500 11.5px 'IBM Plex Mono';color:oklch(0.55 0.15 150)">● Auto-saved 14:31</span></div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px">
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="padding:14px 16px;border-bottom:1px solid #dededa;font:600 13px 'IBM Plex Sans'">Production</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px">
+        <sc-for list="{{ prodFields }}" as="f" hint-placeholder-count="6">
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.06em">{{ f.l }}</span><div style="height:34px;display:flex;align-items:center;padding:0 10px;background:#ffffff;border:1px solid #dededa;border-radius:6px;font:400 13px 'IBM Plex Sans'">{{ f.v }}</div></div>
+        </sc-for>
+      </div>
+      <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:8px">
+        <span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.06em">CAMERAS &amp; SOUND</span>
+        <sc-for list="{{ devices }}" as="d" hint-placeholder-count="3">
+          <div style="display:flex;align-items:center;gap:12px;height:38px;padding:0 12px;border:1px solid #dededa;border-radius:6px"><span style="width:26px;height:22px;border-radius:4px;background:#dededa;display:grid;place-items:center;font:600 11px 'IBM Plex Mono'">{{ d.k }}</span><span style="font:500 13px 'IBM Plex Sans';flex:1">{{ d.n }}</span><span style="font:400 12px 'IBM Plex Mono';color:#55534e">{{ d.f }}</span></div>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;display:flex;flex-direction:column">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dededa"><span style="font:600 13px 'IBM Plex Sans'">Day 014 scene list</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">Click status to change</span></div>
+      <sc-for list="{{ sceneEdit }}" as="s" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:60px minmax(0,1fr) 110px;align-items:center;gap:10px;height:42px;padding:0 16px;border-bottom:1px solid #ececea">
+          <span style="font:600 13px 'IBM Plex Mono'">{{ s.id }}</span><span style="font:400 12.5px 'IBM Plex Sans';color:#55534e">{{ s.desc }}</span>
+          <span onClick="{{ s.cycle }}" style="cursor:pointer;justify-self:end;display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:4px;font:500 10.5px 'IBM Plex Mono';color:{{ s.st.c }};background:{{ s.st.bg }}">{{ s.st.t }} ▾</span>
+        </div>
+      </sc-for>
+      <div style="display:flex;gap:8px;padding:12px 16px">
+        <input value="{{ newScene }}" onChange="{{ setNewScene }}" placeholder="Scene no. — e.g. 23" style="flex:1;height:34px;padding:0 10px;background:#ffffff;border:1px solid #c9c9c4;border-radius:6px;color:#141414;font:400 13px 'IBM Plex Mono';outline:none">
+        <button onClick="{{ addScene }}" style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Add scene</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:20px">
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="padding:14px 16px;border-bottom:1px solid #dededa;font:600 13px 'IBM Plex Sans'">Naming template</div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px;background:#ffffff;border:1px solid #dededa;border-radius:6px">
+          <sc-for list="{{ tokens }}" as="t" hint-placeholder-count="8">
+            <span style="display:inline-flex;align-items:center;height:26px;padding:0 9px;border-radius:4px;font:500 12px 'IBM Plex Mono';background:{{ t.bg }};color:{{ t.c }}">{{ t.t }}</span>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.06em">FOLDER PREVIEW</span><span style="font:400 12.5px/1.6 'IBM Plex Mono';color:#141414">HALCYON / SHOOT_DAY_014_2026-10-05 / CAMERA_ORIGINALS / SCENE_014 / SETUP_B / <span style="color:oklch(0.74 0.12 240)">A014C018_261005_R1ZK.ari</span></span></div>
+        <div style="font:400 12px/1.5 'IBM Plex Sans';color:#55534e">Original camera filenames are preserved. Scene/setup/take mapping is stored in the media index, not written into protected originals.</div>
+      </div>
+    </div>
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dededa"><span style="font:600 13px 'IBM Plex Sans'">Script supervisor log</span><button onClick="{{ go.match }}" style="background:none;border:0;color:#55534e;font:500 12px 'IBM Plex Sans';cursor:pointer">Match review →</button></div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;border:1px dashed #c9c9c4;border-radius:6px"><span style="width:34px;height:40px;border-radius:4px;background:#dededa;display:grid;place-items:center;font:600 9.5px 'IBM Plex Mono';color:#55534e">CSV</span><div style="display:flex;flex-direction:column;gap:3px;flex:1"><span style="font:500 13px 'IBM Plex Mono'">HLC_D014_scriptlog.csv</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">Imported 14:12 · neutral interchange schema</span></div><button style="height:30px;padding:0 10px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12px 'IBM Plex Sans';cursor:pointer">Re-import</button></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <sc-for list="{{ logStats }}" as="s" hint-placeholder-count="4"><div style="padding:10px;border:1px solid #dededa;border-radius:6px;display:flex;flex-direction:column;gap:4px"><span style="font:600 18px 'IBM Plex Mono';color:{{ s.c }}">{{ s.v }}</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">{{ s.l }}</span></div></sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 03 MEDIA INTAKE -->
+<sc-if value="{{ on.intake }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:22px 28px 28px;display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.52 0.17 255)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.52 0.17 255)"></span>01 · INTAKE</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Bring media in</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Left: what's coming in. Right: where the verified copies go.</span></div>
+  <div style="flex:1;display:grid;grid-template-columns:minmax(0,1fr) 210px minmax(0,1fr);border:1px solid #c9c9c4;border-radius:12px;overflow:hidden;min-height:440px">
+    <div style="display:flex;flex-direction:column;background:#fafaf9;min-width:0">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:2px solid oklch(0.52 0.17 255);background:oklch(0.52 0.17 255 / 0.10)"><span style="font:700 11px 'IBM Plex Mono';letter-spacing:.1em;padding:3px 7px;border-radius:4px;background:oklch(0.52 0.17 255);color:#ffffff">IN</span><span style="font:700 15px 'IBM Plex Sans'">Sources</span><span style="margin-left:auto;font:400 12px 'IBM Plex Sans';color:#55534e">Cards · read-only</span></div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:10px"><sc-for list="{{ sourceViews }}" as="s" hint-placeholder-count="4">
+        <div style="background:#ffffff;border:1px solid {{ s.border }};border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span onClick="{{ s.toggle }}" style="cursor:pointer;flex:none;width:18px;height:18px;border-radius:4px;border:1.5px solid {{ s.boxB }};background:{{ s.boxBg }};display:grid;place-items:center;color:#ffffff;font:700 11px 'IBM Plex Sans'">{{ s.check }}</span>
+            <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><div style="display:flex;align-items:baseline;gap:10px"><span style="font:600 14px 'IBM Plex Mono'">{{ s.vol }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.det }}</span></div><span style="font:400 11.5px 'IBM Plex Mono';color:#64625d">{{ s.media }} · {{ s.used }}</span></div>
+            <span onClick="{{ s.cycleRole }}" style="cursor:pointer;flex:none;height:28px;padding:0 10px;display:inline-flex;align-items:center;gap:7px;border-radius:6px;border:1px solid #c9c9c4;font:600 12px 'IBM Plex Sans'">{{ s.role }} <span style="color:#64625d;font-size:10px">▾</span></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px"><div style="flex:1;height:4px;background:#dededa;border-radius:2px;overflow:hidden"><div style="height:100%;width:{{ s.fill }};background:#55534e"></div></div><sc-if value="{{ s.locked }}" hint-placeholder-val="{{ false }}"><span style="font:600 10.5px 'IBM Plex Mono';color:oklch(0.55 0.15 150)">READ-ONLY</span></sc-if></div>
+        </div>
+      </sc-for></div>
+    </div>
+    <div style="border-left:1px solid #dededa;border-right:1px solid #dededa;background:#ffffff;display:flex;flex-direction:column;gap:18px;padding:20px 16px;justify-content:center">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px"><span style="font:600 30px/1 'IBM Plex Mono';color:oklch(0.52 0.17 255)">→</span><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.1em;color:#a19f99">COPY + CHECK</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.1em;color:#a19f99">CHECKSUM</span><sc-for list="{{ sums }}" as="c" hint-placeholder-count="3"><span onClick="{{ c.pick }}" style="cursor:pointer;height:30px;padding:0 10px;display:flex;align-items:center;border-radius:5px;font:600 12px 'IBM Plex Mono';background:{{ c.bg }};color:{{ c.fg }};border:1px solid #dededa">{{ c.t }}</span></sc-for></div>
+      <div style="font:400 12px/1.7 'IBM Plex Sans';color:#55534e">✓ Re-read after copy<br>✓ ASC MHL + transfer log</div>
+      <div style="display:flex;flex-direction:column;gap:4px"><span style="font:600 13px/1.35 'IBM Plex Mono'">{{ intakeSum.title }}</span><span style="font:400 12px/1.45 'IBM Plex Sans';color:{{ intakeSum.c }}">{{ intakeSum.sub }}</span></div>
+      <button onClick="{{ startIngest }}" style="height:42px;border-radius:7px;border:0;background:oklch(0.52 0.17 255);color:#ffffff;font:700 13px 'IBM Plex Sans';cursor:pointer">Start verified ingest</button>
+    </div>
+    <div style="display:flex;flex-direction:column;background:#fafaf9;min-width:0">
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:2px solid oklch(0.54 0.11 220);background:oklch(0.54 0.11 220 / 0.10)"><span style="font:700 11px 'IBM Plex Mono';letter-spacing:.1em;padding:3px 7px;border-radius:4px;background:oklch(0.54 0.11 220);color:#ffffff">OUT</span><span style="font:700 15px 'IBM Plex Sans'">Destinations</span><span style="margin-left:auto;font:400 12px 'IBM Plex Sans';color:#55534e">All written at once</span></div>
+      <div style="padding:14px;display:flex;flex-direction:column;gap:10px"><sc-for list="{{ destViews }}" as="d" hint-placeholder-count="4">
+        <div onClick="{{ d.toggle }}" style="cursor:pointer;background:#ffffff;border:1px solid {{ d.border }};border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="flex:none;width:18px;height:18px;border-radius:4px;border:1.5px solid {{ d.boxB }};background:{{ d.boxBg }};display:grid;place-items:center;color:#ffffff;font:700 11px 'IBM Plex Sans'">{{ d.check }}</span>
+            <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0"><span style="font:600 14px 'IBM Plex Mono'">{{ d.n }}</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">{{ d.kind }}</span></div>
+            <span style="flex:none;white-space:nowrap;font:500 12px 'IBM Plex Mono';color:#55534e">{{ d.free }} free</span>
+          </div>
+          <div style="height:4px;background:#dededa;border-radius:2px;overflow:hidden"><div style="height:100%;width:{{ d.fill }};background:#55534e"></div></div>
+        </div>
+      </sc-for>
+        <div style="padding:12px 14px;border:1px dashed #c9c9c4;border-radius:8px;font:500 12.5px 'IBM Plex Sans';color:#55534e;text-align:center">+ Add destination or preset</div>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 04 TRANSFER MONITOR -->
+<sc-if value="{{ on.monitor }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.54 0.11 220)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.54 0.11 220)"></span>02 · VERIFY</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Copy &amp; verification</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Each card is copied, then checked. It's safe to format only when every destination says Verified.</span></div><div style="display:flex;gap:8px"><button style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Export transfer logs</button></div></div>
+  <sc-for list="{{ jobViews }}" as="j" hint-placeholder-count="4">
+    <div style="background:#ffffff;border:1px solid {{ j.border }};border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:16px;padding:16px 18px">
+        <span style="font:600 18px 'IBM Plex Mono'">{{ j.id }}</span>
+        <span style="font:400 13px 'IBM Plex Sans';color:#55534e;flex:1">{{ j.label }} · {{ j.size }}</span>
+        <span style="display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 14px;border-radius:15px;font:700 12.5px 'IBM Plex Sans';color:{{ j.st.c }};background:{{ j.st.bg }}"><span style="width:8px;height:8px;border-radius:4px;background:{{ j.st.c }}"></span>{{ j.st.t }}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:#dededa;border-top:1px solid #dededa">
+        <sc-for list="{{ j.rows }}" as="d" hint-placeholder-count="3">
+          <div style="background:#ffffff;padding:12px 18px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span style="font:500 12.5px 'IBM Plex Mono';color:#55534e">→ {{ d.n }}</span><span style="font:600 12.5px 'IBM Plex Sans';color:{{ d.tcol }}">{{ d.word }}</span></div>
+            <div style="height:6px;background:#dededa;border-radius:3px;overflow:hidden"><div style="height:100%;width:{{ d.tw }};background:{{ d.tcol }}"></div></div>
+            <sc-if value="{{ d.fail }}" hint-placeholder-val="{{ false }}"><button onClick="{{ d.retry }}" style="align-self:flex-start;height:28px;padding:0 12px;border-radius:5px;border:0;background:oklch(0.55 0.21 25);color:#ffffff;font:600 12px 'IBM Plex Sans';cursor:pointer">Retry copy</button></sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-for>
+</div>
+</sc-if>
+
+<!-- 05 SCENE ORGANIZER -->
+<sc-if value="{{ on.scenes }}" hint-placeholder-val="{{ false }}">
+<div style="flex:1;min-height:0;display:grid;grid-template-columns:190px minmax(0,1fr);margin-top:12px;border-top:1px solid #dededa">
+  <div style="border-right:1px solid #dededa;background:#f5f5f3;overflow:auto;padding:14px 8px;display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:2px"><div style="padding:0 8px 6px"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.1em;color:#a19f99">SMART BINS</span></div>
+      <sc-for list="{{ bins }}" as="b" hint-placeholder-count="3"><div onClick="{{ b.pick }}" style="cursor:pointer;display:flex;align-items:center;gap:8px;height:30px;padding:0 10px;border-radius:5px;background:{{ b.bg }};box-shadow:inset 3px 0 0 {{ b.bar }}" style-hover="background:#f0f0ee"><span style="font:500 13px 'IBM Plex Sans';flex:1">{{ b.t }}</span><span style="font:500 11.5px 'IBM Plex Mono';color:#55534e">{{ b.n }}</span></div></sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px"><div style="padding:0 8px 6px"><span style="font:600 10.5px 'IBM Plex Mono';letter-spacing:.1em;color:#a19f99">SCENE BINS</span></div>
+      <sc-for list="{{ tree }}" as="sc" hint-placeholder-count="5">
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 8px 3px"><span style="width:7px;height:7px;border-radius:4px;background:{{ sc.dot }}"></span><span style="font:700 13px 'IBM Plex Sans'">Scene {{ sc.id }}</span></div>
+        <sc-for list="{{ sc.setups }}" as="su" hint-placeholder-count="2"><div onClick="{{ su.go }}" style="cursor:pointer;display:flex;align-items:center;gap:8px;height:28px;padding:0 10px 0 22px;border-radius:5px;background:{{ su.bg }};box-shadow:inset 3px 0 0 {{ su.bar }}" style-hover="background:#f0f0ee"><span style="font:500 12.5px 'IBM Plex Sans';flex:1">Setup {{ su.id }}</span><span style="font:500 11.5px 'IBM Plex Mono';color:#55534e">{{ su.takes }}</span></div></sc-for>
+      </sc-for>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-rows:minmax(0,1.15fr) minmax(0,1fr);min-width:0;min-height:0">
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 270px;min-height:0;border-bottom:1px solid #dededa">
+      <div style="display:flex;flex-direction:column;min-width:0;min-height:0;background:#ffffff">
+        <div style="flex:none;height:40px;display:flex;align-items:center;gap:14px;padding:0 14px;border-bottom:1px solid #dededa"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.53 0.1 180)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.53 0.1 180)"></span>03 · ORGANIZE</span><span style="font:600 13px 'IBM Plex Sans';white-space:nowrap">Scene {{ cur.scene }} / Setup {{ cur.setup }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cur.desc }}</span><span style="flex:1"></span>
+          <span onClick="{{ toggleLook }}" style="cursor:pointer;flex:none;height:26px;padding:0 10px;display:inline-flex;align-items:center;border-radius:5px;border:1px solid #c9c9c4;font:600 11.5px 'IBM Plex Mono';background:{{ viewer.lookBg }};color:{{ viewer.lookFg }}">{{ viewer.lookT }}</span></div>
+        <div style="flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:14px;background:#000">
+          <div style="width:100%;aspect-ratio:2.39/1;max-height:100%;position:relative;border-radius:2px;background:{{ viewer.stripe }}">
+            <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:500 11px 'IBM Plex Mono';color:#d6d6d2;background:#000;padding:4px 8px;border-radius:4px;white-space:nowrap">clip frame · {{ viewer.name }}</span>
+            <span style="position:absolute;left:10px;bottom:8px;font:600 12px 'IBM Plex Mono';color:#fff;background:rgba(0,0,0,.7);padding:3px 7px;border-radius:3px">{{ viewer.tc }}</span>
+          </div>
+        </div>
+        <div style="flex:none;height:44px;display:flex;align-items:center;gap:6px;padding:0 14px;border-top:1px solid #dededa">
+          <span style="font:600 13px 'IBM Plex Mono';width:120px">{{ viewer.tc }}</span><span style="flex:1"></span>
+          <button style="width:34px;height:30px;border-radius:5px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:12px 'IBM Plex Mono';cursor:pointer">|◀</button>
+          <button style="width:34px;height:30px;border-radius:5px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:12px 'IBM Plex Mono';cursor:pointer">◀</button>
+          <button style="width:44px;height:30px;border-radius:5px;border:0;background:#141414;color:#ffffff;font:700 12px 'IBM Plex Mono';cursor:pointer">▶</button>
+          <button style="width:34px;height:30px;border-radius:5px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:12px 'IBM Plex Mono';cursor:pointer">▶|</button>
+          <span style="flex:1"></span><span style="font:500 12px 'IBM Plex Mono';color:#55534e;width:120px;text-align:right">{{ viewer.dur }}</span>
+        </div>
+      </div>
+      <div style="border-left:1px solid #dededa;background:#f5f5f3;overflow:auto;display:flex;flex-direction:column">
+        <div style="flex:none;height:40px;display:flex;align-items:center;padding:0 14px;border-bottom:1px solid #dededa;font:700 13px 'IBM Plex Sans'">Clip info</div>
+        <sc-for list="{{ insp }}" as="r" hint-placeholder-count="12"><div style="display:flex;justify-content:space-between;gap:10px;padding:7px 14px;border-bottom:1px solid #ececea"><span style="font:400 12px 'IBM Plex Sans';color:#55534e;flex:none">{{ r.l }}</span><span style="font:500 12px 'IBM Plex Mono';color:{{ r.c }};text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.v }}</span></div></sc-for>
+        <div style="padding:12px 14px;font:400 12.5px/1.5 'IBM Plex Sans';color:#141414">{{ cur.notes }}</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0;background:#f5f5f3">
+      <div style="flex:none;height:40px;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid #dededa"><span style="font:700 13px 'IBM Plex Sans'">Media pool</span><span style="font:500 11.5px 'IBM Plex Mono';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ viewer.crumb }}</span><span style="flex:1"></span><span style="font:400 12px 'IBM Plex Sans';color:#55534e;white-space:nowrap">Every take kept — bins are views</span></div>
+      <div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:12px 14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;align-content:start">
+        <sc-for list="{{ pool }}" as="c" hint-placeholder-count="6">
+          <div onClick="{{ c.pick }}" style="cursor:pointer;display:flex;flex-direction:column;gap:6px;padding:5px;border-radius:7px;border:2px solid {{ c.border }};background:{{ c.bg }}" style-hover="background:#f0f0ee">
+            <div style="position:relative;aspect-ratio:16/9;border-radius:4px;background:repeating-linear-gradient(135deg,#ececea 0 6px,#e3e3e0 6px 12px)">
+              <span style="position:absolute;left:6px;top:6px;font:700 11px 'IBM Plex Mono';background:rgba(0,0,0,.75);color:#fff;padding:2px 6px;border-radius:3px">{{ c.label }}</span>
+              <sc-if value="{{ c.circle }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:6px;top:6px;font:700 10.5px 'IBM Plex Sans';background:oklch(0.6 0.14 70);color:#ffffff;padding:2px 6px;border-radius:3px">◎ SELECT</span></sc-if>
+              <sc-if value="{{ c.isVfx }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:6px;bottom:6px;font:700 10.5px 'IBM Plex Mono';background:oklch(0.5 0.19 300);color:#ffffff;padding:2px 6px;border-radius:3px">VFX</span></sc-if>
+              <span title="Sync" style="position:absolute;right:7px;bottom:7px;width:9px;height:9px;border-radius:5px;background:{{ c.syncC }};box-shadow:0 0 0 2px rgba(0,0,0,.6)"></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:6px;padding:0 2px 2px"><span style="font:500 11.5px 'IBM Plex Mono';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.a }}</span><span style="font:400 11px 'IBM Plex Mono';color:{{ c.mc }}">{{ c.dur }}</span></div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 06 MATCH REVIEW -->
+<sc-if value="{{ on.match }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.53 0.1 180)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.53 0.1 180)"></span>03 · ORGANIZE · MATCH REVIEW</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">{{ matchHead }}</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Low-confidence matches between the script log and media. VC DIT never guesses below 90% — you decide.</span></div>
+  <div style="display:grid;grid-template-columns:320px minmax(0,1fr);gap:20px;align-items:start">
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <sc-for list="{{ matchList }}" as="m" hint-placeholder-count="3">
+        <div onClick="{{ m.pick }}" style="cursor:pointer;padding:12px 14px;border-radius:8px;background:#ffffff;border:1px solid {{ m.border }};display:flex;flex-direction:column;gap:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between"><span style="font:600 13px 'IBM Plex Mono'">{{ m.log }}</span><span style="display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font:500 10.5px 'IBM Plex Mono';color:{{ m.st.c }};background:{{ m.st.bg }}">{{ m.st.t }}</span></div>
+          <span style="font:400 12px 'IBM Plex Sans';color:#55534e">{{ m.reason }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #dededa">
+        <div style="padding:16px;border-right:1px solid #dededa;display:flex;flex-direction:column;gap:10px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">SCRIPT LOG ENTRY</span>
+          <sc-for list="{{ mSel.logFields }}" as="f" hint-placeholder-count="5"><div style="display:flex;justify-content:space-between;font:400 12.5px 'IBM Plex Sans'"><span style="color:#55534e">{{ f.l }}</span><span style="font-family:'IBM Plex Mono'">{{ f.v }}</span></div></sc-for>
+        </div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">WHY IT NEEDS REVIEW</span><span style="font:400 13px/1.55 'IBM Plex Sans'">{{ mSel.reason }}</span></div>
+      </div>
+      <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+        <span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">CANDIDATE MEDIA</span>
+        <sc-for list="{{ mSel.cands }}" as="c" hint-placeholder-count="2">
+          <div onClick="{{ c.pick }}" style="cursor:pointer;display:grid;grid-template-columns:18px 120px minmax(0,1fr) 120px 140px;gap:14px;align-items:center;padding:12px;border-radius:6px;border:1px solid {{ c.border }};background:{{ c.bg }}">
+            <span style="width:16px;height:16px;border-radius:8px;border:1.5px solid {{ c.border }};display:grid;place-items:center"><span style="width:8px;height:8px;border-radius:4px;background:{{ c.dot }}"></span></span>
+            <div style="height:56px;border-radius:4px;background:repeating-linear-gradient(135deg,#e8e8e5 0 6px,#f2f2f0 6px 12px);display:grid;place-items:center;font:400 9.5px 'IBM Plex Mono';color:#64625d">frame</div>
+            <div style="display:flex;flex-direction:column;gap:4px"><span style="font:600 13px 'IBM Plex Mono'">{{ c.clip }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">{{ c.why }}</span></div>
+            <span style="font:400 12px 'IBM Plex Mono'">{{ c.tc }}</span>
+            <div style="display:flex;align-items:center;gap:8px"><div style="flex:1;height:5px;background:#dededa;border-radius:3px;overflow:hidden"><div style="height:100%;width:{{ c.w }};background:{{ c.cc }}"></div></div><span style="font:600 12px 'IBM Plex Mono';color:{{ c.cc }}">{{ c.conf }}</span></div>
+          </div>
+        </sc-for>
+        <div style="display:flex;gap:8px;justify-content:flex-end;padding-top:6px">
+          <button onClick="{{ markWild }}" style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Mark unslated / wild</button>
+          <button onClick="{{ acceptMatch }}" style="height:34px;padding:0 14px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 12.5px 'IBM Plex Sans';cursor:pointer">Confirm match</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 07 SYNC -->
+<sc-if value="{{ on.sync }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.55 0.19 350)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.55 0.19 350)"></span>05 · AUDIO SYNC</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Picture / sound sync</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Timecode first, waveform fallback, manual for exceptions. Sources stay untouched — sync is stored as metadata.</span></div>
+    <div style="display:flex;gap:8px"><button style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Waveform pass on exceptions</button><button style="height:34px;padding:0 14px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 12.5px 'IBM Plex Sans';cursor:pointer">Batch sync Scene 14</button></div></div>
+  <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:16px"><span style="font:600 15px 'IBM Plex Mono'">{{ sSel.take }}</span><span style="font:400 12.5px 'IBM Plex Mono';color:#55534e">{{ sSel.clip }} ⟷ {{ sSel.snd }}</span><span style="flex:1"></span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">Method</span><span style="font:600 12px 'IBM Plex Mono'">{{ sSel.method }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">Confidence</span><span style="font:600 12px 'IBM Plex Mono';color:{{ sSel.st.c }}">{{ sSel.confT }}</span></div>
+    <div style="display:flex;flex-direction:column;gap:6px;padding:12px;background:#ffffff;border-radius:6px;overflow:hidden;position:relative">
+      <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:oklch(0.6 0.14 70)"></div>
+      <span style="font:500 10px 'IBM Plex Mono';color:#64625d">CAMERA SCRATCH</span>
+      <div style="display:flex;align-items:center;gap:2px;height:56px"><sc-for list="{{ waveA }}" as="b" hint-placeholder-count="20"><span style="flex:none;width:3px;height:{{ b.h }};background:oklch(0.74 0.12 240);border-radius:1px"></span></sc-for></div>
+      <span style="font:500 10px 'IBM Plex Mono';color:#64625d">PRODUCTION SOUND · 888 TRK 1 (BOOM)</span>
+      <div style="display:flex;align-items:center;gap:2px;height:56px;transform:translateX({{ sSel.shift }})"><sc-for list="{{ waveB }}" as="b" hint-placeholder-count="20"><span style="flex:none;width:3px;height:{{ b.h }};background:oklch(0.55 0.15 150);border-radius:1px"></span></sc-for></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font:400 12px 'IBM Plex Sans';color:#55534e">Offset</span>
+      <button onClick="{{ nudgeM }}" style="width:32px;height:32px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:600 13px 'IBM Plex Mono';cursor:pointer">−</button>
+      <span style="min-width:90px;text-align:center;font:600 14px 'IBM Plex Mono'">{{ sSel.offT }}</span>
+      <button onClick="{{ nudgeP }}" style="width:32px;height:32px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:600 13px 'IBM Plex Mono';cursor:pointer">+</button>
+      <span style="font:400 12px 'IBM Plex Sans';color:#64625d">1 frame @ 24 fps</span>
+      <span style="flex:1"></span>
+      <button onClick="{{ acceptSync }}" style="height:34px;padding:0 14px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 12.5px 'IBM Plex Sans';cursor:pointer">Accept sync</button>
+    </div>
+  </div>
+  <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;overflow:hidden">
+    <div style="display:grid;grid-template-columns:80px minmax(0,1fr) minmax(0,1fr) 110px 90px 90px 110px;gap:12px;padding:10px 16px;font:500 10px 'IBM Plex Mono';color:#6c6a65;letter-spacing:.06em;border-bottom:1px solid #dededa"><span>TAKE</span><span>PICTURE</span><span>SOUND</span><span>METHOD</span><span>OFFSET</span><span>CONF.</span><span>STATUS</span></div>
+    <sc-for list="{{ syncRows }}" as="r" hint-placeholder-count="8">
+      <div onClick="{{ r.pick }}" style="cursor:pointer;display:grid;grid-template-columns:80px minmax(0,1fr) minmax(0,1fr) 110px 90px 90px 110px;gap:12px;align-items:center;padding:0 16px;height:38px;border-bottom:1px solid #ececea;font:400 12px 'IBM Plex Mono';background:{{ r.bg }}" style-hover="background:#f0f0ee">
+        <span style="font-weight:600">{{ r.take }}</span><span>{{ r.clip }}</span><span style="color:#55534e">{{ r.snd }}</span><span>{{ r.method }}</span><span>{{ r.offT }}</span><span style="color:{{ r.st.c }}">{{ r.confT }}</span>
+        <span><span style="display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font:500 10.5px 'IBM Plex Mono';color:{{ r.st.c }};background:{{ r.st.bg }}">{{ r.st.t }}</span></span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- 08 LUT -->
+<sc-if value="{{ on.lut }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.24 0 0)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.24 0 0)"></span>06 · OUTPUT · LOOKS</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Production looks</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">LUTs apply to viewing and dailies only. Camera originals are never baked.</span></div><button style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Import LUT…</button></div>
+  <div style="display:grid;grid-template-columns:300px minmax(0,1fr);gap:20px;align-items:start">
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="padding:14px 16px;border-bottom:1px solid #dededa;font:600 13px 'IBM Plex Sans'">Library · HALCYON</div>
+      <sc-for list="{{ lutList }}" as="l" hint-placeholder-count="4">
+        <div onClick="{{ l.pick }}" style="cursor:pointer;padding:12px 16px;border-bottom:1px solid #ececea;display:flex;flex-direction:column;gap:4px;background:{{ l.bg }};border-left:2px solid {{ l.bar }}">
+          <span style="font:500 12.5px 'IBM Plex Mono';word-break:break-all">{{ l.n }}</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">{{ l.d }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:600 13px 'IBM Plex Sans'">Preview · A014C018 · Sc 14 / B / T3</span><span style="font:500 12px 'IBM Plex Mono';color:#55534e">{{ lutSel }}</span></div>
+        <div style="position:relative;aspect-ratio:2.39/1;border-radius:6px;overflow:hidden;background:repeating-linear-gradient(135deg,#2c2d30 0 10px,#26272a 10px 20px)">
+          <div style="position:absolute;inset:0;width:{{ splitW }};overflow:hidden;background:repeating-linear-gradient(135deg,oklch(0.42 0.06 60) 0 10px,oklch(0.36 0.06 60) 10px 20px);border-right:2px solid #141414"></div>
+          <span style="position:absolute;left:12px;top:12px;font:500 11px 'IBM Plex Mono';padding:3px 7px;background:#ffffff;border-radius:4px">VIEWING LOOK</span>
+          <span style="position:absolute;right:12px;top:12px;font:500 11px 'IBM Plex Mono';padding:3px 7px;background:#ffffff;border-radius:4px">LOG-C4 · ORIGINAL</span>
+          <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:400 11px 'IBM Plex Mono';color:#55534e;background:#ffffff;padding:4px 8px;border-radius:4px">clip frame</span>
+        </div>
+        <input type="range" min="0" max="100" value="{{ lutSplit }}" onChange="{{ setSplit }}" style="width:100%">
+      </div>
+      <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dededa"><span style="font:600 13px 'IBM Plex Sans'">Assignment rules</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">Most specific rule wins</span></div>
+        <sc-for list="{{ lutRules }}" as="r" hint-placeholder-count="4">
+          <div style="display:grid;grid-template-columns:110px minmax(0,1fr) minmax(0,1.4fr) 90px;gap:12px;align-items:center;padding:0 16px;height:42px;border-bottom:1px solid #ececea">
+            <span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.06em">{{ r.scope }}</span><span style="font:500 12.5px 'IBM Plex Sans'">{{ r.target }}</span><span style="font:400 12px 'IBM Plex Mono';color:#55534e">{{ r.lut }}</span><span style="font:400 12px 'IBM Plex Mono';text-align:right">{{ r.n }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 09 DAILIES -->
+<sc-if value="{{ on.dailies }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.24 0 0)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.24 0 0)"></span>06 · OUTPUT · DAILIES</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Day 014 dailies</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Review-ready media grouped by scene, setup and take — synced, with look and slate metadata.</span></div>
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:20px;align-items:start">
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:20px">
+      <div style="display:flex;flex-direction:column;gap:8px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">INCLUDE</span><div style="display:flex;gap:6px"><sc-for list="{{ dInc }}" as="o" hint-placeholder-count="3"><span onClick="{{ o.pick }}" style="cursor:pointer;flex:1;padding:12px;border-radius:6px;border:1px solid {{ o.b }};background:{{ o.bg }};display:flex;flex-direction:column;gap:4px"><span style="font:600 13px 'IBM Plex Sans'">{{ o.t }}</span><span style="font:400 12px 'IBM Plex Mono';color:#55534e">{{ o.s }}</span></span></sc-for></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+        <sc-for list="{{ dFields }}" as="f" hint-placeholder-count="6"><div style="display:flex;flex-direction:column;gap:6px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.06em">{{ f.l }}</span><div style="height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#ffffff;border:1px solid #dededa;border-radius:6px;font:400 12.5px 'IBM Plex Sans'"><span>{{ f.v }}</span><span style="color:#64625d;font-size:10px">▾</span></div></div></sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">BURN-INS &amp; METADATA</span><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ burns }}" as="b" hint-placeholder-count="7"><span onClick="{{ b.toggle }}" style="cursor:pointer;height:28px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;border-radius:14px;font:500 12px 'IBM Plex Sans';background:{{ b.bg }};color:{{ b.fg }};border:1px solid {{ b.b }}">{{ b.t }}</span></sc-for></div></div>
+      <div style="display:flex;align-items:center;gap:16px;padding-top:4px;border-top:1px solid #dededa;padding-top:16px">
+        <div style="display:flex;flex-direction:column;gap:3px;flex:1"><span style="font:600 14px 'IBM Plex Mono'">{{ dSum.t }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">{{ dSum.s }}</span></div>
+        <button onClick="{{ buildDailies }}" style="height:40px;padding:0 18px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 13px 'IBM Plex Sans';cursor:pointer">{{ dSum.btn }}</button>
+      </div>
+    </div>
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dededa"><span style="font:600 13px 'IBM Plex Sans'">Frame.io publish target</span><span style="font:500 11px 'IBM Plex Mono';color:oklch(0.55 0.15 150)">● Connected</span></div>
+      <div style="padding:14px 16px;font:400 12px/1.9 'IBM Plex Mono';color:#55534e;white-space:pre">{{ fioTree }}</div>
+      <div style="padding:0 16px 16px;font:400 12px/1.5 'IBM Plex Sans';color:#55534e">Circle takes are tagged "Select". Look name and script notes travel as comments/metadata.</div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 10 VFX -->
+<sc-if value="{{ on.vfx }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.5 0.19 300)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.5 0.19 300)"></span>04 · VFX</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">VFX-designated shots</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Mirrored into VFX → Scene → Setup. The editorial instance always stays in place.</span></div>
+    <div style="display:flex;gap:8px"><button style="height:34px;padding:0 14px;border-radius:6px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12.5px 'IBM Plex Sans';cursor:pointer">Export package for vendor</button><button onClick="{{ sendVfx }}" style="height:34px;padding:0 14px;border-radius:6px;border:0;background:oklch(0.5 0.19 300);color:#ffffff;font:600 12.5px 'IBM Plex Sans';cursor:pointer">{{ vfxBtn }}</button></div></div>
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start">
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;overflow:hidden">
+      <div style="display:grid;grid-template-columns:110px 110px minmax(0,1.6fr) 96px 110px;gap:12px;padding:10px 16px;font:500 10px 'IBM Plex Mono';color:#6c6a65;letter-spacing:.06em;border-bottom:1px solid #dededa"><span>SC / SETUP / T</span><span>CLIP</span><span>VFX NOTE</span><span>FLAGGED BY</span><span>PREP</span></div>
+      <sc-for list="{{ vfxRows }}" as="v" hint-placeholder-count="7">
+        <div onClick="{{ v.pick }}" style="cursor:pointer;display:grid;grid-template-columns:110px 110px minmax(0,1.6fr) 96px 110px;gap:12px;align-items:center;padding:0 16px;height:44px;border-bottom:1px solid #ececea;background:{{ v.bg }}" style-hover="background:#f0f0ee">
+          <span style="font:600 12px 'IBM Plex Mono'">{{ v.key }}</span><span style="font:400 12px 'IBM Plex Mono'">{{ v.clip }}</span><span style="font:400 12.5px 'IBM Plex Sans';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ v.note }}</span><span style="font:400 11.5px 'IBM Plex Sans';color:#55534e">{{ v.by }}</span>
+          <span><span style="display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:4px;font:500 10.5px 'IBM Plex Mono';color:{{ v.st.c }};background:{{ v.st.bg }}">{{ v.st.t }}</span></span>
+        </div>
+      </sc-for>
+      <div style="padding:12px 16px;font:500 12.5px 'IBM Plex Sans';color:#55534e">+ Tag additional VFX candidate</div>
+    </div>
+    <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;flex-direction:column;gap:4px"><span style="font:600 15px 'IBM Plex Mono'">{{ vSel.clip }}</span><span style="font:400 12.5px 'IBM Plex Sans';color:#55534e">Scene {{ vSel.sc }} · Setup {{ vSel.su }} · Take {{ vSel.t }}</span></div>
+      <div style="font:400 13px/1.55 'IBM Plex Sans';padding:12px;background:#ffffff;border-radius:6px;border-left:0">{{ vSel.note }}</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">LOCATIONS</span>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:10px;border:1px solid #dededa;border-radius:6px"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(0.55 0.15 150)">EDITORIAL · ORIGINAL</span><span style="font:400 11.5px 'IBM Plex Mono';color:#55534e;word-break:break-all">{{ vSel.edit }}</span></div>
+        <div style="display:flex;flex-direction:column;gap:3px;padding:10px;border:1px solid oklch(0.74 0.13 300 / 0.5);border-radius:6px"><span style="font:500 10.5px 'IBM Plex Mono';color:oklch(0.5 0.19 300)">VFX MIRROR · {{ mirrorT }}</span><span style="font:400 11.5px 'IBM Plex Mono';color:#55534e;word-break:break-all">{{ vSel.vfx }}</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">MIRROR METHOD</span>
+        <div style="display:flex;gap:4px"><sc-for list="{{ mirrors }}" as="m" hint-placeholder-count="3"><span onClick="{{ m.pick }}" style="cursor:pointer;flex:1;height:30px;display:grid;place-items:center;border-radius:5px;font:500 12px 'IBM Plex Sans';background:{{ m.bg }};color:{{ m.fg }}">{{ m.t }}</span></sc-for></div>
+        <span style="font:400 11.5px/1.5 'IBM Plex Sans';color:#55534e">{{ mirrorHint }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+</sc-if>
+
+<!-- 11 DELIVERY -->
+<sc-if value="{{ on.delivery }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:20px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between"><div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:oklch(0.24 0 0)"><span style="width:10px;height:10px;border-radius:3px;background:oklch(0.24 0 0)"></span>06 · OUTPUT · DELIVERY</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">End-of-day delivery</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Choose packages and destinations. Preflight checks capacity; every copy is verified and logged.</span></div>
+    <div style="height:34px;display:flex;align-items:center;gap:10px;padding:0 12px;border:1px solid #c9c9c4;border-radius:6px;font:500 12.5px 'IBM Plex Sans'"><span style="color:#64625d;font:500 10.5px 'IBM Plex Mono'">PRESET</span>Daily handoff — Editorial + Archive<span style="color:#64625d;font-size:10px">▾</span></div></div>
+  <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start">
+    <div style="display:flex;flex-direction:column;gap:10px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">1 · PACKAGES</span>
+      <sc-for list="{{ pkgs }}" as="p" hint-placeholder-count="5">
+        <div onClick="{{ p.toggle }}" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:8px;background:#ffffff;border:1px solid {{ p.border }}">
+          <span style="width:18px;height:18px;border-radius:4px;border:1.5px solid {{ p.boxB }};background:{{ p.boxBg }};display:grid;place-items:center;color:#ffffff;font:700 11px 'IBM Plex Sans'">{{ p.check }}</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font:600 13px 'IBM Plex Sans'">{{ p.n }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">{{ p.d }}</span></div>
+          <span style="font:500 12.5px 'IBM Plex Mono';white-space:nowrap;flex:none">{{ p.sizeT }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px"><span style="font:500 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em">2 · DESTINATIONS · PREFLIGHT</span>
+      <sc-for list="{{ ddests }}" as="d" hint-placeholder-count="4">
+        <div onClick="{{ d.toggle }}" style="cursor:pointer;padding:12px 14px;border-radius:8px;background:#ffffff;border:1px solid {{ d.border }};display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="width:18px;height:18px;border-radius:4px;border:1.5px solid {{ d.boxB }};background:{{ d.boxBg }};display:grid;place-items:center;color:#ffffff;font:700 11px 'IBM Plex Sans'">{{ d.check }}</span>
+            <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font:600 13px 'IBM Plex Mono'">{{ d.n }}</span><span style="font:400 12px 'IBM Plex Sans';color:#55534e">{{ d.kind }}</span></div>
+            <span style="font:500 12px 'IBM Plex Mono';color:{{ d.pc }};white-space:nowrap;flex:none">{{ d.pre }}</span>
+          </div>
+          <sc-if value="{{ d.on }}" hint-placeholder-val="{{ false }}"><div style="height:4px;background:#dededa;border-radius:2px;overflow:hidden"><div style="height:100%;width:{{ d.w }};background:{{ d.pc }}"></div></div></sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  <div style="background:#ffffff;border:1px solid #c9c9c4;border-radius:8px;padding:14px 16px;display:flex;align-items:center;gap:16px">
+    <div style="flex:1;display:flex;flex-direction:column;gap:3px"><span style="font:600 14px 'IBM Plex Mono'">{{ delSum.t }}</span><span style="font:400 12px 'IBM Plex Sans';color:{{ delSum.c }}">{{ delSum.s }}</span></div>
+    <button style="height:40px;padding:0 18px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 13px 'IBM Plex Sans';cursor:pointer;opacity:{{ delSum.op }}">Deliver &amp; verify</button>
+  </div>
+  <div style="background:#ffffff;border:1px solid #dededa;border-radius:8px;overflow:hidden">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dededa"><span style="font:600 13px 'IBM Plex Sans'">Delivery manifest · Day 013</span><button style="background:none;border:0;color:#55534e;font:500 12px 'IBM Plex Sans';cursor:pointer">Download PDF / MHL</button></div>
+    <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 90px 90px 110px 120px;gap:12px;padding:10px 16px;font:500 10px 'IBM Plex Mono';color:#6c6a65;letter-spacing:.06em;border-bottom:1px solid #dededa"><span>PACKAGE</span><span>DESTINATION</span><span>FILES</span><span>SIZE</span><span>COMPLETED</span><span>VERIFICATION</span></div>
+    <sc-for list="{{ manifest }}" as="m" hint-placeholder-count="5">
+      <div style="display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) 90px 90px 110px 120px;gap:12px;align-items:center;padding:0 16px;height:38px;border-bottom:1px solid #ececea;font:400 12px 'IBM Plex Mono'">
+        <span style="font-family:'IBM Plex Sans';font-size:12.5px">{{ m.p }}</span><span style="color:#55534e">{{ m.d }}</span><span>{{ m.f }}</span><span>{{ m.s }}</span><span style="color:#55534e">{{ m.t }}</span><span style="color:{{ m.st.c }}">{{ m.st.t }}</span>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+
+<!-- 12 REPORTS -->
+<sc-if value="{{ on.reports }}" hint-placeholder-val="{{ false }}">
+<div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:24px 28px 40px;display:flex;flex-direction:column;gap:18px">
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px">
+    <div style="display:flex;flex-direction:column;gap:6px"><span style="display:inline-flex;align-items:center;gap:8px;font:700 11px 'IBM Plex Mono';letter-spacing:.1em;color:#141414"><span style="width:10px;height:10px;border-radius:3px;background:#141414"></span>REPORTS · DAY 014</span><h1 style="margin:0;font:600 24px/1.2 'IBM Plex Sans'">Reports &amp; logs</h1><span style="font:400 13px 'IBM Plex Sans';color:#55534e">Every copy, match, sync and delivery is recorded. Export any report for production or post.</span></div>
+    <button style="height:36px;padding:0 16px;border-radius:6px;border:0;background:#141414;color:#ffffff;font:600 12.5px 'IBM Plex Sans';cursor:pointer;white-space:nowrap">Export day package (PDF + MHL)</button>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap"><sc-for list="{{ repFilters }}" as="f" hint-placeholder-count="6"><span onClick="{{ f.pick }}" style="cursor:pointer;height:30px;padding:0 12px;display:inline-flex;align-items:center;gap:7px;border-radius:15px;font:600 12.5px 'IBM Plex Sans';background:{{ f.bg }};color:{{ f.fg }};border:1px solid #c9c9c4"><span style="width:8px;height:8px;border-radius:2px;background:{{ f.c }}"></span>{{ f.t }}</span></sc-for></div>
+  <div style="background:#ffffff;border:1px solid #dededa;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,.04);overflow:hidden">
+    <div style="display:grid;grid-template-columns:110px minmax(0,1.3fr) minmax(0,1.4fr) 80px 120px 150px;gap:14px;padding:12px 18px;font:600 10.5px 'IBM Plex Mono';color:#64625d;letter-spacing:.08em;border-bottom:1px solid #dededa"><span>STEP</span><span>REPORT</span><span>COVERS</span><span>TIME</span><span>STATUS</span><span></span></div>
+    <sc-for list="{{ reports }}" as="r" hint-placeholder-count="8">
+      <div style="display:grid;grid-template-columns:110px minmax(0,1.3fr) minmax(0,1.4fr) 80px 120px 150px;gap:14px;align-items:center;padding:0 18px;height:50px;border-bottom:1px solid #ececea">
+        <span style="display:inline-flex;align-items:center;gap:7px;font:700 10.5px 'IBM Plex Mono';letter-spacing:.06em;color:{{ r.c }}"><span style="width:9px;height:9px;border-radius:2px;background:{{ r.c }}"></span>{{ r.step }}</span>
+        <span style="font:600 13px 'IBM Plex Sans';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.n }}</span>
+        <span style="font:400 12.5px 'IBM Plex Sans';color:#55534e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.d }}</span>
+        <span style="font:500 12px 'IBM Plex Mono';color:#55534e">{{ r.t }}</span>
+        <span style="display:inline-flex;align-items:center;gap:7px;font:600 12.5px 'IBM Plex Sans';color:{{ r.st.c }}"><span style="width:8px;height:8px;border-radius:4px;background:{{ r.st.c }}"></span>{{ r.st.t }}</span>
+        <div style="display:flex;gap:6px;justify-content:flex-end"><button onClick="{{ r.go }}" style="height:28px;padding:0 10px;border-radius:5px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12px 'IBM Plex Sans';cursor:pointer">Open</button><button style="height:28px;padding:0 10px;border-radius:5px;border:1px solid #c9c9c4;background:transparent;color:#141414;font:500 12px 'IBM Plex Sans';cursor:pointer">Export</button></div>
+      </div>
+    </sc-for>
+  </div>
+</div>
+</sc-if>
+</main>
+<sc-if value="{{ filesOpen }}" hint-placeholder-val="{{ true }}">
+<aside style="border-left:1px solid #dededa;background:#f5f5f3;display:flex;flex-direction:column;min-width:0;min-height:0">
+  <div style="padding:14px 14px 12px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid #dededa">
+    <div style="display:flex;align-items:baseline;justify-content:space-between"><span style="font:700 14px 'IBM Plex Sans'">Project files</span><span style="font:500 11px 'IBM Plex Mono';color:#64625d">RAID_01</span></div>
+    <div style="height:32px;border:1px solid #c9c9c4;border-radius:6px;padding:0 10px;display:flex;align-items:center;font:400 12.5px 'IBM Plex Sans';color:#6c6a65;background:#ffffff">Search clips, scenes, takes…</div>
+  </div>
+  <div data-scr="1" style="flex:1;min-height:0;overflow:auto;padding:6px">
+    <sc-for list="{{ files }}" as="f" hint-placeholder-count="12">
+      <div onClick="{{ f.click }}" style="cursor:pointer;display:flex;align-items:center;gap:7px;height:30px;padding:0 8px 0 {{ f.ind }};border-radius:5px;background:{{ f.bg }};box-shadow:inset 2px 0 0 {{ f.bar }}" style-hover="background:#f0f0ee">
+        <span style="width:10px;flex:none;font:500 10px 'IBM Plex Mono';color:#64625d">{{ f.caret }}</span>
+        <span style="width:15px;height:11px;flex:none;border-radius:2px 2px 3px 3px;background:{{ f.c }};box-shadow:inset 0 3px 0 rgba(0,0,0,.25)"></span>
+        <span style="font:12.5px 'IBM Plex Mono';font-weight:{{ f.fw }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0">{{ f.name }}</span>
+        <sc-if value="{{ f.isLink }}" hint-placeholder-val="{{ false }}"><span title="Linked — same clips, no extra copy" style="flex:none;font:600 11px 'IBM Plex Mono';color:#55534e">↗</span></sc-if>
+        <span style="margin-left:auto;flex:none;font:500 11px 'IBM Plex Mono';color:#64625d">{{ f.count }}</span>
+        <sc-if value="{{ f.hasSt }}" hint-placeholder-val="{{ false }}"><span style="flex:none;width:7px;height:7px;border-radius:4px;background:{{ f.stc }}"></span></sc-if>
+      </div>
+    </sc-for>
+  </div>
+  <div style="padding:12px 14px;border-top:1px solid #dededa;display:flex;flex-direction:column;gap:8px;font:500 11.5px/1.45 'IBM Plex Sans';color:#55534e">
+    <div style="display:flex;flex-wrap:wrap;gap:6px 12px"><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.52 0.17 255)"></span>Intake</span><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.54 0.11 220)"></span>Verify</span><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.53 0.1 180)"></span>Organize</span><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.5 0.19 300)"></span>VFX</span><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.55 0.19 350)"></span>Sync</span><span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:8px;border-radius:2px;background:oklch(0.24 0 0)"></span>Output</span></div>
+    <span>↗ Linked folder — same clips, no extra copy.</span>
+  </div>
+</aside>
+</sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;dash&quot;,&quot;setup&quot;,&quot;intake&quot;,&quot;monitor&quot;,&quot;scenes&quot;,&quot;match&quot;,&quot;sync&quot;,&quot;lut&quot;,&quot;dailies&quot;,&quot;vfx&quot;,&quot;delivery&quot;],&quot;default&quot;:&quot;dash&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;simulate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;showFailure&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+const C={g:'oklch(0.55 0.15 150)',a:'oklch(0.6 0.14 70)',r:'oklch(0.55 0.21 25)',b:'oklch(0.32 0 0)',v:'oklch(0.5 0.19 300)',m:'#55534e'};
+const STG={"intake":"oklch(0.52 0.17 255)","verify":"oklch(0.54 0.11 220)","organize":"oklch(0.53 0.1 180)","vfx":"oklch(0.5 0.19 300)","sync":"oklch(0.55 0.19 350)","output":"oklch(0.24 0 0)"};const SEC={ov:'#f6f5f2',ingest:STG.intake,org:STG.organize,look:STG.output,hand:STG.vfx};const GSEC=['ov','ingest','org','look','hand'];
+const T=c=>c.startsWith('#')?'rgba(85,83,78,.1)':c.replace(')',' / 0.15)');
+const chip=(t,c)=>({t,c,bg:T(c)});
+const p2=n=>String(n).padStart(2,'0');
+const SCENES0=[
+ {id:'12',desc:'INT. CONTROL ROOM – DAY',status:'Shot',setups:[{id:'A',lens:'32mm',takes:5},{id:'B',lens:'50mm',takes:4}]},
+ {id:'12A',desc:'INT. CORRIDOR – DAY',status:'Shot',setups:[{id:'A',lens:'25mm',takes:3}]},
+ {id:'14',desc:'INT. HANGAR – DAY',status:'Shooting',setups:[{id:'A',lens:'21mm',takes:6},{id:'B',lens:'40mm',takes:5},{id:'C',lens:'75mm',takes:2}]},
+ {id:'15',desc:'EXT. AIRFIELD – DUSK',status:'Scheduled',setups:[]},
+ {id:'21',desc:'EXT. ROOFTOP – NIGHT',status:'Shot',vfx:true,setups:[{id:'A',lens:'35mm',takes:4},{id:'B',lens:'65mm',takes:3}]},
+ {id:'22',desc:'EXT. ROOFTOP – NIGHT',status:'Scheduled',setups:[]},
+];
+const STC={Shot:C.g,Shooting:C.b,Scheduled:C.m,Dropped:C.r,Added:C.a};
+const NOTES={'14':'Hangar door opens on cue at 0:12. Circle T3 and T5 — director prefers T5 performance, T3 for focus. Plane prop visible frame left in B setup.','21':'Greenscreen beyond rooftop rail. Tracking markers on rail. Rain towers on from T2.','12':'Monitors are practical playback — check flicker at 24 fps.','12A':'Steadicam walk-and-talk.'};
+const LOOKS={'21':'HLC_Night_Ext_v2.cube','12':'HLC_Show_LogC4_709_v3.cube','12A':'HLC_Show_LogC4_709_v3.cube','14':'HLC_Show_LogC4_709_v3.cube'};
+function buildTakes(){let a=1,b=1,h=9,mm=4;const out={};SCENES0.forEach(sc=>sc.setups.forEach(su=>{const arr=[];const key=sc.id+su.id;const reel=sc.id.startsWith('12')?'013':(sc.id==='21'?'015':'014');for(let t=1;t<=su.takes;t++){mm+=3;if(mm>59){mm-=60;h++}const circle=t===su.takes-1||(t===2&&su.takes>4);const vfx=!!sc.vfx||key==='14C';let match='Matched',sync='TC';if(key==='14B'&&t===4){match='Review';sync='WF'}if(key==='14C'&&t===2){match='Unmatched';sync='—'}if(key==='21A'&&t===3)match='Review';if(key==='12B'&&t===2)sync='WF';
+arr.push({take:'T'+p2(t),circle,vfx,a:'A'+reel+'C'+String(a++).padStart(3,'0'),b:sc.id==='12A'?'—':'B'+(sc.id.startsWith('12')?'009':'010')+'C'+String(b++).padStart(3,'0'),snd:key+'-'+p2(t)+'.wav',tc:p2(h)+':'+p2(mm)+':'+p2((t*17)%60)+':'+p2((t*7)%24),dur:'0'+((t*3)%4+1)+':'+p2((t*23)%60),match,sync});}out[sc.id+'|'+su.id]=arr;}));return out;}
+const TAKES=buildTakes();
+const JOBS0=[
+ {id:'A014',label:'Camera A · ALEXA 35',size:'612.4 GB',files:'1,284 files',dests:[{n:'HLC_RAID_01',c:100,v:100,r:1},{n:'SHTL_07',c:100,v:58,r:1.1},{n:'PROD_NAS',c:74,v:0,r:.9}]},
+ {id:'B009',label:'Camera B · VENICE 2',size:'488.0 GB',files:'312 files',dests:[{n:'HLC_RAID_01',c:100,v:100},{n:'SHTL_07',c:100,v:100},{n:'PROD_NAS',c:100,v:100}]},
+ {id:'888_D14',label:'Sound · 888',size:'4.2 GB',files:'96 files',dests:[{n:'HLC_RAID_01',c:100,v:100},{n:'SHTL_07',c:100,v:100},{n:'PROD_NAS',c:100,v:100}]},
+ {id:'A015',label:'Camera A · ALEXA 35',size:'702.1 GB',files:'1,410 files',queued:true,dests:[{n:'HLC_RAID_01',c:0,v:0,r:1.6},{n:'SHTL_07',c:0,v:0,r:1.4},{n:'PROD_NAS',c:0,v:0,r:1.2}]},
+];
+const FAILJOB={id:'A013',label:'Camera A · ALEXA 35',size:'540.8 GB',files:'1,102 files',dests:[{n:'HLC_RAID_01',c:100,v:100},{n:'SHTL_06',c:100,v:100,fail:true,r:2},{n:'PROD_NAS',c:100,v:100}]};
+const SOURCES=[
+ {id:'A015',vol:'A015',media:'CFexpress B · 1 TB',fs:'exFAT',used:'702 GB',fill:70,det:'ALEXA 35 · ARRIRAW'},
+ {id:'B010',vol:'B010',media:'AXS · 1 TB',fs:'UDF',used:'544 GB',fill:54,det:'VENICE 2 · X-OCN ST'},
+ {id:'SND2',vol:'888_D14_02',media:'SD · 128 GB',fs:'FAT32',used:'6.1 GB',fill:5,det:'888 · BWF 24-bit/48k'},
+ {id:'SHTL08',vol:'SHTL_08',media:'SSD · 4 TB',fs:'APFS',used:'0.2 TB',fill:5,det:'Empty volume'},
+];
+const ROLES=['Camera','Sound','Destination','Shuttle','Archive','Other'];
+const DESTS=[{id:'RAID',n:'HLC_RAID_01',kind:'Primary RAID · Thunderbolt',free:'31.2 TB',fill:35},{id:'SHTL07',n:'SHTL_07',kind:'Shuttle → Editorial',free:'5.1 TB',fill:36},{id:'NAS',n:'PROD_NAS',kind:'Production storage · 10GbE',free:'84 TB',fill:58}];
+const MATCH0=[
+ {id:0,log:'Sc 14 / B / T04',reason:'Two clips inside the TC window; slate unreadable on the first.',f:[['Scene','14'],['Setup','B'],['Take','4  ◎'],['Camera','A'],['Log TC','14:22:10:04'],['Note','Focus buzz at end']],cands:[{clip:'A014C018',tc:'14:22:09:18',conf:64,why:'TC within 1s · no slate read'},{clip:'A014C019',tc:'14:24:41:02',conf:22,why:'Next clip on card'}]},
+ {id:1,log:'Sc 14 / C / T02',reason:'No camera clip found for the logged reel. Possible reel mislabel (B010 vs B009).',f:[['Scene','14'],['Setup','C'],['Take','2'],['Camera','B'],['Log reel','B009'],['Note','VFX — plate for hangar ext.']],cands:[{clip:'B010C004',tc:'15:02:11:20',conf:48,why:'Matching TC on different reel'}]},
+ {id:2,log:'Sc 21 / A / T03',reason:'Log clip name "A015C07" differs from media "A015C007".',f:[['Scene','21'],['Setup','A'],['Take','3'],['Camera','A'],['Log clip','A015C07'],['Note','Rain on, circle']],cands:[{clip:'A015C007',tc:'19:40:02:11',conf:86,why:'Name close match · TC match'},{clip:'A015C008',tc:'19:43:18:00',conf:9,why:'Adjacent clip'}]},
+];
+const SYNC0=[
+ ['14A-01','A014C010','14A-01.wav','Timecode',0,99],['14A-02','A014C011','14A-02.wav','Timecode',0,99],['14A-03','A014C012','14A-03.wav','Timecode',0,98],
+ ['14B-03','A014C017','14B-03.wav','Timecode',0,99],['14B-04','A014C018','14B-04.wav','Waveform',-3,71],['14B-05','A014C019','14B-05.wav','Timecode',1,93],
+ ['14C-01','B010C003','14C-01.wav','Timecode',0,97],['14C-02','B010C004','14C-02.wav','Manual',0,0],['21A-01','A015C005','21A-01.wav','Timecode',0,99]
+].map(([take,clip,snd,method,off,conf],i)=>({i,take,clip,snd,method,off,conf,ok:conf>=90}));
+const LUTS=[{n:'HLC_Show_LogC4_709_v3.cube',d:'Project default · DP approved 28 Sep'},{n:'HLC_Venice_SLog3_709_v3.cube',d:'Camera B match · v3'},{n:'HLC_Night_Ext_v2.cube',d:'Night exteriors · Sc 21–22'},{n:'HLC_Show_LogC4_709_v2.cube',d:'Superseded · kept for reference'}];
+const VFX0=[['21','A','01','A015C005','Greenscreen beyond rail — full tracking markers','Script sup.'],['21','A','02','A015C006','Rain towers + GS. Clean plate after T2','Script sup.'],['21','A','03','A015C007','Hero take. Sky replacement, remove crane','Script sup.'],['21','B','01','A015C009','CU — GS spill on hair','Script sup.'],['21','B','02','A015C010','CU — eyeline marker removal','Script sup.'],['14','C','01','B010C003','Plate for hangar ext. comp','Script sup.'],['14','C','02','B010C004','Plate — match pending review','Script sup.'],['14','B','03','A014C017','Boom dip frame right — paint out?','DIT tag']];
+const PKGS=[{id:'ocf',n:'Camera originals archive',d:'All OCF + sound originals, MHL',gb:4820},{id:'edit',n:'Editorial handoff',d:'Originals by scene/setup, sync metadata, ALE',gb:1210},{id:'dailies',n:'Synced dailies',d:'ProRes 422 Proxy · LUT applied',gb:86},{id:'vfx',n:'VFX package',d:'Mirrored plates + notes for VC VFX Prep',gb:640},{id:'reports',n:'Reports & logs',d:'Script, ingest, sync, look, manifests',gb:.04}];
+const DDESTS=[{id:'edit',n:'EDIT_SHTL_03',kind:'Shuttle → Editorial',free:1500},{id:'arc',n:'ARCHIVE_NAS',kind:'Archive · network',free:120000},{id:'fio',n:'Frame.io · HALCYON / Dailies',kind:'Cloud review',free:Infinity},{id:'vend',n:'VENDOR_SFTP · Northlight',kind:'VFX vendor · network',free:4000}];
+const gb=v=>v>=1000?(v/1000).toFixed(2)+' TB':v<1?'38 MB':Math.round(v)+' GB';
+const wave=(seed,n)=>Array.from({length:n},(_,i)=>{const x=Math.abs(Math.sin(i*0.37+seed)*Math.sin(i*0.11+seed*2)+Math.sin(i*1.7)*0.25);return {h:Math.max(3,Math.round(x*50))+'px'}});
+const WA=wave(1,160),WB=wave(1,160);
+const NAV=[['Start',[['dash','Today'],['setup','Project & Shoot Day']]],['Ingest',[['intake','Media Intake'],['monitor','Transfer Monitor']]],['Organize',[['scenes','Scene Organizer'],['match','Match Review'],['sync','Sync Workspace']]],['Look & Review',[['lut','LUT / Look Manager'],['dailies','Dailies Builder']]],['Handoff',[['vfx','VFX Handoff'],['delivery','Delivery Manager']]]];
+const SCREENS=[...NAV.flatMap(g=>g[1].map(i=>i[0])),'reports'];
+
+class Component extends DCLogic {
+  state={screen:null,repF:'all',clip:0,lookOn:true,filesOpen:true,open:{root:1,day:1,ocf:1,'ocf/14':1,vfx:1,rep:1},jobs:JOBS0,failAdded:false,scenes:SCENES0.map(s=>({...s})),newScene:'',sel:'14|B',view:'all',
+    roles:{A015:'Camera',B010:'Camera',SND2:'Sound',SHTL08:'Shuttle'},inc:{A015:true,B010:true,SND2:true},dsel:{RAID:true,SHTL07:true,NAS:true,SHTL08:false},sum:'xxHash64',
+    mSel:0,mPick:{0:0,1:0,2:0},resolved:{},sync:SYNC0,sSel:4,lut:0,split:50,dInc:'sel',burns:{TC:true,'Scene/Take':true,Look:true,Circle:true,Notes:false,'Clip name':true,Watermark:true},dBuilt:false,
+    vSel:2,mirror:'link',vfxSent:false,pk:{dailies:true,edit:true,reports:true},dd:{edit:true,fio:true},now:new Date()};
+  componentDidMount(){this.iv=setInterval(()=>{const sim=this.props.simulate??true;this.setState(s=>{const n={now:new Date()};if(sim)n.jobs=this.step(s.jobs);return n})},500)}
+  componentWillUnmount(){clearInterval(this.iv)}
+  step(jobs){let next=jobs.map(j=>{if(j.queued)return j;return {...j,dests:j.dests.map(d=>{if(d.fail)return d;const r=d.r||1;if(d.c<100)return {...d,c:Math.min(100,d.c+r)};if(d.v<100)return {...d,v:Math.min(100,d.v+r*1.3)};return d})}});
+    const busy=next.some(j=>!j.queued&&j.dests.some(d=>d.v<100&&!d.fail));if(!busy){const q=next.findIndex(j=>j.queued);if(q>=0)next=next.map((j,i)=>i===q?{...j,queued:false}:j)}return next}
+  jobsAll(){const f=this.props.showFailure??true;const j=this.state.jobs;if(!f)return j;if(this.state.failAdded)return j;return [this.state.failJob||FAILJOB,...j]}
+  retry(jid,n){if(jid==='A013'){this.setState({failAdded:true,jobs:[{...FAILJOB,dests:FAILJOB.dests.map(d=>d.n===n?{...d,fail:false,v:0}:d)},...this.state.jobs]})}}
+  go(k){return ()=>this.setState({screen:k})}
+  renderVals(){
+    const s=this.state,screen=s.screen||this.props.startScreen||'dash';
+    const on={};SCREENS.forEach(k=>on[k]=k===screen);const go={};SCREENS.forEach(k=>go[k]=this.go(k));
+    // jobs
+    const jobs=this.jobsAll();
+    const jobViews=jobs.map(j=>{const fail=j.dests.some(d=>d.fail);const done=j.dests.every(d=>d.v>=100&&!d.fail);const tot=j.dests.reduce((a,d)=>a+d.c+d.v,0)/(j.dests.length*2);
+      const st=j.queued?chip('Waiting',C.m):fail?chip("Problem — don't format",C.r):done?chip('Safe to format',C.g):chip('Not safe yet · '+Math.round(tot)+'%',C.b);
+      return {...j,st,w:tot+'%',border:fail?'oklch(0.7 0.18 25 / 0.6)':'#dededa',rows:j.dests.map(d=>{const copying=!j.queued&&d.c<100,verifying=!j.queued&&d.c>=100&&d.v<100&&!d.fail;const dst=j.queued?chip('Queued',C.m):d.fail?chip('✕ Checksum mismatch · 2 files',C.r):d.v>=100?chip('✓ Verified',C.g):copying?chip('Copying',C.b):chip('Verifying',C.a);
+        const rem=copying?(100-d.c)+(100):verifying?(100-d.v):0;const word=j.queued?'Waiting':d.fail?'Failed':d.v>=100?'Verified':copying?'Copying '+Math.round(d.c)+'%':'Checking '+Math.round(d.v)+'%';const tcol=d.fail?C.r:d.v>=100?C.g:j.queued?'#8c8c87':C.b;return {word,tcol,tw:(j.queued?0:(d.c+d.v)/2)+'%',n:d.n,cp:Math.round(d.c)+'%',cw:d.c+'%',vp:Math.round(d.v)+'%',vw:d.v+'%',vc:d.fail?C.r:d.v>=100?C.g:C.a,speed:copying?Math.round(1650+d.r*180)+' MB/s':verifying?Math.round(2100+d.r*150)+' MB/s':'—',eta:rem?Math.ceil(rem/(d.r||1)/2/60*60)+'s left':'—',st:dst,fail:!!d.fail,retry:()=>this.retry(j.id,d.n)}})}});
+    const active=jobViews.filter(j=>j.st.t.startsWith('Not safe')).length,queued=jobViews.filter(j=>j.queued).length,safe=jobViews.filter(j=>j.st.t==='Safe to format').map(j=>j.id),hasFail=jobViews.some(j=>j.st.t.startsWith('Problem'));
+    const g={activeLabel:active+' ACTIVE · '+queued+' QUEUED',safeLabel:safe.length+' SAFE',hasFail};
+    const unresolved=MATCH0.filter(m=>!s.resolved[m.id]).length,syncRev=s.sync.filter(x=>!x.ok).length;
+    const badges={monitor:hasFail?['!',C.r]:null,match:[unresolved,C.a],sync:[syncRev,C.a]};
+    let n=0;const nav=NAV.map(([gname,items],gi)=>{const gc=SEC[GSEC[gi]];return {g:gname,c:gc,items:items.map(([k,label])=>{n++;const b=badges[k];return {n:p2(n),label,go:this.go(k),bg:k===screen?'#e8e8e5':'transparent',fg:k===screen?'#141414':'#55534e',bar:k===screen?gc:'transparent',badge:b&&b[0]?String(b[0]):null,bc:b?b[1]:'',bb:b?T(b[1]):''}})}});
+    const clock=s.now.toTimeString().slice(0,8)+':'+p2(Math.floor(s.now.getMilliseconds()/41.7));
+    // scenes
+    const allTakes=Object.values(TAKES).flat();const vfxCount=allTakes.filter(t=>t.vfx).length;
+    const sceneRows=s.scenes.map(sc=>{const ts=sc.setups?sc.setups.flatMap(su=>TAKES[sc.id+'|'+su.id]||[]):[];return {id:sc.id,desc:sc.desc,st:chip(sc.status.toUpperCase(),STC[sc.status]||C.m),takes:ts.length||'—',circ:ts.filter(t=>t.circle).length||'—',vfx:ts.filter(t=>t.vfx).length||'—'}});
+    const synced=s.sync.filter(x=>x.ok).length;
+    const kpis=[{l:'Cards waiting',v:String(Object.values(s.inc).filter(Boolean).length),s:'mounted, not ingested',c:'#141414',go:go.intake},{l:'Transfers',v:String(active),s:queued+' queued',c:C.b,go:go.monitor},{l:'Verification',v:hasFail?'1 FAIL':'OK',s:safe.length+' cards safe',c:hasFail?C.r:C.g,go:go.monitor},{l:'Scenes shot',v:'3/6',s:'14 in progress',c:'#141414',go:go.scenes},{l:'Sync',v:synced+'/'+s.sync.length,s:syncRev+' need review',c:syncRev?C.a:C.g,go:go.sync},{l:'VFX shots',v:String(vfxCount),s:'mirrored',c:C.v,go:go.vfx},{l:'Delivery',v:'0/3',s:'end of day',c:'#55534e',go:go.delivery}];
+    const pipeline=[['Ingest',active?'running':'idle',86,C.b,'monitor','312/362'],['Verify',hasFail?'1 fail':'ok',82,hasFail?C.r:C.g,'monitor','298/362'],['Organize','ok',94,C.g,'scenes','34/36'],['Match',unresolved+' review',92,unresolved?C.a:C.g,'match','61/64'],['Sync',syncRev+' review',Math.round(synced/s.sync.length*100),syncRev?C.a:C.g,'sync',synced+'/'+s.sync.length],['Look','ok',100,C.g,'lut','36/36'],['Dailies',s.dBuilt?'queued':'not built',s.dBuilt?20:0,s.dBuilt?C.b:C.m,'dailies','—'],['Deliver','pending',0,C.m,'delivery','0/3']].map(([l,st,w,c,k,v],i)=>({l,st,w:w+'%',c,go:go[k],v,n:p2(i+1)}));
+    const alerts=[];if(hasFail)alerts.push({t:'A013 → SHTL_06 checksum mismatch',d:'2 files failed verification. Card is not safe to format.',c:C.r,cta:'Retry',go:go.monitor});
+    if(unresolved)alerts.push({t:unresolved+' script-log entries need review',d:'Low-confidence matches in Sc 14 and Sc 21.',c:C.a,cta:'Review',go:go.match});
+    if(syncRev)alerts.push({t:syncRev+' takes need sync review',d:'Waveform fallback / missing timecode.',c:C.a,cta:'Open',go:go.sync});
+    alerts.forEach(a=>{const map={[C.r]:['INGEST',SEC.ingest]};});
+    alerts.forEach(a=>{const sec=a.t.includes('checksum')?['02 · VERIFY',STG.verify]:a.t.includes('sync')?['05 · AUDIO SYNC',STG.sync]:['03 · ORGANIZE',STG.organize];a.sec=sec[0];a.sc=sec[1];});
+    if(!s.dBuilt)alerts.push({t:'Build today\'s dailies',d:'Circle takes are synced and ready for review.',c:C.b,cta:'Build',go:go.dailies,sec:'06 · OUTPUT',sc:STG.output});
+    const needN=(hasFail?1:0)+(unresolved?1:0)+(syncRev?1:0);
+    const overall=hasFail?{t:'1 problem · '+(needN-1)+' to check',c:C.r,headline:'1 card failed its check — fix that first.',go:go.monitor}:needN?{t:needN+' things need you',c:C.a,headline:needN+' things need your attention.',go:go.dash}:{t:'All good',c:C.g,headline:'Everything is on track.',go:go.dash};overall.bg=T(overall.c);
+    const tiles=[
+      {name:'INGEST',c:SEC.ingest,go:go.monitor,line:safe.length+' of '+jobViews.length+' cards safe to format',sub:active?active+' copying now'+(queued?' · '+queued+' waiting':''):(queued?queued+' waiting':'No transfers running'),st:hasFail?{t:'Problem',c:C.r}:active||queued?{t:'Working',c:C.b}:{t:'Done',c:C.g}},
+      {name:'ORGANIZE',c:SEC.org,go:unresolved?go.match:syncRev?go.sync:go.scenes,line:(61+(3-unresolved))+' of 64 takes matched',sub:(unresolved||syncRev)?unresolved+' matches and '+syncRev+' syncs to check':'All takes matched and synced',st:(unresolved||syncRev)?{t:'Needs you',c:C.a}:{t:'Done',c:C.g}},
+      {name:'LOOK & REVIEW',c:SEC.look,go:go.dailies,line:s.dBuilt?'Dailies rendering':'Looks set · dailies not built',sub:'Show LUT v3 on all cameras',st:s.dBuilt?{t:'Working',c:C.b}:{t:'Not started',c:C.m}},
+      {name:'HANDOFF',c:SEC.hand,go:go.vfx,line:vfxCount+' VFX shots mirrored',sub:s.vfxSent?'Sent to VC VFX Prep':'End-of-day delivery not started',st:s.vfxSent?{t:'Done',c:C.g}:{t:'Not started',c:C.m}}];
+    // setup
+    const prodFields=[['PRODUCTION','HALCYON'],['CODE','HLC'],['SHOOT DAY','014 of 42'],['DATE','2026-10-05'],['FRAME RATE','23.976 fps'],['CHECKSUM DEFAULT','xxHash64']].map(([l,v])=>({l,v}));
+    const devices=[{k:'A',n:'ARRI ALEXA 35',f:'ARRIRAW 4.6K · LogC4'},{k:'B',n:'Sony VENICE 2',f:'X-OCN ST 8.6K · S-Log3'},{k:'S',n:'Sound Devices 888',f:'BWF 24-bit / 48 kHz · 8 trk'}];
+    const order=['Scheduled','Shooting','Shot','Dropped'];
+    const sceneEdit=s.scenes.map((sc,i)=>({id:sc.id,desc:sc.desc,st:chip(sc.status.toUpperCase(),STC[sc.status]||C.m),cycle:()=>this.setState(st=>({scenes:st.scenes.map((x,j)=>j===i?{...x,status:order[(order.indexOf(x.status)+1)%order.length]}:x)}))}));
+    const tokens=['{PROD}','_','D{DAY}','_','SC{SCENE}','{SETUP}','_','T{TAKE}','_','{CAM}{REEL}'].map(t=>t==='_'?{t,c:'#64625d',bg:'transparent'}:{t,c:C.b,bg:T(C.b)});
+    const logStats=[{v:'64',l:'Entries',c:'#141414'},{v:String(61+(3-unresolved)),l:'Matched',c:C.g},{v:String(unresolved),l:'Review',c:unresolved?C.a:C.g},{v:'11',l:'VFX flags',c:C.v}];
+    // intake
+    const sourceViews=SOURCES.map(src=>{const role=s.roles[src.id];const locked=role==='Camera'||role==='Sound';const inc=locked&&!!s.inc[src.id];return {...src,role,cycleRole:()=>{const r=ROLES[(ROLES.indexOf(role)+1)%ROLES.length];this.setState(st=>({roles:{...st.roles,[src.id]:r},inc:{...st.inc,[src.id]:(r==='Camera'||r==='Sound')}}))},fill:src.fill+'%',locked,check:inc?'✓':'',boxB:inc?'#141414':'#9a9a95',boxBg:inc?'#141414':'transparent',border:inc?'#9a9a95':'#dededa',
+      toggle:()=>{if(locked)this.setState(st=>({inc:{...st.inc,[src.id]:!st.inc[src.id]}}))},
+      roles:ROLES.map(r=>({t:r,bg:r===role?'#141414':'transparent',fg:r===role?'#ffffff':'#55534e',b:r===role?'#141414':'#dededa',pick:()=>this.setState(st=>({roles:{...st.roles,[src.id]:r},inc:{...st.inc,[src.id]:(r==='Camera'||r==='Sound')}}))}))}});
+    const extra=SOURCES.filter(x=>['Destination','Shuttle','Archive'].includes(s.roles[x.id])).map(x=>({id:x.id,n:x.vol,kind:s.roles[x.id]+' · from detected volume',free:'3.8 TB',fill:5}));
+    const destViews=[...DESTS,...extra].map(d=>{const sel=!!s.dsel[d.id];return {...d,fill:d.fill+'%',fc:'#55534e',check:sel?'✓':'',boxB:sel?'#141414':'#9a9a95',boxBg:sel?'#141414':'transparent',border:sel?'#9a9a95':'#dededa',toggle:()=>this.setState(st=>({dsel:{...st.dsel,[d.id]:!st.dsel[d.id]}}))}});
+    const incList=SOURCES.filter(x=>s.inc[x.id]&&['Camera','Sound'].includes(s.roles[x.id]));const dn=destViews.filter(d=>s.dsel[d.id]);
+    const intakeSum={title:incList.length+' source'+(incList.length===1?'':'s')+' → '+dn.length+' destinations',sub:dn.length<2?'Select at least two destinations for a safe ingest.':incList.map(x=>x.vol).join(', ')+' · '+(dn.length*incList.length)+' verified copies',c:dn.length<2?C.a:'#55534e'};
+    const sums=['xxHash64','MD5','SHA-1'].map(t=>({t,bg:t===s.sum?'#141414':'#ffffff',fg:t===s.sum?'#ffffff':'#55534e',pick:()=>this.setState({sum:t})}));
+    const startIngest=()=>{if(!incList.length||!dn.length)return;this.setState(st=>{const ex=new Set(st.jobs.map(j=>j.id));const add=incList.filter(x=>!ex.has(x.id)).map(x=>({id:x.vol,label:x.det,size:x.used,files:'scanning…',queued:true,dests:dn.map(d=>({n:d.n,c:0,v:0,r:1.5+Math.random()}))}));return {jobs:[...st.jobs,...add],inc:{},screen:'monitor'}})};
+    // scene organizer
+    const [cs,cu]=s.sel.split('|');const scObj=s.scenes.find(x=>x.id===cs)||SCENES0[2];
+    const tree=s.scenes.filter(sc=>sc.setups&&sc.setups.length).map(sc=>({id:sc.id,dot:STC[sc.status]||C.m,n:sc.setups.reduce((a,b)=>a+b.takes,0)+' takes',setups:sc.setups.map(su=>({id:su.id,lens:su.lens,takes:su.takes,bar:s.sel===sc.id+'|'+su.id?SEC.org:'transparent',bg:s.sel===sc.id+'|'+su.id?'#e8e8e5':'transparent',go:()=>this.setState({sel:sc.id+'|'+su.id,clip:0})}))}));
+    const raw=TAKES[s.sel]||[];const filt=raw.filter(t=>s.view==='all'||(s.view==='sel'&&t.circle)||(s.view==='vfx'&&t.vfx));
+    const MC={Matched:C.g,Review:C.a,Unmatched:C.r};const MW={Matched:'Matched',Review:'Needs you',Unmatched:'Not found'};
+    const takeRows=filt.map(t=>({...t,take:'Take '+(+t.take.slice(1)),selT:t.circle?'◎ Select':'',cams:t.a+(t.b!=='—'?'  ·  '+t.b:''),circ:t.circle?'◎':'',vfx:t.vfx?'VFX':'',sync:t.sync==='TC'?{t:'Synced',c:C.g}:t.sync==='WF'?{t:'Check',c:C.a}:{t:'Missing',c:C.r},match:{t:MW[t.match],c:MC[t.match]},rowBg:t.circle?'oklch(0.8 0.14 80 / 0.04)':'transparent'}));
+    const views=[['all','All takes'],['sel','Circle / selects'],['vfx','VFX']].map(([k,t])=>({t,bg:s.view===k?'#dededa':'transparent',fg:s.view===k?'#141414':'#55534e',pick:()=>this.setState({view:k})}));
+    const cur={scene:cs,setup:cu,desc:scObj.desc,notes:NOTES[cs]||'No script notes for this setup.',look:LOOKS[cs]||'Project default',nCirc:raw.filter(t=>t.circle).length,nVfx:raw.filter(t=>t.vfx).length,
+      tree:'SHOOT_DAY_014_2026-10-05/\n└ CAMERA_ORIGINALS/\n  └ SCENE_'+cs.padStart(3,'0')+'/\n    └ SETUP_'+cu+'/\n      ├ '+(raw[0]?raw[0].a:'')+'/\n      └ … '+raw.length+' takes\n└ SOUND_ORIGINALS/\n└ VFX/SCENE_'+cs.padStart(3,'0')+'/SETUP_'+cu+'/'};
+    // match
+    const mi=MATCH0[s.mSel];const pick=s.mPick[mi.id]??0;
+    const matchList=MATCH0.map(m=>{const r=s.resolved[m.id];return {log:m.log,reason:m.reason,st:r?chip(r==='wild'?'WILD':'CONFIRMED',C.g):chip('REVIEW',C.a),border:m.id===s.mSel?'#8c8c87':'#dededa',pick:()=>this.setState({mSel:m.id})}});
+    const mSel={reason:mi.reason,logFields:mi.f.map(([l,v])=>({l,v})),cands:mi.cands.map((c,i)=>{const sel=i===pick;const cc=c.conf>=80?C.g:c.conf>=40?C.a:C.r;return {...c,conf:c.conf+'%',w:c.conf+'%',cc,border:sel?'#141414':'#dededa',bg:sel?'#f0f0ee':'transparent',dot:sel?'#141414':'transparent',pick:()=>this.setState(st=>({mPick:{...st.mPick,[mi.id]:i}}))}})};
+    const nextUn=(res)=>{const u=MATCH0.find(m=>!res[m.id]);return u?u.id:s.mSel};
+    const acceptMatch=()=>{const res={...s.resolved,[mi.id]:'ok'};this.setState({resolved:res,mSel:nextUn(res)})};
+    const markWild=()=>{const res={...s.resolved,[mi.id]:'wild'};this.setState({resolved:res,mSel:nextUn(res)})};
+    const matchHead=unresolved?unresolved+' item'+(unresolved>1?'s':'')+' need a decision':'All matches confirmed';
+    // sync
+    const fo=o=>(o>0?'+':o<0?'−':'±')+Math.abs(o)+' fr';
+    const syncRows=s.sync.map(x=>({...x,offT:fo(x.off),confT:x.conf?x.conf+'%':'—',st:x.ok?chip('SYNCED',C.g):x.conf?chip('REVIEW',C.a):chip('NO TC',C.r),bg:x.i===s.sSel?'#f0f0ee':'transparent',pick:()=>this.setState({sSel:x.i})}));
+    const sx=s.sync[s.sSel];const sSel={...sx,offT:fo(sx.off),confT:sx.conf?sx.conf+'%':'—',shift:(sx.off*5)+'px',st:sx.ok?chip('',C.g):chip('',C.a)};
+    const upd=f=>this.setState(st=>({sync:st.sync.map(x=>x.i===st.sSel?f(x):x)}));
+    // lut
+    const lutList=LUTS.map((l,i)=>({...l,bg:i===s.lut?'#f0f0ee':'transparent',bar:i===s.lut?'#141414':'transparent',pick:()=>this.setState({lut:i})}));
+    const lutRules=[['PROJECT','Default',LUTS[0].n,'214 clips'],['CAMERA','Camera B',LUTS[1].n,'88 clips'],['SCENE','Sc 21, 22',LUTS[2].n,'41 clips'],['CLIP','A014C018',LUTS[0].n+' + CDL','1 clip']].map(([scope,target,lut,n])=>({scope,target,lut,n}));
+    // dailies
+    const dInc=[['sel','Circle takes only','14 takes · 18 min'],['all','All takes','36 takes · 52 min'],['scene','By scene…','choose scenes']].map(([k,t,sub])=>({t,s:sub,b:s.dInc===k?'#141414':'#dededa',bg:s.dInc===k?'#f0f0ee':'transparent',pick:()=>this.setState({dInc:k})}));
+    const dFields=[['CODEC','ProRes 422 Proxy'],['RESOLUTION','1920 × 1080 · letterbox 2.39'],['AUDIO','Synced · mix trk + boom'],['LOOK','Per assignment rules'],['GROUPING','Scene → Setup → Take'],['DESTINATION','Frame.io + PROD_NAS']].map(([l,v])=>({l,v}));
+    const burns=Object.keys(s.burns).map(k=>{const v=s.burns[k];return {t:(v?'✓ ':'')+k,bg:v?'#141414':'transparent',fg:v?'#ffffff':'#55534e',b:v?'#141414':'#c9c9c4',toggle:()=>this.setState(st=>({burns:{...st.burns,[k]:!st.burns[k]}}))}});
+    const dSum={t:s.dInc==='all'?'36 clips · ~52 min · ≈ 86 GB':'14 clips · ~18 min · ≈ 31 GB',s:s.dBuilt?'Queued for render — will publish to Frame.io on completion.':'Originals untouched. Look recorded in metadata and report.',btn:s.dBuilt?'Queued ✓':'Build dailies'};
+    const fioTree='HALCYON/\n└ Dailies/\n  └ Day 014 — 2026-10-05/\n    ├ Sc 012/\n    │ ├ 12A_T04 ◎.mov\n    │ └ 12B_T03 ◎.mov\n    ├ Sc 014/\n    │ ├ 14A_T02 ◎.mov\n    │ └ 14B_T03 ◎.mov …\n    └ Sc 021/\n      └ 21A_T03 ◎.mov …';
+    // vfx
+    const vfxRows=VFX0.map(([sc,su,t,clip,note,by],i)=>{const st=s.vfxSent?chip('SENT TO PREP',C.v):i===6?chip('BLOCKED · MATCH',C.a):chip('ELIGIBLE',C.g);return {key:sc+' / '+su+' / T'+t,clip,note,by,st,bg:i===s.vSel?'#f0f0ee':'transparent',pick:()=>this.setState({vSel:i})}});
+    const vv=VFX0[s.vSel];const scp='SCENE_'+vv[0].padStart(3,'0')+'/SETUP_'+vv[1]+'/'+vv[3];
+    const vSel={sc:vv[0],su:vv[1],t:vv[2],clip:vv[3],note:vv[4],edit:'…/CAMERA_ORIGINALS/'+scp,vfx:'…/VFX/'+scp};
+    const MIR={link:['Hard link','Hard link on same volume — no extra storage.'],ref:['Reference','Database pointer only. Resolves on export.'],copy:['Physical copy','Separate verified copy — use when vendor needs a standalone deliverable.']};
+    const mirrors=Object.keys(MIR).map(k=>({t:MIR[k][0],bg:s.mirror===k?'#141414':'#ffffff',fg:s.mirror===k?'#ffffff':'#55534e',pick:()=>this.setState({mirror:k})}));
+    // delivery
+    const need=PKGS.filter(p=>s.pk[p.id]).reduce((a,p)=>a+p.gb,0);
+    const pkgs=PKGS.map(p=>{const on=!!s.pk[p.id];return {...p,sizeT:gb(p.gb),check:on?'✓':'',boxB:on?'#141414':'#9a9a95',boxBg:on?'#141414':'transparent',border:on?'#9a9a95':'#dededa',toggle:()=>this.setState(st=>({pk:{...st.pk,[p.id]:!st.pk[p.id]}}))}});
+    let warn=0;const ddests=DDESTS.map(d=>{const on=!!s.dd[d.id];const ok=need<=d.free;if(on&&!ok)warn++;return {...d,on,check:on?'✓':'',boxB:on?'#141414':'#9a9a95',boxBg:on?'#141414':'transparent',border:on&&!ok?'oklch(0.7 0.18 25 / 0.6)':on?'#9a9a95':'#dededa',pre:!on?(d.free===Infinity?'cloud':gb(d.free)+' free'):d.free===Infinity?'✓ ready':ok?'✓ '+gb(d.free-need)+' left':'✕ short '+gb(need-d.free),pc:!on?'#64625d':ok?C.g:C.r,w:d.free===Infinity?'8%':Math.min(100,need/d.free*100)+'%',toggle:()=>this.setState(st=>({dd:{...st.dd,[d.id]:!st.dd[d.id]}}))}});
+    const ndd=ddests.filter(d=>d.on).length;
+    const delSum={t:gb(need)+' → '+ndd+' destination'+(ndd===1?'':'s'),s:warn?'Preflight failed: not enough space on '+warn+' destination. Deselect a package or change destination.':'Preflight passed · checksum xxHash64 · manifest generated on completion',c:warn?C.r:C.g,op:warn||!ndd||!need?'.4':'1'};
+    const manifest=[['Camera originals archive','ARCHIVE_NAS','2,941','4.21 TB','21:48:12',chip('✓ Verified',C.g)],['Editorial handoff','EDIT_SHTL_02','2,955','1.08 TB','21:12:40',chip('✓ Verified',C.g)],['Synced dailies','Frame.io','41','78 GB','20:31:05',chip('✓ Uploaded',C.g)],['VFX package','VENDOR_SFTP','118','512 GB','22:04:51',chip('↻ 1 retry · OK',C.a)],['Reports & logs','All','14','36 MB','22:05:30',chip('✓ Verified',C.g)]].map(([p,d,f,sz,t,st])=>({p,d,f,s:sz,t,st}));
+    
+    const STAGE_OF={intake:'intake',monitor:'verify',scenes:'organize',match:'organize',vfx:'vfx',sync:'sync',lut:'output',dailies:'output',delivery:'output'};
+    const curStage=STAGE_OF[screen];const nWait=incList.length;
+    const FL=[
+     ['intake','Intake','intake',jobViews.length+' cards in',nWait?nWait+' new card'+(nWait>1?'s':'')+' mounted':'No new cards waiting',nWait?{t:'New media',c:C.a}:{t:'Done',c:C.g}],
+     ['verify','Verify','monitor',safe.length+'/'+jobViews.length+' verified',hasFail?'1 card failed its check':active?active+' copying now':'All copies checked',hasFail?{t:'Problem',c:C.r}:(active||queued)?{t:'Working',c:C.b}:{t:'Done',c:C.g}],
+     ['organize','Organize','scenes',(61+(3-unresolved))+'/64 matched',unresolved?unresolved+' matches to confirm':'Scenes & setups built',unresolved?{t:'Needs you',c:C.a}:{t:'Done',c:C.g}],
+     ['vfx','VFX','vfx',vfxCount+' shots mirrored',s.vfxSent?'Sent to VC VFX Prep':'Ready to send to prep',s.vfxSent?{t:'Done',c:C.g}:{t:'Ready',c:C.b}],
+     ['sync','Audio Sync','sync',synced+'/'+s.sync.length+' synced',syncRev?syncRev+' takes to check':'All takes synced',syncRev?{t:'Needs you',c:C.a}:{t:'Done',c:C.g}],
+     ['output','Output','dailies',s.dBuilt?'Dailies rendering':'0/3 delivered','Dailies, editorial & archive',s.dBuilt?{t:'Working',c:C.b}:{t:'Not started',c:C.m}]];
+    const flow=FL.map(([k,name,scr,sub,desc,st],i)=>{const c=STG[k],act=k===curStage;return {n:String(i+1),name,sub,desc,st,c,go:this.go(scr),arrow:i<FL.length-1,bg:act?T(c):'transparent',b:act?c:'#dededa',nameC:act?c:'#141414'}});
+    const flowTiles=flow.map(f=>({name:f.n+' · '+f.name.toUpperCase(),c:f.c,go:f.go,line:f.sub,sub:f.desc,st:f.st}));
+    const SUB={organize:[['scenes','Scene Organizer'],['match','Match Review']],output:[['lut','Looks'],['dailies','Dailies'],['delivery','Delivery']]};
+    const subtabs=(SUB[curStage]||[]).map(([k,t])=>({t,go:this.go(k),fg:k===screen?'#ffffff':'#55534e',bg:k===screen?STG[curStage]:'transparent'}));
+    const tb=k=>({bg:screen===k?'#141414':'transparent',fg:screen===k?'#ffffff':'#55534e'});
+    const op=s.open,FILES=[],add=(id,name,d,o)=>FILES.push({id,name,d,...o});
+    add('root','HALCYON',0,{kids:1,c:'#141414'});
+    if(op.root){add('day','SHOOT_DAY_014',1,{kids:1,c:'#141414',count:'05 Oct'});
+     if(op.day){
+      add('ocf','01_CAMERA_ORIGINALS',2,{kids:1,c:STG.intake,count:'1,596',st:hasFail?C.r:C.g});
+      if(op.ocf)s.scenes.filter(x=>x.setups&&x.setups.length).forEach(sc=>{const sid='ocf/'+sc.id;add(sid,'SCENE_'+sc.id.padStart(3,'0'),3,{kids:1,c:STG.organize,count:sc.setups.reduce((a,b)=>a+b.takes,0)});if(op[sid])sc.setups.forEach(su=>add(sid+'/'+su.id,'SETUP_'+su.id,4,{c:STG.organize,count:su.takes,sel:screen==='scenes'&&s.sel===sc.id+'|'+su.id,go:()=>this.setState({screen:'scenes',sel:sc.id+'|'+su.id,clip:0})}))});
+      add('snd','02_SOUND_ORIGINALS',2,{c:STG.intake,count:'96',st:C.g,go:this.go('sync')});
+      add('sel','03_SELECTS',2,{c:STG.organize,count:'14',link:1,go:()=>this.setState({screen:'scenes',view:'sel'})});
+      add('vfx','04_VFX',2,{kids:1,c:STG.vfx,count:String(vfxCount),link:1,go:this.go('vfx')});
+      if(op.vfx)[['21','A'],['21','B'],['14','C']].forEach(([a,b])=>add('vfx/'+a+b,'SCENE_'+a.padStart(3,'0')+'/SETUP_'+b,3,{c:STG.vfx,link:1,go:this.go('vfx')}));
+      add('sync','05_SYNCED_DAILIES',2,{c:STG.sync,count:synced+'/'+s.sync.length,st:syncRev?C.a:C.g,go:this.go('sync')});
+      add('luts','06_LUTS_LOOKS',2,{c:STG.output,count:'4',go:this.go('lut')});
+      add('del','07_DELIVERY',2,{kids:1,c:STG.output,count:'0/3',go:this.go('delivery')});
+      if(op.del)['EDITORIAL_HANDOFF','DAILIES_FRAMEIO','ARCHIVE'].forEach(n=>add('del/'+n,n,3,{c:STG.output,go:this.go('delivery')}));
+      add('rep','08_REPORTS',2,{kids:1,c:'#55534e',count:'10',go:this.go('reports')});
+      if(op.rep)[['ingest_verification',STG.verify,'monitor'],['script_supervisor',STG.organize,'match'],['sync',STG.sync,'sync'],['delivery_manifests',STG.output,'delivery']].forEach(([n,c,k])=>add('rep/'+n,n,3,{c,go:this.go(k)}));
+     }}
+    const files=FILES.map(f=>({...f,ind:(8+f.d*14)+'px',caret:f.kids?(op[f.id]?'▾':'▸'):'',count:f.count!=null?String(f.count):'',hasSt:!!f.st,stc:f.st||'transparent',isLink:!!f.link,bg:f.sel?'#e8e8e5':'transparent',bar:f.sel?STG.organize:'transparent',fw:f.d<=1?'700':'500',
+      click:()=>{if(f.kids)this.setState(st=>({open:{...st.open,[f.id]:!st.open[f.id]}}));if(f.go)f.go()}}));
+    const ci=Math.min(s.clip,Math.max(0,raw.length-1)),cl=raw[ci]||{};
+    const pool=filt.map(t=>{const i=raw.indexOf(t),sel=i===ci;return {a:t.a,dur:t.dur,label:t.take,circle:t.circle,isVfx:t.vfx,syncC:t.sync==='TC'?C.g:t.sync==='WF'?C.a:C.r,mc:t.match==='Matched'?'#55534e':MC[t.match],border:sel?STG.organize:'transparent',bg:sel?'#f0f0ee':'transparent',pick:()=>this.setState({clip:i})}});
+    const syW={TC:['Synced · timecode',C.g],WF:['Check · waveform',C.a],'—':['Missing',C.r]}[cl.sync||'TC'];
+    const insp=[['Scene',cs],['Setup',cu],['Take',cl.take?String(+cl.take.slice(1)):''],['Camera A',cl.a],['Camera B',cl.b],['Start TC',cl.tc],['Duration',cl.dur],['Sound',cl.snd],['Sync',syW[0],syW[1]],['Look',cur.look.replace('.cube','')],['Select',cl.circle?'◎ Circle take':'No',cl.circle?C.a:null],['VFX',cl.vfx?'Yes · mirrored':'No',cl.vfx?STG.vfx:null],['Script match',MW[cl.match],MC[cl.match]],['Verified','3 of 3 copies',C.g]].map(([l,v,c])=>({l,v:v||'—',c:c||'#141414'}));
+    const viewer={name:cl.a||'',tc:cl.tc||'',dur:cl.dur||'',crumb:'01_CAMERA_ORIGINALS / SCENE_'+cs.padStart(3,'0')+' / SETUP_'+cu,lookT:s.lookOn?'LOOK ON · '+cur.look.replace('.cube',''):'LOOK OFF · LOG',lookBg:s.lookOn?STG.output:'transparent',lookFg:s.lookOn?'#ffffff':'#55534e',stripe:s.lookOn?'repeating-linear-gradient(135deg,oklch(0.38 0.07 60) 0 10px,oklch(0.32 0.07 60) 10px 20px)':'repeating-linear-gradient(135deg,#e6e6e3 0 10px,#dcdcd8 10px 20px)'};
+    const bins=[['all','All clips',raw.length],['sel','Circle takes',raw.filter(t=>t.circle).length],['vfx','VFX shots',raw.filter(t=>t.vfx).length]].map(([k,t,nn])=>({t,n:String(nn),bg:s.view===k?'#e8e8e5':'transparent',bar:s.view===k?STG.organize:'transparent',pick:()=>this.setState({view:k})}));
+    const RP=[['verify','Ingest verification — A014','ASC MHL · 1,284 files · 3 destinations','14:31','monitor',null],['verify','Ingest verification — B009','ASC MHL · 312 files · 3 destinations','13:02','monitor',null],['verify','Ingest verification — 888_D14','ASC MHL · 96 files · 3 destinations','12:48','monitor',null],
+      ['verify','Ingest verification — A013',hasFail?'2 checksum mismatches on SHTL_06':'Re-verified after retry','11:20','monitor',hasFail?{t:'Problem',c:C.r}:null],
+      ['organize','Script supervisor import','HLC_D014_scriptlog.csv · 64 entries','14:12','match',unresolved?{t:'Needs you',c:C.a}:null],['organize','Scene / setup organization','36 takes across 6 scenes','14:32','scenes',null],
+      ['vfx','VFX mirror report',vfxCount+' shots · hard links · notes','14:32','vfx',null],['sync','Sync report',s.sync.length+' takes · timecode + waveform','14:30','sync',syncRev?{t:'Needs you',c:C.a}:null],
+      ['output','Look / LUT report','4 LUTs · 4 assignment rules','14:05','lut',null],['output','Delivery manifest — Day 013','5 packages · 4 destinations','22:05','delivery',null]];
+    const STN={verify:'VERIFY',organize:'ORGANIZE',vfx:'VFX',sync:'SYNC',output:'OUTPUT'};
+    const reports=RP.filter(r=>s.repF==='all'||r[0]===s.repF).map(([k,n,d,t,scr,st])=>({step:STN[k],c:STG[k],n,d,t,st:st||{t:'Complete',c:C.g},go:this.go(scr)}));
+    const repFilters=[['all','All','#55534e'],...Object.keys(STN).map(k=>[k,STN[k][0]+STN[k].slice(1).toLowerCase(),STG[k]])].map(([k,t,c])=>({t,c,bg:s.repF===k?'#e8e8e5':'transparent',fg:s.repF===k?'#141414':'#55534e',pick:()=>this.setState({repF:k})}));
+    const ex={reports,repFilters,flow,subtabs,hasSub:subtabs.length>0,top:{today:tb('dash'),proj:tb('setup'),rep:tb('reports')},files,filesOpen:s.filesOpen,filesCol:s.filesOpen?'290px':'0px',filesBtn:s.filesOpen?{bg:'#141414',fg:'#ffffff'}:{bg:'transparent',fg:'#141414'},toggleFiles:()=>this.setState(st=>({filesOpen:!st.filesOpen})),pool,insp,viewer,bins,toggleLook:()=>this.setState(st=>({lookOn:!st.lookOn}))};
+    return {...ex,on,go,g,overall,tiles:flowTiles,nav,clock,kpis,pipeline,sceneRows,alerts,jobViews,prodFields,devices,sceneEdit,newScene:s.newScene,setNewScene:e=>this.setState({newScene:e.target.value}),addScene:()=>{const v=s.newScene.trim();if(!v)return;this.setState(st=>({newScene:'',scenes:[...st.scenes,{id:v,desc:'Added on the day',status:'Added',setups:[]}]}))},tokens,logStats,
+      sourceViews,destViews,intakeSum,sums,startIngest,tree,takeRows,noTakes:!takeRows.length,views,cur,matchList,mSel,acceptMatch,markWild,matchHead,
+      syncRows,sSel,waveA:WA,waveB:WB,nudgeM:()=>upd(x=>({...x,off:x.off-1,method:'Manual'})),nudgeP:()=>upd(x=>({...x,off:x.off+1,method:'Manual'})),acceptSync:()=>upd(x=>({...x,ok:true,conf:x.conf||100})),
+      lutList,lutSel:LUTS[s.lut].n,lutRules,lutSplit:s.split,splitW:s.split+'%',setSplit:e=>this.setState({split:+e.target.value}),
+      dInc,dFields,burns,dSum,buildDailies:()=>this.setState({dBuilt:true}),fioTree,
+      vfxRows,vSel,mirrors,mirrorT:MIR[s.mirror][0].toUpperCase(),mirrorHint:MIR[s.mirror][1],sendVfx:()=>this.setState({vfxSent:true}),vfxBtn:s.vfxSent?'Sent to VC VFX Prep ✓':'Send to VC VFX Prep',
+      pkgs,ddests,delSum,manifest};
+  }
+}
+</script>
+</body>
+</html>

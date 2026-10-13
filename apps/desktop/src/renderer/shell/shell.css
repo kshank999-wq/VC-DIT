@@ -1,0 +1,138 @@
+/* The app shell (handoff "App Shell"): header, flow bar, content, files panel. */
+.app {
+  height: 100vh; min-width: 1280px; display: grid;
+  grid-template-rows: 52px auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) var(--files-col, 290px);
+  background: var(--bg);
+}
+.app.files-closed { --files-col: 0px; }
+
+.app-header {
+  grid-column: 1 / 3; display: flex; align-items: center; gap: 14px; padding: 0 18px;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.wordmark { display: flex; align-items: baseline; gap: 8px; width: 120px; flex: none; white-space: nowrap; }
+.wordmark > span:first-child { font: 700 15px/1 'IBM Plex Sans'; letter-spacing: 0.02em; }
+.wordmark .version { font-size: 10px; color: var(--label); letter-spacing: 0.08em; }
+.production { flex: none; display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); white-space: nowrap; font-size: 12px; }
+.production .prod-name { font-weight: 600; font-size: 12.5px; }
+.production .divider { width: 1px; height: 16px; background: var(--border-strong); }
+.header-center { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.pill-button { border: none; background: none; padding: 0; cursor: pointer; }
+.pill-button .pill { height: 30px; border-radius: 15px; padding: 0 14px; font-size: 12.5px; }
+.theme-select { width: 112px; height: 30px; flex: none; font-size: 12px; }
+.clock { font-weight: 500; font-size: 13px; min-width: 96px; text-align: right; }
+.avatar { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--selected); font: 700 10.5px 'IBM Plex Sans'; cursor: pointer; flex: none; }
+
+.flow-bar { grid-column: 1 / 3; display: flex; padding: 10px 14px; gap: 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+.flow-cell { flex: 1; display: flex; align-items: center; min-width: 0; }
+.flow-arrow { color: var(--faint); padding: 0 8px; font-size: 13px; }
+.flow-step {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card); cursor: pointer; text-align: left;
+  transition: background 120ms ease-out;
+}
+.flow-step:hover { background: var(--hover); }
+.flow-step.active { background: color-mix(in oklch, var(--tone) 15%, var(--card)); border-color: var(--tone); }
+.flow-number { width: 26px; height: 26px; border-radius: 6px; flex: none; display: grid; place-items: center; background: var(--tone); color: var(--on-tone); font: 700 12.5px 'IBM Plex Sans'; }
+.flow-text { display: grid; min-width: 0; flex: 1; }
+.flow-name { font: 700 13.5px/1.2 'IBM Plex Sans'; }
+.flow-step.active .flow-name { color: var(--tone); }
+.flow-metric { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flow-dot { width: 9px; height: 9px; }
+
+.content { grid-column: 1; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
+.content > .screen { flex: 1; }
+.sub-tabs { display: flex; gap: 6px; padding: 12px 28px 0; }
+.sub-tabs button { height: 30px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--border-strong); background: var(--card); cursor: pointer; font: 600 12.5px 'IBM Plex Sans'; display: inline-flex; align-items: center; gap: 8px; }
+.sub-tabs button:hover { background: var(--hover); }
+.sub-tabs button.active { background: var(--tone); border-color: var(--tone); color: var(--on-tone); }
+.badge-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--s-needs); color: #fff; font: 700 10.5px/18px 'IBM Plex Mono'; text-align: center; }
+
+.files { grid-column: 2; grid-row: 3; min-height: 0; display: flex; flex-direction: column; background: var(--panel); border-left: 1px solid var(--border); overflow: hidden; }
+.app.files-closed .files { display: none; }
+.files-head { padding: 14px; display: grid; gap: 12px; border-bottom: 1px solid var(--border); }
+.files-head .input { height: 32px; }
+.tree { flex: 1; overflow: auto; padding: 8px 0; }
+.tree-row { height: 30px; display: flex; align-items: center; gap: 6px; padding-right: 14px; cursor: pointer; white-space: nowrap; }
+.tree-row:hover { background: var(--hover); }
+.tree-row.selected { background: var(--selected); box-shadow: inset 2px 0 0 var(--st-organize); }
+.caret { width: 10px; font-size: 9px; color: var(--faint); flex: none; }
+.folder { width: 15px; height: 11px; border-radius: 2px; flex: none; display: inline-block; }
+.tree-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.tree-name.strong { font-weight: 700; }
+.linked { font-size: 11px; color: var(--muted); }
+.tree-count { font-size: 11px; color: var(--faint); }
+.files-foot { padding: 12px 14px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11.5px; color: var(--muted); }
+.legend > span { display: inline-flex; align-items: center; gap: 5px; }
+.legend .folder { width: 10px; height: 8px; }
+
+/* License dialog */
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.35); display: grid; place-items: center; z-index: 20; }
+.dialog { width: 520px; max-width: calc(100vw - 32px); background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; display: grid; gap: 12px; }
+.dialog h2 { margin: 0; font: 600 18px 'IBM Plex Sans'; }
+.dialog dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
+.dialog dt { color: var(--label); }
+.dialog dd { margin: 0; }
+.code-input { font: 500 15px 'IBM Plex Mono'; letter-spacing: 0.06em; text-transform: uppercase; height: 40px; }
+.error { color: var(--s-problem); }
+
+/* Files: Overview or On drive. */
+.files-views { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 11px; }
+.files-views button { border: 0; background: transparent; color: var(--muted); padding: 3px 8px; cursor: pointer; font: inherit; }
+.files-views button[aria-pressed='true'] { background: var(--selected); color: var(--ink); font-weight: 600; }
+.drive-browser { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.drive-pick { gap: 6px; padding: 8px 14px 4px; }
+.drive-pick .select { flex: 1; min-width: 0; padding-top: 4px; padding-bottom: 4px; font-size: 12px; }
+.drive-root { cursor: default; }
+.drive-root:hover { background: transparent; }
+.drive-row .tree-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.file-glyph { width: 10px; height: 12px; flex: none; border: 1.5px solid var(--faint); border-radius: 2px; }
+.tree-reveal { border: 0; background: transparent; color: var(--faint); cursor: pointer; padding: 0 2px; font-size: 12px; visibility: hidden; }
+.tree-row:hover .tree-reveal, .tree-row.selected .tree-reveal, .tree-row:focus-visible .tree-reveal { visibility: visible; }
+.tree-reveal:hover { color: var(--ink); }
+.files-note { padding: 6px 14px; font-size: 12px; }
+
+/* Files panel: resizable from its left edge. */
+.files { position: relative; }
+.files-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 2; }
+.files-resize:hover, .files-resize:focus-visible { background: color-mix(in oklch, var(--st-organize) 40%, transparent); outline: none; }
+body.resizing { cursor: col-resize; user-select: none; }
+
+/* Icon size (Preferences): the Files panel's rows and folder glyphs follow it. */
+.app.icons-small .tree-row { height: 24px; }
+.app.icons-small .folder { width: 12px; height: 9px; }
+.app.icons-large .tree-row { height: 36px; }
+.app.icons-large .folder { width: 19px; height: 14px; }
+.app.icons-large .tree-name { font-size: 13px; }
+.app.icons-large .file-glyph { width: 12px; height: 15px; }
+
+/* Preferences */
+.icon-btn { width: 34px; padding: 0; justify-content: center; font-size: 15px; }
+.prefs { gap: 16px; }
+.prefs .field { display: grid; gap: 6px; }
+.prefs-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 7px; overflow: hidden; width: max-content; }
+.prefs-seg button { border: 0; background: transparent; color: var(--muted); padding: 6px 14px; cursor: pointer; font: 600 12.5px 'IBM Plex Sans'; }
+.prefs-seg button[aria-pressed='true'] { background: var(--selected); color: var(--ink); }
+.prefs-sizes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.prefs-size { display: grid; justify-items: center; align-content: end; gap: 6px; padding: 10px 6px; border: 1px solid var(--border); border-radius: 9px; background: var(--card); cursor: pointer; font: 600 12.5px 'IBM Plex Sans'; color: var(--muted); min-height: 104px; }
+.prefs-size.picked { border-color: var(--st-intake); color: var(--ink); box-shadow: 0 0 0 1px var(--st-intake); }
+.prefs-size-icons { display: flex; align-items: flex-end; gap: 4px; }
+.prefs input[type='range'] { width: 100%; }
+
+/* Clearing a card for camera */
+.clear-dialog { width: 560px; }
+.clear-dialog p { margin: 0; }
+.clear-check { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.clear-check li { display: flex; gap: 8px; align-items: baseline; }
+.clear-problems { border: 1px solid var(--s-problem); background: color-mix(in oklch, var(--s-problem) 10%, var(--card)); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.clear-actions { justify-content: flex-end; gap: 8px; }
+.clear-notices { position: fixed; right: 18px; bottom: 18px; z-index: 15; display: grid; gap: 8px; width: min(520px, calc(100vw - 36px)); }
+.clear-notice { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 14px; border-radius: 10px; border: 1.5px solid var(--s-done); background: var(--card); box-shadow: var(--shadow, 0 6px 24px rgb(0 0 0 / .3)); }
+.eject-problem { color: var(--s-problem); max-width: 320px; }
+.offload-eject { display: grid; justify-items: center; gap: 4px; text-align: center; }
+.eject-all { width: 560px; }
+.eject-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 50vh; overflow: auto; }
+.eject-list li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); }
+.files-assign { justify-self: start; }

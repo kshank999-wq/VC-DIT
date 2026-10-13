@@ -1,0 +1,13 @@
+.today-headline { margin: 6px 0 0; font: 600 34px/1.15 'IBM Plex Sans'; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.tile {
+  min-height: 160px; padding: 18px 20px; display: grid; gap: 8px; align-content: start; text-align: left; cursor: pointer;
+  border-top: 4px solid var(--tone); color: var(--text); transition: background 120ms ease-out;
+}
+.tile:hover { background: var(--hover); }
+.eyebrow.plain::before { display: none; }
+.tile-metric { font: 600 19px 'IBM Plex Sans'; }
+.tile-foot { margin-top: auto; padding-top: 10px; }
+.section-title { margin: 8px 0 0; font: 600 15px 'IBM Plex Sans'; }
+.todo { display: flex; align-items: center; gap: 16px; padding: 16px 18px; }
+.todo-title { font: 600 14.5px 'IBM Plex Sans'; }
