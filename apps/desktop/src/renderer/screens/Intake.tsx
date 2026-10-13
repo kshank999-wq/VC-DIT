@@ -100,7 +100,7 @@ export function Intake() {
   const sources = sourceVolumes.filter((volume) => volume.included && !volume.ingested);
   const volumeDestinations = state.volumes.filter((volume) => DESTINATION_ROLES.includes(volume.role));
   const picked = [
-    ...state.destinations.filter((destination) => destination.selected).map((destination) => ({ name: destination.name, relay: !!destination.relay, local: !!destination.local })),
+    ...state.destinations.filter((destination) => destination.selected).map((destination) => ({ name: destination.name, relay: !!destination.relay, local: destination.local ?? true })),
     ...volumeDestinations.filter((volume) => volume.included).map((volume) => ({ name: volume.name, relay: !!volume.relay, local: volume.local ?? true })),
   ];
   const destinations = picked.filter((destination) => !destination.relay).map((destination) => destination.name);
@@ -321,7 +321,7 @@ export function Intake() {
                 path={destination.path}
                 selected={destination.selected}
                 relay={!!destination.relay}
-                local={!!destination.local}
+                local={destination.local ?? true}
                 limit={destination.limit ?? null}
                 onLimit={media ? (limit) => setLimit(destination.id, limit) : undefined}
                 onRelay={(relay) => setRelay(destination.id, relay)}
