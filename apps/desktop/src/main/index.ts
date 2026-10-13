@@ -10,6 +10,7 @@ import type { OrganizeService } from './organize/organize-service';
 import type { SyncService } from './sync/sync-service';
 import type { VfxService } from './vfx/vfx-service';
 import { registerMedia } from './media/media-ipc';
+import { frameioOpened, registerFrameioScheme } from './frameio/connection';
 
 /**
  * Electron main process for VC DIT.
@@ -72,7 +73,30 @@ const allowAudioInputOnly = () => {
   );
 };
 
+/**
+ * One VC DIT at a time: a second launch (from the dock, a shortcut, or the
+ * browser handing back the Frame.io sign-in on Windows) brings this one
+ * forward and passes on what it was opened with.
+ */
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
+app.on('second-instance', (_event, argv) => {
+  for (const arg of argv) frameioOpened(arg);
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window) {
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  }
+});
+// macOS hands the Frame.io sign-in back as an opened URL.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  frameioOpened(url);
+});
+registerFrameioScheme();
+
 void app.whenReady().then(async () => {
+  if (!primary) return;
   allowAudioInputOnly();
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
   await registerLicensing();

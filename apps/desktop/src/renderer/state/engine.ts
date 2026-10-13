@@ -42,6 +42,7 @@ type FromProject = Pick<
   | 'previewClips'
   | 'renders'
   | 'dailiesActivity'
+  | 'frameio'
   | 'ffmpeg'
   | 'delivery'
   | 'organize'
@@ -110,6 +111,7 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     previewClips: project.previewClips,
     renders: project.renders,
     dailiesActivity: project.dailiesActivity,
+    frameio: project.frameio,
     ffmpeg: project.ffmpeg,
     delivery: project.delivery,
     organize: project.organize,

@@ -15,8 +15,10 @@ import { Thumbnails } from '../thumbs/thumbnails';
 import { sealDrive, type SealProgress } from '../media/seal';
 import { findMoved } from '../media/relink';
 import { segment } from '../media/rules';
-import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
+import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type FrameioTarget, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
+import { cancelFrameioSignIn, connectFrameio, disconnectFrameio, frameioConfig, frameioSession, frameioUser } from '../frameio/connection';
+import { FrameioPublisher } from '../frameio/publish';
 import { cubeText, gradeTable, limitCdl, type Cdl } from '../../shared/grade';
 import { aleSop } from '../looks/cdl';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
@@ -94,6 +96,27 @@ const scenePatch = (input: unknown): Partial<Omit<SceneEntry, 'id'>> => {
 };
 
 /** Only the settings a dailies run has, each of the right kind. */
+/** A Frame.io project as the screen chose it: every field a string, ids as Frame.io writes them. */
+const frameioTarget = (input: unknown): FrameioTarget => {
+  const value = (input ?? {}) as Record<string, unknown>;
+  const field = (key: string, required = true) => {
+    const got = text(value[key], 300);
+    if (required && !got) throw new Error('Choose an account, a workspace and a project.');
+    return got ?? '';
+  };
+  const viewUrl = field('viewUrl', false);
+  return {
+    accountId: field('accountId'),
+    accountName: field('accountName'),
+    workspaceId: field('workspaceId'),
+    workspaceName: field('workspaceName'),
+    projectId: field('projectId'),
+    projectName: field('projectName'),
+    rootFolderId: field('rootFolderId'),
+    viewUrl: viewUrl || null,
+  };
+};
+
 /** A grade from the Grade screen, as numbers: anything else is refused before it is held to the limits. */
 const gradeCdl = (input: unknown): Cdl => {
   const value = (input ?? {}) as Record<string, unknown>;
@@ -234,6 +257,15 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
   let dailies: DailiesService | null = null;
   let delivery: DeliveryService | null = null;
   let organizer: OrganizeService | null = null;
+  let publisher: FrameioPublisher | null = null;
+  // Who is signed in to Frame.io on this computer: read once, then kept as sign-ins change.
+  let frameioWho: string | null = null;
+  const frameioWhoNow = () => void frameioUser().then((user) => {
+    if (user !== frameioWho) {
+      frameioWho = user;
+      broadcast();
+    }
+  });
   // FFmpeg and the burn-in font ship as resources; in development they are in build/ (or FFmpeg on the PATH).
   const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'build');
   let ffmpegFound: Ffmpeg | null = null;
@@ -243,6 +275,13 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     vfxActivity: vfx?.activity ?? null,
     syncActivity: sync?.activity ?? null,
     dailiesActivity: dailies?.activity ?? null,
+    frameio: {
+      available: frameioConfig() !== null,
+      user: frameioWho,
+      target: library.current.frameioTarget(),
+      activity: publisher?.activity ?? null,
+      problem: publisher?.problem ?? null,
+    },
     ffmpeg: ffmpegFound ? { version: ffmpegFound.version } : null,
   });
   const stateNow = (): ProjectState => {
@@ -287,7 +326,18 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     changed: broadcast,
   });
   const delivering = delivery;
-  const busy = () => hooks.busy() || mirrors.activity !== null || syncing.activity !== null || rendering.busy() || delivering.busy();
+  publisher = new FrameioPublisher({
+    db: () => library.current,
+    session: frameioSession,
+    changed: () => {
+      // A refresh Adobe refused signs the person out: the screens hear it with the rest.
+      frameioWhoNow();
+      broadcast();
+    },
+  });
+  const publishing = publisher;
+  const busy = () =>
+    hooks.busy() || mirrors.activity !== null || syncing.activity !== null || rendering.busy() || delivering.busy() || publishing.busy();
 
   const openedNow = () => {
     const db = library.current;
@@ -905,6 +955,63 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
     }
   });
+  // ------------------------------------------------ Frame.io
+  frameioWhoNow();
+  ipcMain.handle('vcdit:frameio-connect', async () => {
+    const result = await connectFrameio();
+    frameioWho = await frameioUser();
+    broadcast();
+    return result.ok ? { ok: true, state: stateNow() } : result;
+  });
+  ipcMain.handle('vcdit:frameio-cancel', () => cancelFrameioSignIn());
+  ipcMain.handle('vcdit:frameio-disconnect', () =>
+    answer(async () => {
+      if (publishing.busy()) throw new Error('Dailies are being published. Stop that first.');
+      await disconnectFrameio();
+      frameioWho = null;
+    }),
+  );
+  // The places a production can publish to, a level at a time: accounts, an account's workspaces, a workspace's projects.
+  ipcMain.handle('vcdit:frameio-browse', async (_e, accountId: unknown, workspaceId: unknown) => {
+    try {
+      const api = await frameioSession();
+      if (!api) throw new Error('Connect Frame.io first.');
+      const account = text(accountId, 100);
+      const workspace = text(workspaceId, 100);
+      const items = !account
+        ? await api.accounts()
+        : !workspace
+          ? await api.workspaces(account)
+          : (await api.projects(account, workspace)).map(({ id, name, rootFolderId, viewUrl }) => ({ id, name, rootFolderId, viewUrl }));
+      return { ok: true, items };
+    } catch (cause) {
+      frameioWhoNow();
+      return { ok: false, reason: (cause as Error).message };
+    }
+  });
+  ipcMain.handle('vcdit:frameio-target', (_e, target: unknown) =>
+    answer(() => {
+      if (publishing.busy()) throw new Error('Dailies are being published. Stop that before changing where they go.');
+      library.current.saveFrameioTarget(target === null ? null : frameioTarget(target));
+    }),
+  );
+  ipcMain.handle('vcdit:frameio-publish', () =>
+    answer(async () => {
+      if (rendering.busy()) throw new Error('Dailies are rendering. Publish when they have finished.');
+      await publishing.start();
+    }),
+  );
+  ipcMain.handle('vcdit:frameio-stop', () => answer(() => publishing.stop()));
+  ipcMain.handle('vcdit:frameio-open', (_e, url: unknown) => {
+    // Only Frame.io's own pages.
+    try {
+      const parsed = new URL(String(url));
+      if (parsed.protocol === 'https:' && /(^|\.)frame\.io$/i.test(parsed.hostname)) void shell.openExternal(parsed.toString());
+    } catch {
+      // Not a URL.
+    }
+  });
+
   // The upload key for the open production. The screens never see the key itself.
   ipcMain.handle('vcdit:film-studio-link', () => filmStudioLink(library.current.file));
   ipcMain.handle('vcdit:film-studio-link-set', (_e, key: unknown) => setFilmStudioKey(library.current.file, key));

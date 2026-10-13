@@ -177,3 +177,9 @@
 .grade-sop { margin: 0; word-break: break-all; }
 .grade-save { gap: 8px; }
 @media (max-width: 1100px) { .grade-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Frame.io */
+.fio-body { gap: 12px; }
+.fio-field { display: grid; gap: 4px; }
+.fio-notice { margin: 0; }
+.fio-body .summary-row { gap: 10px; padding-top: 4px; }

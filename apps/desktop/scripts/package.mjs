@@ -9,6 +9,7 @@
  * Node rather than shell so the same script runs on the Windows runner.
  */
 import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -19,7 +20,20 @@ const builder = require.resolve('electron-builder/cli.js');
 const platform = process.argv.includes('--win') ? '--win' : '--mac';
 const fetched = spawnSync(process.execPath, [fileURLToPath(new URL('./fetch-ffmpeg.mjs', import.meta.url)), platform], { stdio: 'inherit' });
 if (fetched.status !== 0) process.exit(fetched.status ?? 1);
-const result = spawnSync(process.execPath, [builder, ...process.argv.slice(2), '--publish', 'never', `-c.electronVersion=${electronVersion}`], {
+// The Frame.io sign-in comes back to the app on the custom scheme Adobe assigned its client
+// (MAIN_VITE_FRAMEIO_REDIRECT_URI, e.g. adobe+1a2b3c://adobeid/<client id>). The installer
+// registers the app for that scheme: on macOS it must be in Info.plist, which only
+// packaging can write, so the base configuration is extended with it here.
+const config = [];
+const scheme = /^([a-z][a-z0-9+.-]*):\/\//i.exec(process.env.MAIN_VITE_FRAMEIO_REDIRECT_URI ?? '')?.[1]?.toLowerCase();
+if (scheme && scheme !== 'http' && scheme !== 'https') {
+  const dir = fileURLToPath(new URL('../out', import.meta.url));
+  mkdirSync(dir, { recursive: true });
+  const file = `${dir}/electron-builder.frameio.json`;
+  writeFileSync(file, JSON.stringify({ extends: 'electron-builder.yml', protocols: [{ name: 'Frame.io sign-in', schemes: [scheme] }] }));
+  config.push('--config', file);
+}
+const result = spawnSync(process.execPath, [builder, ...config, ...process.argv.slice(2), '--publish', 'never', `-c.electronVersion=${electronVersion}`], {
   stdio: 'inherit',
   cwd: new URL('..', import.meta.url),
 });

@@ -125,6 +125,24 @@ beforeEach(() => {
     startDailies: vi.fn(async () => ok(current)),
     stopDailies: vi.fn(async () => ok(current)),
     showDaily: vi.fn(async () => undefined),
+    connectFrameio: vi.fn(async () => ok((current = { ...current, frameio: { ...current.frameio, user: 'Dana DIT (dana@example.com)' } }))),
+    cancelFrameio: vi.fn(async () => undefined),
+    disconnectFrameio: vi.fn(async () => ok({ ...current, frameio: { ...current.frameio, user: null } })),
+    browseFrameio: vi.fn(async (accountId: string | null, workspaceId: string | null) => ({
+      ok: true as const,
+      items: !accountId
+        ? [{ id: 'acc', name: 'Halcyon Films' }]
+        : !workspaceId
+          ? [{ id: 'ws', name: 'Features' }]
+          : [
+              { id: 'p1', name: 'HALCYON', rootFolderId: 'root1', viewUrl: 'https://next.frame.io/project/p1' },
+              { id: 'p2', name: 'Other show', rootFolderId: 'root2', viewUrl: null },
+            ],
+    })),
+    setFrameioTarget: vi.fn(async (target: unknown) => ok((current = { ...current, frameio: { ...current.frameio, target: target as ProjectState['frameio']['target'] } }))),
+    publishFrameio: vi.fn(async () => ok({ ...current, frameio: { ...current.frameio, activity: 'Publishing 1 of 1 · 4A-02.mov · 0%' } })),
+    stopFrameio: vi.fn(async () => ok(current)),
+    openFrameio: vi.fn(async () => undefined),
     saveDelivery: vi.fn(async () => ok(current)),
     refreshDelivery: vi.fn(async () => ok(current)),
     startDelivery: vi.fn(async () => ok(current)),
@@ -478,6 +496,80 @@ describe('a production from the database', () => {
     expect(api.saveDailies).toHaveBeenLastCalledWith(expect.objectContaining({ codec: 'DNxHR LB' }));
     fireEvent.click(screen.getByRole('button', { name: 'Show' }));
     expect(api.showDaily).toHaveBeenCalledWith('/RAID/x.mov');
+  });
+
+  it('connects Frame.io, chooses the project, and publishes the day\'s dailies to it', async () => {
+    const done = (n: number, frameio?: ProjectState['renders'][number]['frameio']) => ({
+      takeId: `4|A|${n}`,
+      label: `4A-0${n}`,
+      clip: `A001C00${n}`,
+      output: `/RAID/4A-0${n}.mov`,
+      state: 'done' as const,
+      error: null,
+      lut: null,
+      codec: 'ProRes 422 Proxy',
+      bytes: 52_000_000,
+      warnings: [],
+      ...(frameio ? { frameio } : {}),
+    });
+    current = fresh({
+      ...logged,
+      ffmpeg: { version: '6.0' },
+      frameio: { available: true, user: null, target: null, activity: null, problem: null },
+      renders: [
+        done(1, { state: 'done', error: null, viewUrl: 'https://next.frame.io/view/f1' }),
+        done(2),
+        done(3, { state: 'failed', error: 'Part 2 of 3 would not upload: storage answered 500.', viewUrl: null }),
+      ],
+    });
+    render(
+      <StoreProvider>
+        <Dailies />
+      </StoreProvider>,
+    );
+    // Each daily says where it stands on Frame.io.
+    fireEvent.click(screen.getByRole('button', { name: 'On Frame.io ↗' }));
+    expect(api.openFrameio).toHaveBeenCalledWith('https://next.frame.io/view/f1');
+    expect(screen.getByText('Frame.io failed')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Connect Frame.io…' }));
+    expect(api.connectFrameio).toHaveBeenCalled();
+    // Signed in: one account and one workspace are chosen for you; the project is yours to pick.
+    expect(await screen.findByText(/Signed in as Dana DIT \(dana@example\.com\)\. Choose the project/)).toBeTruthy();
+    await waitFor(() => expect(api.browseFrameio).toHaveBeenCalledWith('acc', 'ws'));
+    const project = screen.getByRole('combobox', { name: 'Frame.io project' });
+    await waitFor(() => expect(within(project).getByRole('option', { name: 'HALCYON' })).toBeTruthy());
+    fireEvent.change(project, { target: { value: 'p1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Publish here' }));
+    await waitFor(() =>
+      expect(api.setFrameioTarget).toHaveBeenCalledWith({
+        accountId: 'acc',
+        accountName: 'Halcyon Films',
+        workspaceId: 'ws',
+        workspaceName: 'Features',
+        projectId: 'p1',
+        projectName: 'HALCYON',
+        rootFolderId: 'root1',
+        viewUrl: 'https://next.frame.io/project/p1',
+      }),
+    );
+    expect(await screen.findByText('1 on Frame.io · 2 to publish')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Publish 2 to Frame.io' }));
+    expect(api.publishFrameio).toHaveBeenCalled();
+    expect(await screen.findByText('Publishing 1 of 1 · 4A-02.mov · 0%')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Stop' }).at(-1)!);
+    expect(api.stopFrameio).toHaveBeenCalled();
+  });
+
+  it('says when this build cannot sign in to Frame.io', () => {
+    current = fresh({ ...logged, ffmpeg: { version: '6.0' } });
+    render(
+      <StoreProvider>
+        <Dailies />
+      </StoreProvider>,
+    );
+    expect(screen.getByText('Not in this build')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Connect Frame.io…' })).toBeNull();
   });
 
   it('preflights the real drives, delivers through the database, and retries what did not verify', async () => {
