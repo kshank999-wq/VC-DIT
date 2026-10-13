@@ -67,6 +67,8 @@ export interface Volume {
   local?: boolean;
   /** Its own speed limit for copies from the backup, bytes a second. */
   limit?: number | null;
+  /** An LTO tape: written in tape runs from the backup. */
+  tape?: boolean;
   /** A card: the saved workflow it matches, by id. */
   workflow?: string | null;
   /** What the system says the device is: its model, bus, solid state, RAID. */
@@ -104,6 +106,8 @@ export interface TransferLeg {
   relay?: boolean;
   /** Fed from a backup to a drive on the cart: a cascade copy, not an upload. */
   local?: boolean;
+  /** To an LTO tape, in the tape run. */
+  tape?: boolean;
   relayFrom?: string | null;
   waiting?: string | null;
   bytesPerSecond?: number;

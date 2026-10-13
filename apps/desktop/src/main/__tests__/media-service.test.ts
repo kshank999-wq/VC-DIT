@@ -455,6 +455,81 @@ describe('cascade copies: card → RAID → shuttle', () => {
   });
 });
 
+describe('LTO tape', () => {
+  const tapeRoot = () => join(base, 'TAPE');
+  const onTape = (card: string, file: string) => join(tapeRoot(), 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', card, `${card}R1AB`, file);
+  /** A second card, and a tape: an Archive volume marked as tape. */
+  const setUp = async () => {
+    const second = join(base, 'B001');
+    await mkdir(join(second, 'B001R1AB'), { recursive: true });
+    await writeFile(join(second, 'B001R1AB', 'B001C001_261005_R1AB.mxf'), 'b take one');
+    await mkdir(tapeRoot());
+    mounts.push(second, tapeRoot());
+    await service.poll();
+    await vi.waitFor(() => expect(service.state().volumes).toHaveLength(5));
+    await service.setRole(tapeRoot(), 'Archive');
+    expect(service.state().volumes.find((volume) => volume.name === 'TAPE')!.tape).toBe(false);
+    expect(await service.setTape(tapeRoot(), true)).toEqual({ ok: true });
+    return second;
+  };
+
+  it('knows an LTFS volume is a tape, and a tape is always fed from the backup', async () => {
+    await setUp();
+    const tape = service.state().volumes.find((volume) => volume.name === 'TAPE')!;
+    expect(tape).toMatchObject({ tape: true, relay: true });
+    await service.setTape(tapeRoot(), false);
+    (service as unknown as { volumes: Map<string, { volume: { filesystem: string } }> }).volumes.get(tapeRoot())!.volume.filesystem = 'ltfs';
+    // Not tape by choice wins; with no choice, LTFS is tape.
+    expect(service.tapeFor(tapeRoot())).toBe(false);
+    (service as unknown as { settings: { tape: Record<string, boolean> } }).settings.tape = {};
+    expect(service.tapeFor(tapeRoot())).toBe(true);
+  });
+
+  it('holds the day\'s cards for the tape run, then writes them all in one pass and reads them back in one', async () => {
+    (service as unknown as { deps: { eject: (path: string) => Promise<null> } }).deps.eject = async (path) => {
+      mounts = mounts.filter((mount) => mount !== path);
+      return null;
+    };
+    const second = await setUp();
+    await service.ingest(request([mounts[0]!, second], [mounts[1]!, tapeRoot()]));
+    await settle();
+    // Each card went to the RAID alone; the tape waits for its run, and cannot leave yet.
+    expect(plans.map((plan) => plan.legs.map((leg) => leg.name))).toEqual([['RAID'], ['RAID']]);
+    const tapeLegs = () => service.state().jobs.map((job) => job.legs.find((leg) => leg.name === 'TAPE')!);
+    expect(tapeLegs().map((leg) => [leg.tape, leg.relay, leg.waiting])).toEqual([
+      [true, true, expect.stringMatching(/Waiting for the tape run/)],
+      [true, true, expect.stringMatching(/Waiting for the tape run/)],
+    ]);
+    expect((await service.eject(tapeRoot())).ok).toBe(false);
+    // A file changes on the RAID before the run: it is refused, the rest go.
+    await writeFile(join(base, 'RAID', 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'B001', 'B001R1AB', 'B001C001_261005_R1AB.mxf'), 'b TAMPERED');
+
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: true, cards: 2 });
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: false, reason: 'The tape is already being written.' });
+    expect(service.busy()).toBe(true);
+    await settle();
+    // One run, from the RAID, both cards' files, keeping their folders; reports written per card afterwards.
+    expect(plans).toHaveLength(3);
+    expect(plans[2]).toMatchObject({ sourceRoot: mounts[1], reports: false });
+    expect(plans[2]!.files.map((file) => file.path)).toEqual([
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015R1AB/A015C001_261005_R1AB.mxf',
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/A015/A015R1AB/A015C002_261005_R1AB.mxf',
+      'HALCYON/SHOOT_DAY_014_2026-10-05/CAMERA_ORIGINALS/B001/B001R1AB/B001C001_261005_R1AB.mxf',
+    ]);
+    expect(await readFile(onTape('A015', 'A015C002_261005_R1AB.mxf'), 'utf8')).toBe('take two');
+    await expect(readFile(onTape('B001', 'B001C001_261005_R1AB.mxf'))).rejects.toThrow();
+    const [a, b] = tapeLegs();
+    expect(a).toMatchObject({ failed: false, verifyPct: 100, waiting: null });
+    expect(b).toMatchObject({ failed: true, problemFiles: 1 });
+    // Each card has its own ASC MHL in its folder on the tape.
+    expect((await readdir(join(tapeRoot(), 'HALCYON', 'SHOOT_DAY_014_2026-10-05', 'CAMERA_ORIGINALS', 'A015', 'ascmhl'))).some((name) => name.endsWith('.mhl'))).toBe(true);
+    expect(records.filter((record) => record.id === 'A015').at(-1)!.destinations[1]).toMatchObject({ tape: true });
+    // B001 failed on tape: the tape still may not leave.
+    expect((await service.eject(tapeRoot())).ok).toBe(false);
+    expect(service.writeTape(tapeRoot())).toEqual({ ok: false, reason: 'Nothing is waiting for this tape.' });
+  });
+});
+
 describe('renaming on offload', () => {
   it('copies .mp4 clips named after the card, reads the card by its own names, and clears and ejects it as usual', async () => {
     const card = mounts[0]!;

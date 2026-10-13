@@ -100,6 +100,10 @@ A workflow is a saved way to offload a kind of card: **any camera**, a **camera 
 - **Start by itself**: once a matching card is in, a production is open and every one of the workflow's drives is mounted, the copy starts into the open day. Until then the card says why ("Waiting for SHUTTLE_02 to start ARRI to both."). A card already copied today and plugged in again is not started again; that is the DIT's call. Each card is tried once while it stays in.
 - **Dailies after**: once the card has verified on every drive it was copied to from the card, the day's dailies render with the production's dailies settings. The transfer row says what happened ("Dailies started: 12 takes.", or why not).
 
+#### 4.3.4 LTO tape (LTFS)
+
+A destination can be an **LTO tape** (the LTO tape box on its tile; an LTFS volume is one unless the DIT says otherwise). A tape is always fed from the backup, never from the card, and not card by card: each card's copy to it waits ("Waiting for the tape run"), and **Write to tape (N cards)** writes every waiting card in one run. The run reads the backup and writes every file in turn, keeping the backup's folders, then reads every file back from the tape in the same order and checks it against the checksum taken from the card, so the tape streams instead of winding back and forth for each card. There is one run for each backup and checksum. Each card then gets its own ASC MHL in its folder on the tape, and its transfer log in the day's REPORTS. A file whose backup copy no longer matches the card is refused; a file stopped part-way waits for the next run; a failed one can be retried and goes in the next run. **Stop tape run** stops it. The tape cannot be ejected while a card waits for it or failed on it, and a verified tape copy counts as a local copy. A tape's own speed limit applies to its runs.
+
 ### 4.4 Naming & Folder Automation
 
 - Configurable naming convention centered on Production → Shoot Day → Scene → Setup → Take/Clip.

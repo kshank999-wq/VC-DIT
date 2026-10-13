@@ -276,6 +276,7 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       local: volume.local ?? true,
       limit: volume.limit ?? null,
       workflow: volume.workflow ?? null,
+      tape: volume.tape ?? false,
       device: volume.device,
     };
   });
@@ -315,6 +316,7 @@ export const fromEngine = (state: AppState, media: MediaState): Pick<AppState, '
       targetDir: leg.targetDir,
       relay: leg.relay,
       local: leg.local ?? false,
+      tape: leg.tape ?? false,
       relayFrom: leg.relayFrom,
       waiting: leg.waiting,
       bytesPerSecond: leg.bytesPerSecond,

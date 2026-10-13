@@ -136,6 +136,9 @@ beforeEach(() => {
     pauseRelays: vi.fn(async () => undefined),
     setRelayLimit: vi.fn(async () => undefined),
     setDriveLimit: vi.fn(async () => ({ ok: true })),
+    setTape: vi.fn(async () => ({ ok: true })),
+    writeTape: vi.fn(async () => ({ ok: true, cards: 2 })),
+    stopTape: vi.fn(async () => undefined),
     saveWorkflow: vi.fn(async () => ({ ok: true, id: 'wf-1' })),
     removeWorkflow: vi.fn(async () => undefined),
     checkClear: vi.fn(async () => CHECK),
@@ -523,6 +526,36 @@ describe('a shuttle on its way out', () => {
     expect(within(tile()).getByText('1 card verified · ready to go')).toBeTruthy();
     fireEvent.click(within(tile()).getByRole('button', { name: '⏏ Eject SHTL_08' }));
     await waitFor(() => expect(media.eject).toHaveBeenCalledWith(shuttle.id));
+  });
+});
+
+describe('an LTO tape on Intake', () => {
+  it('marks a drive as tape, says how many cards wait for it, and writes them in one run', async () => {
+    const tape = { ...raid, id: '/Volumes/LTO_001', name: 'LTO_001', mountPath: '/Volumes/LTO_001', role: 'Archive' as const, suggestedRole: 'Archive' as const, filesystem: 'ltfs', tape: true, relay: true };
+    const waiting = { ...leg, id: tape.id, name: 'LTO_001', copyPct: 0, verifyPct: 0, relay: true, tape: true, waiting: 'Waiting for the tape run: Write to tape when the day\'s cards are in.' };
+    media.state.mockResolvedValueOnce({
+      volumes: [card, raid, tape],
+      folders: [],
+      relaysPaused: false,
+      relayLimit: null,
+      jobs: [
+        { ...job({ copyPct: 100, verifyPct: 100 }), running: false, legs: [{ ...leg, copyPct: 100, verifyPct: 100 }, waiting] },
+        { ...job({ copyPct: 100, verifyPct: 100 }), id: 'A016', card: 'A016', running: false, legs: [{ ...leg, copyPct: 100, verifyPct: 100 }, waiting] },
+      ],
+    });
+    mount(<Intake />);
+    const out = screen.getByRole('region', { name: 'Destinations' });
+    await waitFor(() => within(out).getByRole('group', { name: 'LTO_001 tape' }));
+    const tile = within(out).getByText('LTO_001').closest('.offload-tile') as HTMLElement;
+    expect((within(tile).getByRole('checkbox', { name: /LTO tape/ }) as HTMLInputElement).checked).toBe(true);
+    // A tape is always fed from the backup: no card-or-backup switch.
+    expect(within(tile).queryByRole('group', { name: 'How LTO_001 is fed' })).toBeNull();
+    fireEvent.click(within(tile).getByRole('button', { name: 'Write to tape (2 cards)' }));
+    await waitFor(() => expect(media.writeTape).toHaveBeenCalledWith(tape.id));
+    // The RAID is not a tape: ticking the box makes it one.
+    const raidTile = within(out).getByText('RAID').closest('.offload-tile') as HTMLElement;
+    fireEvent.click(within(raidTile).getByRole('checkbox', { name: /LTO tape/ }));
+    await waitFor(() => expect(media.setTape).toHaveBeenCalledWith(raid.id, true));
   });
 });
 

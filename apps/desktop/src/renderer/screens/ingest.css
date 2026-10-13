@@ -253,3 +253,7 @@
 .relink-card { display: grid; gap: 8px; border-color: var(--tone, var(--border)); }
 .relink-card p { margin: 0; }
 .relink-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+/* An LTO tape: written in runs, not card by card. */
+.tape-run { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.tape-check { display: inline-flex; align-items: center; gap: 4px; }

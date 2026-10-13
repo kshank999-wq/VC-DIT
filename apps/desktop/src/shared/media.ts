@@ -39,6 +39,8 @@ export interface MediaVolume {
   local?: boolean;
   /** Its own speed limit for copies from the backup, bytes a second; null for none. */
   limit?: number | null;
+  /** An LTO tape (LTFS): fed from the backup, written in one run for many cards (Write to tape), then verified in one pass. */
+  tape?: boolean;
   /** What the device itself is, from the system: its model, how it is connected, solid state or spinning. */
   device: DeviceInfo;
   /** A card: the saved workflow it matches, by id. */
@@ -142,6 +144,8 @@ export interface LegSnapshot {
   relay: boolean;
   /** A drive on the cart: fed from a backup, a cascade copy rather than an upload. */
   local?: boolean;
+  /** To an LTO tape: written in the tape run, not card by card. */
+  tape?: boolean;
   /** The backup it is (or will be) read from, by name, once known. */
   relayFrom: string | null;
   /** Why a relay is not moving now: "Paused", "Waiting for RAID: plug it back in to carry on.". */

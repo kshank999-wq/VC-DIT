@@ -23,6 +23,8 @@ export interface WorkerPlan {
   limit?: number | null;
   chunkBytes?: number;
   contexts: Record<string, ReportContext>;
+  /** Write each destination's MHL and transfer log at the end (default); a tape run of many cards writes them per card itself. */
+  reports?: boolean;
 }
 
 /** What the service may tell a running worker. */
@@ -53,7 +55,7 @@ void (async () => {
       limit: () => limit,
       onProgress: (progress) => post({ type: 'progress', progress }),
     });
-    const reports = await writeReports(result, plan.legs, plan.contexts, plan.allLegs);
+    const reports = plan.reports === false ? [] : await writeReports(result, plan.legs, plan.contexts, plan.allLegs);
     post({ type: 'done', result, reports });
   } catch (cause) {
     post({ type: 'error', message: cause instanceof Error ? cause.message : String(cause) });

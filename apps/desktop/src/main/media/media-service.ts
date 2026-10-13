@@ -1,6 +1,6 @@
 import { statSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
+import { basename, join, relative } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import {
   DESTINATION_ROLES,
@@ -21,7 +21,7 @@ import {
 } from '../../shared/media';
 import { BRAND_NAME, brandOf } from '../../shared/brands';
 import type { TransferRecord } from '../db/production-db';
-import type { ReportContext } from './reports';
+import { writeReports, type ReportContext } from './reports';
 import { cardFolder, destinationProblem, headroom, isRemote, renameForCard, reportsFolder } from './rules';
 import type { FormatRule } from '../../shared/project';
 import { checkClear, clearCardFiles } from './clear';
@@ -92,6 +92,8 @@ interface Settings {
   /** Most bytes a second a copy from the backup may write to one drive or folder, by volume (name and size) or folder id. */
   limits?: Record<string, number>;
   workflows?: Workflow[];
+  /** The operator's choice of LTO tape or not, by volume (name and size) or folder id; else LTFS volumes are tape. */
+  tape?: Record<string, boolean>;
 }
 
 interface Leg {
@@ -106,6 +108,8 @@ interface Leg {
   relayFrom: string | null;
   /** A drive on the cart (not a network share or cloud folder): from the backup it is a cascade copy, not an upload. */
   local: boolean;
+  /** An LTO tape: held for the tape run (Write to tape), not copied card by card. */
+  tape: boolean;
   /** Why a relay is not moving; when it may try again after its destination went away. */
   waiting: string | null;
   retryAt: number;
@@ -166,16 +170,19 @@ const roleKey = (name: string, totalBytes: number) => `${name}|${Math.round(tota
 
 const VERIFIED = new Set(['verified', 'already-there']);
 const UPLOAD_STOPPED = 'Upload stopped. Retry to carry on from the backup.';
+const TAPE_WAITING = 'Waiting for the tape run: Write to tape when the day\'s cards are in.';
+const portable = (path: string) => path.split(/[\\/]+/).filter(Boolean).join('/');
 const RELAY_RETRY_MS = 60_000;
 const backupLost = (name: string) => `${name} was disconnected during the upload.`;
 
-const freshLeg = (relay: boolean, local: boolean) => ({
+const freshLeg = (relay: boolean, local: boolean, tape = false) => ({
   live: null,
   outcomes: new Map<string, FileOutcome>(),
   error: null,
-  relay,
+  relay: relay || tape,
   relayFrom: null,
   local,
+  tape,
   waiting: null,
   retryAt: 0,
   bytesPerSecond: 0,
@@ -201,6 +208,8 @@ export class MediaService {
   /** Cards a workflow has already tried to start, while they stay mounted. */
   private readonly autoTried = new Set<string>();
   private autoStarting = false;
+  /** The tape run going now: the tape, the backups it reads, and the cards in it. */
+  private tapeRun: { id: string; roots: string[]; worker: TransferRunner | null; stopping: boolean } | null = null;
   private readonly platform: NodeJS.Platform;
   private settings: Settings = { roles: {}, folders: [], relay: {}, relaysPaused: false, relayLimit: null };
   private readonly volumes = new Map<string, VolumeEntry>();
@@ -246,6 +255,7 @@ export class MediaService {
       running.work.stopping = 'pause';
       running.worker.postMessage('stop');
     }
+    this.stopTape();
   }
 
   /**
@@ -331,6 +341,182 @@ export class MediaService {
     return { ok: true };
   }
 
+  // ------------------------------------------------ LTO tape
+
+  /** Is this destination an LTO tape? The operator's choice, else an LTFS volume is one. */
+  tapeFor(id: string): boolean {
+    const key = this.driveKey(id);
+    const chosen = key ? this.settings.tape?.[key] : undefined;
+    if (chosen !== undefined) return chosen;
+    return /ltfs/i.test(this.volumes.get(id)?.volume.filesystem ?? '');
+  }
+
+  async setTape(id: string, tape: boolean): Promise<{ ok: boolean; reason?: string }> {
+    const key = this.driveKey(id);
+    if (!key) return { ok: false, reason: 'That destination is no longer available.' };
+    this.settings.tape = { ...(this.settings.tape ?? {}), [key]: tape };
+    await this.saveSettings();
+    this.emit(true);
+    return { ok: true };
+  }
+
+  /**
+   * Write to tape: every card waiting for this tape, in one run from its
+   * backup, every file written in turn and then every file read back in
+   * the same order, so the tape streams instead of winding back and forth
+   * card by card. One run for each backup and checksum; each card gets its
+   * own MHL and transfer log on the tape.
+   */
+  writeTape(id: string): { ok: true; cards: number } | { ok: false; reason: string } {
+    const drive = this.destinations().find((candidate) => candidate.id === id);
+    if (!drive || !this.tapeFor(id)) return { ok: false, reason: 'That tape is not in.' };
+    if (this.tapeRun) return { ok: false, reason: 'The tape is already being written.' };
+    if (!this.deps.canStartTransfers()) return { ok: false, reason: 'Activate VC DIT to write to tape.' };
+    const waiting: { job: Job; leg: Leg; backup: Leg }[] = [];
+    let skipped = 0;
+    for (const job of this.jobs) {
+      const leg = job.legs.find((candidate) => candidate.tape && (candidate.plan.id === id || candidate.plan.root === drive.root));
+      if (!leg || !job.finishedAt || leg.live || job.files.every((file) => leg.outcomes.has(file.path))) continue;
+      const backup = this.backupFor(job);
+      // The tape keeps the backup's folders: a card whose folder is named differently there waits for its own run.
+      if (!backup || !reachable(backup.plan.targetDir) || portable(relative(backup.plan.root, backup.plan.targetDir)) !== portable(relative(leg.plan.root, leg.plan.targetDir))) {
+        skipped += 1;
+        continue;
+      }
+      waiting.push({ job, leg, backup });
+    }
+    if (waiting.length === 0) return { ok: false, reason: skipped ? 'The cards waiting for this tape cannot be read from their backup now. Plug the backup in.' : 'Nothing is waiting for this tape.' };
+    const groups = new Map<string, typeof waiting>();
+    for (const item of waiting) {
+      const key = `${item.backup.plan.root}\u0000${item.job.checksum}`;
+      groups.set(key, [...(groups.get(key) ?? []), item]);
+    }
+    this.tapeRun = { id, roots: [drive.root, ...new Set(waiting.map((item) => item.backup.plan.root))], worker: null, stopping: false };
+    for (const { leg } of waiting) {
+      leg.waiting = null;
+      leg.live = { phase: 'copying', totalBytes: 0, copiedBytes: 0, verifiedBytes: 0, problemFiles: 0, error: null };
+    }
+    this.emit(true);
+    void (async () => {
+      try {
+        for (const group of groups.values()) {
+          if (this.tapeRun?.stopping) break;
+          await this.tapeGroup(drive, group);
+        }
+      } finally {
+        for (const { job, leg } of waiting) {
+          leg.live = null;
+          leg.bytesPerSecond = 0;
+          leg.etaSeconds = null;
+          leg.currentFile = null;
+          if (job.files.some((file) => !leg.outcomes.has(file.path))) leg.waiting = TAPE_WAITING;
+          this.record(job);
+        }
+        this.tapeRun = null;
+        this.emit(true);
+      }
+    })();
+    return { ok: true, cards: waiting.length };
+  }
+
+  /** Stop the tape run: what was not verified stays waiting for the next one. */
+  stopTape(): void {
+    if (!this.tapeRun) return;
+    this.tapeRun.stopping = true;
+    this.tapeRun.worker?.postMessage('stop');
+  }
+
+  /** One backup's cards to the tape, as one transfer: paths kept under the production's folders, as on the backup. */
+  private tapeGroup(drive: { id: string; name: string; root: string }, group: { job: Job; leg: Leg; backup: Leg }[]): Promise<void> {
+    const backupRoot = group[0]!.backup.plan.root;
+    const method = group[0]!.job.checksum;
+    const owner = new Map<string, { job: Job; leg: Leg; path: string }>();
+    const files: SourceFile[] = [];
+    for (const { job, leg, backup } of group) {
+      const prefix = portable(relative(backupRoot, backup.plan.targetDir));
+      for (const file of job.files) {
+        if (leg.outcomes.has(file.path)) continue;
+        const hash = job.hashes.get(file.path)?.hash ?? null;
+        if (!VERIFIED.has(backup.outcomes.get(file.path)?.state ?? '') || !hash) {
+          leg.outcomes.set(file.path, { state: 'failed', error: `Not verified on ${backup.plan.name}, so it was not written to tape.` });
+          continue;
+        }
+        const path = `${prefix}/${file.path}`;
+        owner.set(path, { job, leg, path: file.path });
+        files.push({ path, size: file.size, mtimeMs: file.mtimeMs, expected: hash });
+      }
+    }
+    if (files.length === 0) return Promise.resolve();
+    const tape: LegPlan = { id: drive.id, name: drive.name, root: drive.root, targetDir: drive.root };
+    const plan: WorkerPlan = {
+      sourceRoot: backupRoot,
+      files,
+      legs: [tape],
+      allLegs: [tape],
+      method,
+      sourceLost: backupLost(group[0]!.backup.plan.name),
+      limit: this.limitFor(drive.id),
+      contexts: {},
+      reports: false,
+    };
+    return new Promise((resolve) => {
+      const worker: TransferRunner = this.deps.startWorker ? this.deps.startWorker(plan) : new Worker(this.deps.workerPath, { workerData: plan });
+      if (this.tapeRun) this.tapeRun.worker = worker;
+      let settled = false;
+      const end = (failure: string | null) => {
+        if (settled) return;
+        settled = true;
+        if (failure) {
+          for (const { leg, path } of owner.values()) if (!leg.outcomes.has(path)) leg.outcomes.set(path, { state: 'failed', error: failure });
+          for (const { leg } of group) leg.error = failure;
+        }
+        resolve();
+      };
+      worker.on('message', (message: WorkerMessage) => {
+        if (message.type === 'progress') {
+          const live = message.progress.legs[drive.id];
+          for (const { leg } of group) {
+            if (live) leg.live = live;
+            leg.bytesPerSecond = message.progress.bytesPerSecond;
+            leg.currentFile = message.progress.currentFile ?? null;
+          }
+          this.emit();
+        } else if (message.type === 'done') {
+          // Each file's result back to its card; a file stopped part-way is still to write, next run.
+          for (const record of message.result.files) {
+            const mine = owner.get(record.path);
+            const outcome = record.legs[drive.id];
+            if (!mine || !outcome) continue;
+            if (outcome.state === 'failed' && outcome.error === STOPPED) continue;
+            mine.leg.outcomes.set(mine.path, outcome);
+          }
+          const error = message.result.legs[drive.id]?.error ?? null;
+          void (async () => {
+            // Each card's own MHL and log, in its folder on the tape.
+            for (const { job, leg } of group) {
+              leg.error = error && error !== STOPPED ? error : null;
+              const records = message.result.files
+                .filter((record) => owner.get(record.path)?.job === job)
+                .map((record) => ({ ...record, path: owner.get(record.path)!.path, legs: { [leg.plan.id]: record.legs[drive.id]! } }));
+              if (records.length === 0) continue;
+              const written = await writeReports(
+                { ...message.result, files: records, legs: { [leg.plan.id]: { ...message.result.legs[drive.id]!, error: null } } },
+                [leg.plan],
+                { [leg.plan.id]: { card: job.card, tool: this.deps.tool, reportsDir: leg.reportsDir } },
+              ).catch((cause: unknown) => [{ legId: leg.plan.id, mhl: null, csv: null, error: cause instanceof Error ? cause.message : String(cause) }]);
+              if (!leg.error && written[0]?.error) leg.error = `Written to tape and verified, but the transfer log could not be written: ${written[0].error}`;
+            }
+            end(null);
+          })();
+        } else end(`The tape run stopped: ${message.message}`);
+      });
+      worker.on('error', (error) => end(`The tape run stopped: ${error.message}`));
+      worker.on('exit', (code) => {
+        if (code !== 0) end('The tape run stopped unexpectedly.');
+      });
+    });
+  }
+
   /** A destination's own speed limit, or null. */
   limitFor(id: string): number | null {
     const key = this.driveKey(id);
@@ -384,7 +570,7 @@ export class MediaService {
 
   /** Something is copying or uploading now, or a card is waiting to copy. */
   busy(): boolean {
-    return this.cardBusy() || this.relayRunning.size > 0;
+    return this.cardBusy() || this.relayRunning.size > 0 || this.tapeRun !== null;
   }
 
   /** A card is copying or checking, or waiting to: quitting now would leave it not safe to format. */
@@ -405,6 +591,7 @@ export class MediaService {
           relay: this.relayFor(entry.volume.id),
           local: this.isLocal(entry.volume.id),
           limit: this.limitFor(entry.volume.id),
+          tape: DESTINATION_ROLES.includes(entry.volume.role) ? this.tapeFor(entry.volume.id) : false,
           workflow: this.workflowFor(entry.volume)?.id ?? null,
         }))
         .sort((a, b) => a.name.localeCompare(b.name)),
@@ -653,6 +840,7 @@ export class MediaService {
 
     /** Volumes a queued or running transfer reads from or writes to. */
   private inUse(volumeId: string): boolean {
+    if (this.tapeRun?.roots.includes(volumeId)) return true;
     const active = [...(this.current ? [this.current.work] : []), ...[...this.relayRunning.values()].map((run) => run.work), ...this.queue, ...this.relayQueue];
     // Only the drives a piece of work touches: a card copy reads the card and writes its local copies; an
     // upload reads one backup and writes its uploads. A shuttle is free to go while the RAID feeds the cloud.
@@ -683,6 +871,7 @@ export class MediaService {
 
   /** Is this destination fed from the backup (true) or straight from the card? The operator's choice, else by what it is. */
   relayFor(id: string): boolean {
+    if (this.tapeFor(id)) return true;
     const volume = this.volumes.get(id)?.volume;
     const folder = this.settings.folders.find((candidate) => candidate.id === id);
     const chosen = this.settings.relay[volume ? roleKey(volume.name, volume.totalBytes) : id];
@@ -739,13 +928,13 @@ export class MediaService {
     // Every card mounted now, picked or not, is off limits as a destination.
     const allCards = [...this.volumes.values()].filter((entry) => SOURCE_ROLES.includes(entry.volume.role)).map((entry) => entry.volume.mountPath);
 
-    const destinations: { id: string; name: string; root: string; freeBytes: number; relay: boolean; local: boolean }[] = [];
+    const destinations: { id: string; name: string; root: string; freeBytes: number; relay: boolean; local: boolean; tape?: boolean }[] = [];
     for (const id of request.destinations) {
       const volume = this.volumes.get(id)?.volume;
       const folder = this.settings.folders.find((candidate) => candidate.id === id);
       if (volume) {
         if (!DESTINATION_ROLES.includes(volume.role)) return { ok: false, reason: `${volume.name} is not marked as a destination, shuttle or archive.` };
-        destinations.push({ id, name: volume.name, root: volume.mountPath, freeBytes: volume.freeBytes, relay: this.relayFor(id), local: this.isLocal(id) });
+        destinations.push({ id, name: volume.name, root: volume.mountPath, freeBytes: volume.freeBytes, relay: this.relayFor(id), local: this.isLocal(id), tape: this.tapeFor(id) });
       } else if (folder) {
         const capacity = await capacityOf(folder.path);
         if (!capacity) return { ok: false, reason: `${folder.name} cannot be reached.` };
@@ -811,7 +1000,7 @@ export class MediaService {
         legs: destinations.map((destination) => ({
           plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: cardFolder(destination.root, request, sound, card.name) },
           reportsDir: reportsFolder(destination.root, request),
-          ...freshLeg(destination.relay, destination.local),
+          ...freshLeg(destination.relay, destination.local, destination.tape === true),
         })),
         bytesPerSecond: 0,
         etaSeconds: null,
@@ -913,6 +1102,12 @@ export class MediaService {
       if ([...this.relayRunning.values()].some((run) => run.work.job === job && run.work.legIds.includes(leg.plan.id))) continue;
       const pending = job.files.filter((file) => !leg.outcomes.has(file.path));
       if (pending.length === 0) continue;
+      // A tape is written in one run for the day's cards, not card by card.
+      if (leg.tape) {
+        if (!this.tapeRun?.roots.includes(leg.plan.root)) leg.waiting = TAPE_WAITING;
+        leg.relayFrom = this.backupFor(job)?.plan.id ?? leg.relayFrom;
+        continue;
+      }
       const backup = this.backupFor(job);
       if (!backup) {
         for (const file of pending) leg.outcomes.set(file.path, { state: 'failed', error: 'Not verified on any backup, so there was nothing checked to upload. Copy the card again.' });
@@ -1130,6 +1325,7 @@ export class MediaService {
           relay: leg.relay,
           relayFrom: leg.relayFrom,
           local: leg.local,
+          tape: leg.tape,
         })),
       });
     } catch {
@@ -1167,7 +1363,7 @@ export class MediaService {
           const relay = destination.relay === true;
           if (interrupted && !relay) for (const file of record.files) if (!outcomes.has(file.path)) outcomes.set(file.path, { state: 'failed', error: reason });
           return {
-            ...freshLeg(relay, destination.local ?? !isRemote(destination.root, destination.name)),
+            ...freshLeg(relay, destination.local ?? !isRemote(destination.root, destination.name), destination.tape === true),
             plan: { id: destination.id, name: destination.name, root: destination.root, targetDir: destination.targetDir },
             reportsDir: destination.reportsDir,
             outcomes,
@@ -1378,6 +1574,7 @@ export class MediaService {
       targetDir: leg.plan.targetDir,
       relay: leg.relay,
       local: leg.local,
+      tape: leg.tape,
       relayFrom: job.legs.find((other) => other.plan.id === leg.relayFrom)?.plan.name ?? null,
       waiting: null as string | null,
       bytesPerSecond: leg.bytesPerSecond,

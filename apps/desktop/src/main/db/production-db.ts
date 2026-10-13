@@ -91,6 +91,8 @@ export interface TransferRecord {
     relayFrom?: string | null;
     /** A drive on the cart rather than the network: fed from the backup, it is a cascade copy, not an upload. */
     local?: boolean;
+    /** An LTO tape: written in a tape run. */
+    tape?: boolean;
   }[];
 }
 
@@ -518,6 +520,9 @@ MIGRATIONS.push(`
   alter table clip add column source_path text;
   alter table production add column rename_clips integer not null default 0;
 `);
+
+// LTO tape (spec §4.3.4): a destination written in tape runs, not card by card.
+MIGRATIONS.push(`alter table transfer_destination add column tape integer not null default 0;`);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
@@ -1076,7 +1081,7 @@ export class ProductionDb {
       ]);
       for (const [position, destination] of record.destinations.entries()) {
         this.run(
-          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error, relay, relay_from, local) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          'insert into transfer_destination (day, transfer_id, leg_id, position, name, root, target_dir, reports_dir, error, relay, relay_from, local, tape) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
           [
             record.day,
             record.id,
@@ -1090,6 +1095,7 @@ export class ProductionDb {
             destination.relay ? 1 : 0,
             destination.relayFrom ?? null,
             destination.local === undefined ? null : destination.local ? 1 : 0,
+            destination.tape ? 1 : 0,
           ],
         );
       }
@@ -1148,6 +1154,7 @@ export class ProductionDb {
         relay: Number(leg['relay']) === 1,
         relayFrom: (leg['relay_from'] as string | null) ?? null,
         ...(leg['local'] === null || leg['local'] === undefined ? {} : { local: Number(leg['local']) === 1 }),
+        ...(Number(leg['tape'] ?? 0) === 1 ? { tape: true } : {}),
       }));
       const clips = this.rows<Record<string, SqlValue>>('select * from clip where day = ? and transfer_id = ? order by id', [day, id]);
       const byLeg = new Map(destinations.map((destination) => [destination.id, destination]));

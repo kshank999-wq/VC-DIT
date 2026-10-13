@@ -65,6 +65,18 @@ export function Intake() {
   const setLimit = (id: string, limit: number | null) => {
     if (media) void media.setDriveLimit(id, limit).then(answer);
   };
+  const setTape = (id: string, tape: boolean) => {
+    if (media) void media.setTape(id, tape).then(answer);
+  };
+  /** Cards waiting for a tape, and whether its run is going now. */
+  const tapeWork = (volume: Volume) => {
+    const legs = state.jobs.flatMap((job) => job.legs.filter((leg) => leg.tape && leg.id === volume.id));
+    // Held for the next run, the engine says so; in the run, it does not, until it has verified.
+    return {
+      waiting: legs.filter((leg) => !leg.failed && !!leg.waiting).length,
+      writing: legs.some((leg) => !leg.failed && !leg.waiting && legState(leg) !== 'verified'),
+    };
+  };
   const setRole = (volume: Volume, role: VolumeRole) => {
     dispatch({ type: 'setVolumeRole', volume: volume.id, role });
     if (media) void media.setRole(volume.id, role).then(answer);
@@ -332,6 +344,8 @@ export function Intake() {
                 limit={volume.limit ?? null}
                 onLimit={media ? (limit) => setLimit(volume.id, limit) : undefined}
                 onRelay={(relay) => setRelay(volume.id, relay)}
+                tape={volume.tape ? { ...tapeWork(volume), write: () => media && void media.writeTape(volume.id).then(answer), stop: () => media && void media.stopTape() } : null}
+                onTape={media ? (tape) => setTape(volume.id, tape) : undefined}
                 onToggle={() => dispatch({ type: 'toggleDestination', destination: volume.id })}
                 extra={volume.role === 'Shuttle' || volume.role === 'Archive' ? <ShuttleOut volume={volume} /> : undefined}
                 role={<select className="select offload-role" aria-label={`Role of ${volume.name}`} value={volume.role} onChange={(event) => setRole(volume, event.target.value as VolumeRole)}>{ROLES.map((role) => <option key={role}>{role}</option>)}</select>}
@@ -467,6 +481,8 @@ function DestinationTile({
   limit,
   onLimit,
   onRelay,
+  tape,
+  onTape,
   onToggle,
   onRemove,
   role,
@@ -486,6 +502,9 @@ function DestinationTile({
   limit: number | null;
   onLimit?: (limit: number | null) => void;
   onRelay: (relay: boolean) => void;
+  /** An LTO tape: cards waiting for its run, whether it is being written, and the buttons. */
+  tape?: { waiting: number; writing: boolean; write: () => void; stop: () => void } | null;
+  onTape?: (tape: boolean) => void;
   onToggle: () => void;
   onRemove?: () => void;
   role?: ReactNode;
@@ -507,7 +526,26 @@ function DestinationTile({
         <span className="offload-sub faint">{free} free</span>
       </label>
       <ProgressBar pct={fillPct} color="var(--s-working)" label={`${name} capacity used`} />
-      <div className="relay-switch" role="group" aria-label={`How ${name} is fed`}>
+      {tape ? (
+        <div className="tape-run" role="group" aria-label={`${name} tape`}>
+          <span className="small">LTO tape · written from the backup, all waiting cards in one run</span>
+          {tape.writing ? (
+            <button type="button" className="btn small" onClick={tape.stop}>
+              Stop tape run
+            </button>
+          ) : (
+            <button type="button" className="btn small" disabled={tape.waiting === 0} onClick={tape.write} title="Write every card waiting for this tape, then read it all back in one pass">
+              Write to tape{tape.waiting ? ` (${tape.waiting} card${tape.waiting === 1 ? '' : 's'})` : ''}
+            </button>
+          )}
+        </div>
+      ) : null}
+      {onTape ? (
+        <label className="tape-check small">
+          <input type="checkbox" checked={!!tape} onChange={(event) => onTape(event.target.checked)} /> LTO tape
+        </label>
+      ) : null}
+      <div className="relay-switch" role="group" aria-label={`How ${name} is fed`} hidden={!!tape}>
         <button type="button" aria-pressed={!relay} title="Copied straight from the card, and checked, before the card counts as done" onClick={() => onRelay(false)}>
           From card
         </button>
@@ -525,7 +563,7 @@ function DestinationTile({
         </button>
       </div>
       {/* Its own speed, for copies from the backup: a shared NAS, a slow network drive. */}
-      {relay && onLimit ? (
+      {relay && onLimit && !tape ? (
         <label className="drive-limit" title="The most copies from the backup may write to this drive. Copies straight from the card are never limited.">
           <span className="faint small">Speed</span>
           <select className="select" aria-label={`Speed limit for ${name}`} value={limit ?? ''} onChange={(event) => onLimit(event.target.value ? Number(event.target.value) : null)}>

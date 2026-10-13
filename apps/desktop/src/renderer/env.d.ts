@@ -73,6 +73,11 @@ interface MediaApi {
     dailies: boolean;
   }) => Promise<{ ok: true; id: string } | { ok: false; reason: string }>;
   removeWorkflow: (id: string) => Promise<void>;
+  /** Mark a destination as an LTO tape (or not). */
+  setTape: (id: string, tape: boolean) => Promise<{ ok: boolean; reason?: string }>;
+  /** Write every card waiting for this tape in one run, then verify it in one pass. */
+  writeTape: (id: string) => Promise<{ ok: true; cards: number } | { ok: false; reason: string }>;
+  stopTape: () => Promise<void>;
   /** The system's own icon for a drive or folder (Explorer's on Windows, Finder's on macOS), as a data URL; null where there is none. */
   icon: (path: string) => Promise<string | null>;
   /** Eject a card or drive, as Finder or Explorer would; ok once it has really gone. */
