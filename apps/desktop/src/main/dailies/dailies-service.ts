@@ -1,12 +1,13 @@
 import { access, copyFile, mkdir, mkdtemp, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { DailiesSettings, DailyRender } from '../../shared/project';
 import type { DailyPlan, ProductionDb } from '../db/production-db';
 import { runFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
 import { createHasher, prepareChecksums } from '../media/checksum';
 import { dayFolder, segment } from '../media/rules';
 import { renderArgs, type RenderJob } from './render-args';
+import { sequencePattern } from '../scriptlog/clip-key';
 
 /**
  * Dailies (spec §4.8) and the look preview (spec §4.7), with FFmpeg.
@@ -148,10 +149,13 @@ export class DailiesService {
         continue;
       }
       const soundPath = plan.sound ? await firstReadable(plan.sound.paths) : null;
+      // An image sequence: every frame from the first, as FFmpeg reads a numbered series.
+      const frames = plan.meta.sequence ? sequencePattern(basename(clipPath)) : null;
       const job: RenderJob = {
         label: plan.label,
         clip: plan.clip,
-        clipPath,
+        clipPath: frames ? join(dirname(clipPath), frames.pattern) : clipPath,
+        sequence: frames ? { start: frames.start } : null,
         rate: plan.meta.rate,
         durationSec: plan.meta.durationSec,
         tc: plan.meta.tc ? { frames: plan.meta.tc.frames, base: plan.meta.tc.base, dropFrame: plan.meta.tc.dropFrame } : null,
@@ -261,7 +265,9 @@ export class DailiesService {
     const work = await mkdtemp(join(tmpdir(), 'vcdit-look-'));
     try {
       const frame = async (name: string, filters: string[]) => {
-        const result = await runFfmpeg(ffmpeg, ['-y', '-ss', at.toFixed(3), '-i', path, '-frames:v', '1', '-vf', [...filters, 'scale=960:-2'].join(','), '-q:v', '3', name], { cwd: work });
+        // An image sequence is previewed from its first frame: the frame is a file of its own, with nothing to seek into.
+        const seek = clip.meta?.sequence ? [] : ['-ss', at.toFixed(3)];
+        const result = await runFfmpeg(ffmpeg, ['-y', ...seek, '-i', path, '-frames:v', '1', '-vf', [...filters, 'scale=960:-2'].join(','), '-q:v', '3', name], { cwd: work });
         if (result.code !== 0) throw new Error(`FFmpeg could not read a frame: ${result.log.split('\n').pop() ?? ''}`);
         return `data:image/jpeg;base64,${(await readFile(join(work, name))).toString('base64')}`;
       };

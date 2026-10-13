@@ -30,12 +30,25 @@ export const clipKeyOfFile = (fileName: string): string | null => {
  * write ("shot.0001.exr"); stills such as DSC01234.DNG or DJI_0001.DNG are
  * not sequences.
  */
-export const sequenceOf = (fileName: string): { stem: string; frame: number; extension: string } | null => {
+export const sequenceOf = (
+  fileName: string,
+): { stem: string; frame: number; extension: string; separator: string; digits: number; written: string } | null => {
   const found = /^(.+?)([._-]?)(\d{4,9})\.(ari|dng|exr|dpx|cin)$/i.exec(fileName);
   if (!found) return null;
   const [, stem, separator, digits, extension] = found;
   if (digits!.length < 6 && separator !== '.') return null;
-  return { stem: stem!, frame: Number(digits), extension: extension!.toLowerCase() };
+  return { stem: stem!, frame: Number(digits), extension: extension!.toLowerCase(), separator: separator!, digits: digits!.length, written: extension! };
+};
+
+/**
+ * The FFmpeg image2 pattern that reads a whole sequence from one of its
+ * frames: Clip0001_000123.dng → Clip0001_%06d.dng, with its first frame.
+ * A % in the name is written %% so FFmpeg takes it as itself.
+ */
+export const sequencePattern = (fileName: string): { pattern: string; start: number } | null => {
+  const frame = sequenceOf(fileName);
+  if (!frame) return null;
+  return { pattern: `${frame.stem.replace(/%/g, '%%')}${frame.separator}%0${frame.digits}d.${frame.written}`, start: frame.frame };
 };
 
 /** Picture files: movies and camera raw clips, and image sequence frames. */
