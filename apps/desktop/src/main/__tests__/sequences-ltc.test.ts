@@ -52,7 +52,7 @@ const dngFrame = (tc: { h: number; m: number; s: number; f: number; dropFrame?: 
 
 describe('image sequences', () => {
   it('knows a sequence frame from a still, and names the clip once for all its frames', () => {
-    expect(sequenceOf('Clip0001_000123.dng')).toEqual({ stem: 'Clip0001', frame: 123, extension: 'dng' });
+    expect(sequenceOf('Clip0001_000123.dng')).toEqual({ stem: 'Clip0001', frame: 123, extension: 'dng', separator: '_', digits: 6, written: 'dng' });
     expect(sequenceOf('A001C001_120101_R1AB.0000001.ari')).toMatchObject({ stem: 'A001C001_120101_R1AB', frame: 1 });
     expect(sequenceOf('plate_v2.1001.exr')).toMatchObject({ stem: 'plate_v2', frame: 1001 });
     // Stills: a short number with no dot before it.
