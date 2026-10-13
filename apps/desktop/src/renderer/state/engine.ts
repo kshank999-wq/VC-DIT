@@ -99,8 +99,10 @@ export const fromProject = (state: AppState, project: ProjectState): FromProject
     luts: project.luts.map((lut) => ({
       id: lut.id,
       name: lut.name,
-      description: [lut.title, lut.cdl ? 'ASC CDL · goes to editorial with each clip' : `${lut.kind} · ${lut.size}-point ${lut.format}`].filter(Boolean).join(' · '),
+      description: [lut.title, lut.grade ? 'Graded here · ASC CDL to editorial' : lut.cdl ? 'ASC CDL · goes to editorial with each clip' : `${lut.kind} · ${lut.size}-point ${lut.format}`].filter(Boolean).join(' · '),
       isDefault: lut.isDefault,
+      ...(lut.sop ? { sop: lut.sop } : {}),
+      ...(lut.grade ? { grade: lut.grade } : {}),
     })),
     lutRules: project.lutRules,
     selectedLut: Math.max(0, Math.min(state.selectedLut, project.luts.length - 1)),

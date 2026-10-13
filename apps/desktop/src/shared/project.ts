@@ -1,3 +1,4 @@
+import type { Cdl } from './grade';
 import type { ChecksumMethod } from './media';
 
 /**
@@ -197,6 +198,10 @@ export interface LutEntry {
   isDefault: boolean;
   /** An ASC CDL (slope, offset, power, saturation), sent to editorial with each clip. */
   cdl?: boolean;
+  /** The CDL's numbers, so the Grade screen can open it again. */
+  sop?: Cdl;
+  /** Made on the Grade screen: the CDL over this show LUT (its library id; null on LOG, or once that LUT is gone). */
+  grade?: { baseLutId: number | null };
 }
 
 export type LutScope = 'Project' | 'Camera' | 'Day' | 'Scene' | 'Setup' | 'Clip';

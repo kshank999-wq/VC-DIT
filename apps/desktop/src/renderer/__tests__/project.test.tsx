@@ -11,6 +11,7 @@ import { forgetThumbnails, SceneOrganizer } from '../screens/SceneOrganizer';
 import { SyncWorkspace } from '../screens/SyncWorkspace';
 import { VfxHandoff } from '../screens/VfxHandoff';
 import { Looks } from '../screens/Looks';
+import { Grade } from '../screens/Grade';
 import { Dailies } from '../screens/Dailies';
 import { Delivery } from '../screens/Delivery';
 import { Reports } from '../screens/Reports';
@@ -118,6 +119,8 @@ beforeEach(() => {
     setLutRule: vi.fn(async () => ok(current)),
     removeLutRule: vi.fn(async () => ok(current)),
     previewLook: vi.fn(async () => ({ ok: true, original: 'data:image/jpeg;base64,AA', graded: 'data:image/jpeg;base64,BB' })),
+    lookTable: vi.fn(async () => ({ ok: true, size: 2, data: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1, 1, 1, 1]) })),
+    saveGrade: vi.fn(async () => ok(current)),
     saveDailies: vi.fn(async () => ok(current)),
     startDailies: vi.fn(async () => ok(current)),
     stopDailies: vi.fn(async () => ok(current)),
@@ -390,6 +393,66 @@ describe('a production from the database', () => {
     expect(api.setLutRule).toHaveBeenLastCalledWith('Project', 'Default', 2);
     fireEvent.click(screen.getByRole('button', { name: 'Remove the Project rule for Default' }));
     expect(api.removeLutRule).toHaveBeenCalledWith(5);
+  });
+
+  it('grades over the show LUT, reopens a saved grade, and keeps it in the library', async () => {
+    current = fresh({
+      luts: [
+        { id: 1, name: 'NJR_Show_v3.cube', title: 'Show LUT', kind: '3D', size: 33, format: 'cube', importedAt: 'x', isDefault: true },
+        { id: 2, name: 'NJR_Night_v1.cube', title: '', kind: '3D', size: 33, format: 'cube', importedAt: 'x', isDefault: false },
+        {
+          id: 3,
+          name: 'NJR_Day4_Warm.cube',
+          title: 'ASC CDL over NJR_Night_v1.cube',
+          kind: '3D',
+          size: 33,
+          format: 'cube',
+          importedAt: 'x',
+          isDefault: false,
+          cdl: true,
+          sop: { slope: [1.1, 1, 0.9], offset: [0.01, 0, -0.01], power: [1, 1, 1], sat: 0.8 },
+          grade: { baseLutId: 2 },
+        },
+      ],
+      previewClips: [{ id: 'A001|A001C001', label: 'A001C001 · Sc 4 / A / T01' }],
+      ffmpeg: { version: '6.0' },
+    });
+    render(
+      <StoreProvider>
+        <Grade />
+      </StoreProvider>,
+    );
+    // The day's clip, under the project's show LUT; a grade is not offered as a show LUT.
+    await waitFor(() => expect(api.previewLook).toHaveBeenCalledWith('A001|A001C001', null));
+    await waitFor(() => expect(api.lookTable).toHaveBeenCalledWith(1));
+    const base = screen.getByLabelText('Show LUT under the grade') as HTMLSelectElement;
+    expect(base.value).toBe('1');
+    expect([...base.options].map((option) => option.text)).toEqual(['None · grade on LOG', 'NJR_Show_v3.cube', 'NJR_Night_v1.cube']);
+
+    // Held to the limits: slope stops at 4, whatever the slider is given.
+    fireEvent.change(screen.getByLabelText('Slope, red'), { target: { value: '9' } });
+    fireEvent.change(screen.getByLabelText('Offset, all channels'), { target: { value: '0.02' } });
+    fireEvent.change(screen.getByLabelText('Saturation'), { target: { value: '1.2' } });
+    expect(screen.getByLabelText('The grade as an ASC CDL').textContent).toBe('SOP (4.000 1.000 1.000)(0.020 0.020 0.020)(1.000 1.000 1.000) · SAT 1.200');
+    fireEvent.change(screen.getByLabelText('Grade name'), { target: { value: 'NJR_Day4_Cool' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save grade' }));
+    await waitFor(() =>
+      expect(api.saveGrade).toHaveBeenCalledWith('NJR_Day4_Cool', { slope: [4, 1, 1], offset: [0.02, 0.02, 0.02], power: [1, 1, 1], sat: 1.2 }, 1),
+    );
+    expect(await screen.findByText(/Saved to the library as NJR_Day4_Cool\.cube/)).toBeTruthy();
+
+    // A saved grade opens with its numbers, its show LUT and its name: saving it again updates it.
+    fireEvent.change(screen.getByLabelText('Start from a look'), { target: { value: '3' } });
+    expect(base.value).toBe('2');
+    await waitFor(() => expect(api.lookTable).toHaveBeenLastCalledWith(2));
+    expect((screen.getByLabelText('Grade name') as HTMLInputElement).value).toBe('NJR_Day4_Warm');
+    expect(screen.getByLabelText('The grade as an ASC CDL').textContent).toBe('SOP (1.100 1.000 0.900)(0.010 0.000 -0.010)(1.000 1.000 1.000) · SAT 0.800');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Saturation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Update grade' }));
+    await waitFor(() => expect(api.saveGrade).toHaveBeenLastCalledWith('NJR_Day4_Warm', { slope: [1.1, 1, 0.9], offset: [0.01, 0, -0.01], power: [1, 1, 1], sat: 1 }, 2));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset grade' }));
+    expect(screen.getByLabelText('The grade as an ASC CDL').textContent).toBe('SOP (1.000 1.000 1.000)(0.000 0.000 0.000)(1.000 1.000 1.000) · SAT 1.000');
   });
 
   it('renders dailies to a chosen destination and lists what was rendered', async () => {

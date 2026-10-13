@@ -149,6 +149,7 @@ A destination can be an **LTO tape** (the LTO tape box on its tile; an LTFS volu
 - Preview footage through the selected LUT/look.
 - Generate dailies/proxies with the viewing look applied when requested, while preserving untouched camera originals.
 - Record LUT/look name in metadata and handoff reports so editorial/color know what was viewed on set.
+- **Grade** (Output · Grade): a limited on-set grade, made against scopes. An ASC CDL (offset, power and slope per channel, each with a master that moves all three; then saturation), held to ranges a set grade stays inside (slope 0–4, offset ±0.5, power 0.25–4, saturation 0–2), over a show LUT from the library or on LOG. It is graded live on a frame from the middle of one of the day's clips (or a built-in test chart of 75 % bars, a grey ramp and skin, sky and foliage patches), split against the show LUT alone, with a waveform, an RGB parade (0–100 %), a vectorscope (75 % bar targets and the skin-tone line) and a histogram of the graded picture. The show LUT is read through FFmpeg's own lut3d, the filter the dailies use, so any .cube or .3dl reads as it renders. Saved under a name, the grade is a look in the library: its CDL numbers go to editorial like an imported CDL's, and a 33-point .cube of the CDL over its show LUT is what previews and dailies apply. Saving under the same name again updates it in place (its rules stay); an imported LUT is never overwritten. A saved grade, or any CDL look, can be opened again as the starting point.
 
 ### 4.8 Dailies Organizer
 

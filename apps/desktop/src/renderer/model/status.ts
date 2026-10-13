@@ -16,7 +16,7 @@ export const STEPS: { id: StepId; number: number; name: string; screen: ScreenId
   { id: 'organize', number: 3, name: 'Organize', screen: 'scenes', screens: ['scenes', 'takes', 'match'] },
   { id: 'vfx', number: 4, name: 'VFX', screen: 'vfx', screens: ['vfx'] },
   { id: 'sync', number: 5, name: 'Audio Sync', screen: 'sync', screens: ['sync'] },
-  { id: 'output', number: 6, name: 'Output', screen: 'dailies', screens: ['looks', 'dailies', 'delivery'] },
+  { id: 'output', number: 6, name: 'Output', screen: 'dailies', screens: ['looks', 'grade', 'dailies', 'delivery'] },
 ];
 
 export const stepOfScreen = (screen: ScreenId): StepId | null => STEPS.find((step) => step.screens.includes(screen))?.id ?? null;

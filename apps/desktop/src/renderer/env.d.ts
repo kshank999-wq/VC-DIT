@@ -143,6 +143,10 @@ interface ProjectApi {
   setLutRule: (scope: import('../shared/project').LutScope, target: string, lutId: number) => Promise<ProjectResult>;
   removeLutRule: (id: number) => Promise<ProjectResult>;
   previewLook: (clipId: string, lutId: number | null) => Promise<{ ok: true; original: string; graded: string | null } | { ok: false; reason: string }>;
+  /** A library look as a table (33 points, red fastest), for the Grade screen. */
+  lookTable: (lutId: number) => Promise<{ ok: true; size: number; data: Float32Array } | { ok: false; reason: string }>;
+  /** Keep a grade (an ASC CDL over a show LUT, or on LOG) in the library. */
+  saveGrade: (name: string, cdl: import('../shared/grade').Cdl, baseLutId: number | null) => Promise<ProjectResult>;
   saveDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
   startDailies: (settings: import('../shared/project').DailiesSettings) => Promise<ProjectResult>;
   stopDailies: () => Promise<ProjectResult>;
