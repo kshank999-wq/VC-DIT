@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('vcdit', {
     pullCameraReport: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-pull-camera-report'),
     seal: (id: string, verify: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:project-seal', id, verify),
     stopSeal: (): Promise<void> => ipcRenderer.invoke('vcdit:project-seal-stop'),
+    relinkScan: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-relink-scan'),
+    relink: (name: string, root: string): Promise<unknown> => ipcRenderer.invoke('vcdit:project-relink', name, root),
     onSealProgress: (listener: (progress: unknown) => void): (() => void) => {
       const handler = (_e: unknown, progress: unknown) => listener(progress);
       ipcRenderer.on('vcdit:seal-progress', handler);

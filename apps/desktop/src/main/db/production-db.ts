@@ -19,6 +19,7 @@ import {
 } from '../../shared/project';
 import type { FileOutcome, SourceFile } from '../media/transfer';
 import type { SealExpected } from '../media/seal';
+import type { RelinkFound, RelinkLeg } from '../media/relink';
 import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
 import type { LogEntry, ParsedLog } from '../scriptlog/parse';
 import { clipKeyOfFile } from '../scriptlog/clip-key';
@@ -1454,7 +1455,7 @@ export class ProductionDb {
   /** Every readable copy of a file of the day: verified destination copies first, then where it came from. */
   private copiesOf(day: number, card: string, path: string): string[] {
     const rows = this.rows<Record<string, SqlValue>>(
-      `select td.target_dir, t.source_root, cc.state
+      `select td.target_dir, t.source_root, cc.state, c.source_path
        from clip c
        join transfer t on t.day = c.day and t.id = c.transfer_id
        left join clip_copy cc on cc.clip_id = c.id
@@ -1464,7 +1465,8 @@ export class ProductionDb {
     );
     const parts = path.split('/');
     const verified = rows.filter((row) => row['state'] && row['state'] !== 'failed' && row['target_dir']).map((row) => join(String(row['target_dir']), ...parts));
-    const sources = rows.map((row) => join(String(row['source_root']), ...parts));
+    // On the card itself, by its own name (its copies may be named after the card).
+    const sources = rows.map((row) => join(String(row['source_root']), ...(row['source_path'] ? String(row['source_path']).split('/') : parts)));
     return [...new Set([...verified, ...sources])];
   }
 
@@ -2325,6 +2327,82 @@ export class ProductionDb {
     };
   }
 
+
+  // ------------------------------------------------ relinking copies that moved
+
+  /** Every copy the production made, on every day: where each card's folder was written. */
+  copyLocations(): { day: number; transferId: string; legId: string; card: string; name: string; root: string; targetDir: string }[] {
+    return this.rows<Record<string, SqlValue>>(
+      `select d.day, d.transfer_id, d.leg_id, t.card, d.name, d.root, d.target_dir
+       from transfer_destination d join transfer t on t.day = d.day and t.id = d.transfer_id
+       order by d.day, t.started_at, d.position`,
+    ).map((row) => ({
+      day: Number(row['day']),
+      transferId: String(row['transfer_id']),
+      legId: String(row['leg_id']),
+      card: String(row['card']),
+      name: String(row['name']),
+      root: String(row['root']),
+      targetDir: String(row['target_dir']),
+    }));
+  }
+
+  /** A drive's copies (by its name and where it was), each with the files that verified there: what a relink proves. */
+  relinkLegs(name: string, root: string): RelinkLeg[] {
+    const legs = this.rows<Record<string, SqlValue>>(
+      `select d.day, d.transfer_id, d.leg_id, t.card, d.name, d.root, d.target_dir, d.reports_dir
+       from transfer_destination d join transfer t on t.day = d.day and t.id = d.transfer_id
+       where d.name = ? and d.root = ? order by d.day, t.started_at`,
+      [name, root],
+    );
+    return legs.map((leg) => ({
+      day: Number(leg['day']),
+      transferId: String(leg['transfer_id']),
+      legId: String(leg['leg_id']),
+      card: String(leg['card']),
+      name: String(leg['name']),
+      root: String(leg['root']),
+      targetDir: String(leg['target_dir']),
+      reportsDir: String(leg['reports_dir']),
+      files: this.rows<Record<string, SqlValue>>(
+        `select c.path, c.size, c.checksum, c.checksum_method from clip c join clip_copy cc on cc.clip_id = c.id
+         where c.day = ? and c.transfer_id = ? and cc.leg_id = ? and cc.state in ('verified', 'already-there')`,
+        [Number(leg['day']), String(leg['transfer_id']), String(leg['leg_id'])],
+      ).map((file) => ({
+        path: String(file['path']),
+        size: Number(file['size']),
+        hash: (file['checksum'] as string | null) ?? null,
+        method: file['checksum_method'] as ChecksumMethod,
+      })),
+    }));
+  }
+
+  /**
+   * Point copies at where they are now. A copy known by its drive's old place
+   * (a volume's mount path, a folder's) is known by the new one, so the drive
+   * at its new place is recognised as the one holding it.
+   */
+  relink(found: RelinkFound[]) {
+    this.transaction(() => {
+      for (const { leg, root, targetDir, reportsDir } of found) {
+        const legId = leg.legId === leg.root ? root : leg.legId === `folder:${leg.root}` ? `folder:${root}` : leg.legId;
+        const clash = legId !== leg.legId && this.rows('select 1 from transfer_destination where day = ? and transfer_id = ? and leg_id = ?', [leg.day, leg.transferId, legId]).length > 0;
+        const id = clash ? leg.legId : legId;
+        this.run('update transfer_destination set root = ?, target_dir = ?, reports_dir = ?, leg_id = ? where day = ? and transfer_id = ? and leg_id = ?', [
+          root,
+          targetDir,
+          reportsDir,
+          id,
+          leg.day,
+          leg.transferId,
+          leg.legId,
+        ]);
+        if (id === leg.legId) continue;
+        this.run('update transfer_destination set relay_from = ? where day = ? and transfer_id = ? and relay_from = ?', [id, leg.day, leg.transferId, leg.legId]);
+        this.run('update clip_copy set leg_id = ? where leg_id = ? and clip_id in (select id from clip where day = ? and transfer_id = ?)', [id, leg.legId, leg.day, leg.transferId]);
+      }
+    });
+  }
 
   // ------------------------------------------------ sealing a drive
 

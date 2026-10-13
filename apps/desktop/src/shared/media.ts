@@ -218,6 +218,18 @@ export interface SealOutcome {
   manifest: string | null;
 }
 
+/** A drive whose copies are not where they were written: by its name and the place it was. */
+export interface MissingCopies {
+  name: string;
+  root: string;
+  /** Card copies not found where they were, and the cards and days they are. */
+  copies: number;
+  cards: string[];
+  days: number[];
+}
+
+export type RelinkResult = { ok: true; found: number; missing: string[]; place: string } | { ok: false; reason: string };
+
 export type SealResult = { ok: true; outcome: SealOutcome } | { ok: false; reason: string; outcome?: SealOutcome };
 
 export type ClearResult = { ok: true; removed: number; check: ClearCheck } | { ok: false; reason: string; check?: ClearCheck };

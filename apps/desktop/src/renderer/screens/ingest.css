@@ -248,3 +248,8 @@
 .workflows-dialog { width: 600px; }
 .workflows-dialog h3 { margin: 4px 0 0; }
 .workflow-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+/* Copies not where they were: drives to find again. */
+.relink-card { display: grid; gap: 8px; border-color: var(--tone, var(--border)); }
+.relink-card p { margin: 0; }
+.relink-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }

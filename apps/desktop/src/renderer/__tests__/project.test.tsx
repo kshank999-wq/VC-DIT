@@ -100,6 +100,8 @@ beforeEach(() => {
     seal: vi.fn(),
     stopSeal: vi.fn(),
     onSealProgress: vi.fn(() => () => undefined),
+    relinkScan: vi.fn(async () => []),
+    relink: vi.fn(),
     saveReportTemplate: vi.fn(async () => ok(fresh())),
     assign: vi.fn(async () => ok(fresh())),
     checkSceneFolders: vi.fn(async () => ok(fresh())),

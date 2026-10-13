@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { Worker } from 'node:worker_threads';
-import type { ChecksumMethod, SealResult } from '../../shared/media';
+import type { ChecksumMethod, MissingCopies, RelinkResult, SealResult } from '../../shared/media';
 import { DeliveryService, manifestCsv, type RunTransfer } from '../delivery/delivery-service';
 import { OrganizeService } from '../organize/organize-service';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
@@ -13,6 +13,7 @@ import { fetchCameraReport, pullNote, sendDay } from '../reports/film-studio-sen
 import { clearFilmStudioKey, filmStudioEndpoint, filmStudioKey, filmStudioLink, filmStudioReportEndpoint, setFilmStudioKey } from '../film-studio-link';
 import { Thumbnails } from '../thumbs/thumbnails';
 import { sealDrive, type SealProgress } from '../media/seal';
+import { findMoved } from '../media/relink';
 import { segment } from '../media/rules';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
@@ -824,6 +825,49 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     }
   });
   ipcMain.handle('vcdit:project-seal-stop', () => sealing?.abort());
+
+  /**
+   * Relinking: drives whose copies are not where they were written (a new
+   * drive letter, a renamed or moved folder), and finding them again under
+   * a place the DIT points at. Nothing changes until each copy is proved.
+   */
+  ipcMain.handle('vcdit:project-relink-scan', async (): Promise<MissingCopies[]> => {
+    const groups = new Map<string, MissingCopies>();
+    for (const copy of library.current.copyLocations()) {
+      if (await stat(copy.targetDir).then((info) => info.isDirectory(), () => false)) continue;
+      const key = `${copy.name}\u0000${copy.root}`;
+      const group = groups.get(key) ?? { name: copy.name, root: copy.root, copies: 0, cards: [], days: [] };
+      group.copies += 1;
+      if (!group.cards.includes(copy.card)) group.cards.push(copy.card);
+      if (!group.days.includes(copy.day)) group.days.push(copy.day);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  });
+  ipcMain.handle('vcdit:project-relink', async (e, name: unknown, root: unknown): Promise<RelinkResult> => {
+    if (hooks.busy()) return { ok: false, reason: 'A transfer is running. Relink when it has finished.' };
+    const db = library.current;
+    const legs = [];
+    for (const leg of db.relinkLegs(String(name), String(root))) {
+      if (!(await stat(leg.targetDir).then((info) => info.isDirectory(), () => false))) legs.push(leg);
+    }
+    if (legs.length === 0) return { ok: false, reason: `${String(name)}'s copies are all where they were.` };
+    const window = BrowserWindow.fromWebContents(e.sender);
+    const options = { title: `Where is ${String(name)} now? Pick the drive, or the folder its media was moved to`, properties: ['openDirectory'] as 'openDirectory'[] };
+    const picked = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+    if (picked.canceled || !picked.filePaths[0]) return { ok: false, reason: '' };
+    try {
+      const { found, missing } = await findMoved(legs, picked.filePaths[0]);
+      if (found.length) {
+        db.relink(found);
+        hooks.opened(db.transfers(db.currentDay().number));
+        broadcast();
+      }
+      return { ok: true, found: found.length, missing: [...new Set(missing.map((leg) => `${leg.card} (day ${leg.day})`))], place: picked.filePaths[0] };
+    } catch (cause) {
+      return { ok: false, reason: cause instanceof Error ? cause.message : String(cause) };
+    }
+  });
   // The upload key for the open production. The screens never see the key itself.
   ipcMain.handle('vcdit:film-studio-link', () => filmStudioLink(library.current.file));
   ipcMain.handle('vcdit:film-studio-link-set', (_e, key: unknown) => setFilmStudioKey(library.current.file, key));

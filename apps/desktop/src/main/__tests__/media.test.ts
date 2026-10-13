@@ -264,7 +264,7 @@ describe('transfer records', () => {
 });
 
 describe('renaming phone and mirrorless clips', () => {
-  const file = (path: string) => ({ path, size: 1, mtimeMs: 0 });
+  const file = (path: string): { path: string; size: number; mtimeMs: number; source?: string } => ({ path, size: 1, mtimeMs: 0 });
 
   it('names .mov and .mp4 copies, and their sidecars, after the card; nothing else', () => {
     const files = [

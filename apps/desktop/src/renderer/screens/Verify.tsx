@@ -7,6 +7,7 @@ import { UploadControls } from '../ui/UploadControls';
 import { ShuttleOut } from '../ui/ShuttleOut';
 import { DeviceIcon, volumeLook } from '../ui/media-icons';
 import { EjectAllButton } from '../ui/EjectAll';
+import { MissingCopiesPanel } from '../ui/Relink';
 import { CardEject, ClearCardDialog, clearedWord, volumeOfJob } from '../ui/ClearCard';
 import { useState } from 'react';
 import { Pill, ProgressBar, ScreenHeader, statusVar } from '../ui/kit';
@@ -107,6 +108,7 @@ export function Verify() {
         {uploading ? ` · ${uploading} upload${uploading === 1 ? '' : 's'} ${state.relaysPaused ? 'paused' : 'not finished'}` : null}
       </p>
       <p className="muted small">Safe to format means {RULE_WORD[rule]}. Change it in Project setup.</p>
+      <MissingCopiesPanel />
 
 
 

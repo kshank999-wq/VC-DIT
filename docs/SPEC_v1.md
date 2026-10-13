@@ -88,6 +88,10 @@ Cloud destinations (LucidLink, Suite, Frame.io, Dropbox, a slow network share) c
 - **Per-drive speed.** Any destination fed from the backup has its own **Speed** (no limit, or 1 to 100 MB/s), remembered for that drive or folder: a shared NAS, a slow network drive. An upload goes at the lower of its own speed and the upload speed. Copies straight from the card are never limited.
 - Not yet: uploads through a service's API (Frame.io, Google Drive), which will use the same queue when those integrations land.
 
+#### 4.3.3 Relinking copies that moved
+
+The production knows every copy by the folder it was written to. When a drive comes back under a new drive letter or name ("RAID 1"), or a production folder is moved, Verify lists **Copies not where they were**: each drive, where it was, and the cards and days whose copies are missing there. **Find…** asks where it is now (the drive, or the folder its media was moved to). For each card's copy VC DIT looks first where it would be if only the drive moved, then for a folder with the card's name a few levels down, and accepts it only when every file that verified there is present at the size it was copied at and the smallest file with a checksum on record reads back to that checksum. Proved copies are pointed at their new place (and known by the drive's new place, so its eject and seal safeguards recognise it); anything not found is named. Refused while a transfer is running.
+
 #### 4.3.2 Saved workflows
 
 A workflow is a saved way to offload a kind of card: **any camera**, a **camera maker** (ARRI, RED, Sony, Blackmagic, Canon, Panasonic, DJI, as the card's contents show) or **sound cards**. It names its destinations (drives remembered by name and size, folders by place; each keeps its own From card / From backup choice and speed), its checksum, and two options: **start by itself** and **render the dailies when the card has verified**. Workflows are saved on the computer (Intake → Workflows…), from the destinations and checksum picked at the time; there is one per kind of card, and a maker's beats the one for any camera.

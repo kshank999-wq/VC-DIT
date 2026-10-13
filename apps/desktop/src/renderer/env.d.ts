@@ -118,6 +118,10 @@ interface ProjectApi {
   /** Seal a drive before it leaves set: check it against every copy made to it, then write a manifest to it. */
   seal: (id: string, verify: boolean) => Promise<import('../shared/media').SealResult>;
   stopSeal: () => Promise<void>;
+  /** Drives whose copies are not where they were written. */
+  relinkScan: () => Promise<import('../shared/media').MissingCopies[]>;
+  /** Find a drive's copies again under a place the DIT picks, prove them, and point the production at them. */
+  relink: (name: string, root: string) => Promise<import('../shared/media').RelinkResult>;
   onSealProgress: (listener: (progress: { id: string; files: number; totalFiles: number; bytes: number; totalBytes: number; file: string | null }) => void) => () => void;
   saveReportTemplate: () => Promise<ProjectResult>;
   /** Where clips go, in the DIT's own word; null takes them back to what the sources say. */
