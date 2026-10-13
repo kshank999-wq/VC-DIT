@@ -23,6 +23,32 @@ export const clipKeyOfFile = (fileName: string): string | null => {
   return null;
 };
 
+/**
+ * A frame of an image sequence (ARRIRAW, CinemaDNG, EXR, DPX): the clip's
+ * name before the frame number, and the frame. A sequence frame has a long
+ * frame number (six digits or more), or a dot before it as EXR and DPX
+ * write ("shot.0001.exr"); stills such as DSC01234.DNG or DJI_0001.DNG are
+ * not sequences.
+ */
+export const sequenceOf = (fileName: string): { stem: string; frame: number; extension: string } | null => {
+  const found = /^(.+?)([._-]?)(\d{4,9})\.(ari|dng|exr|dpx|cin)$/i.exec(fileName);
+  if (!found) return null;
+  const [, stem, separator, digits, extension] = found;
+  if (digits!.length < 6 && separator !== '.') return null;
+  return { stem: stem!, frame: Number(digits), extension: extension!.toLowerCase() };
+};
+
+/** Picture files: movies and camera raw clips, and image sequence frames. */
+export const isPictureFile = (fileName: string): boolean =>
+  /\.(mxf|mov|mp4|m4v|ari|arx|r3d|braw|crm|mts|m2ts|avi)$/i.test(fileName) || sequenceOf(fileName) !== null;
+
+/**
+ * The name a picture file's clip is known by: its camera key (A015C002),
+ * else, for a frame of an image sequence, the sequence's name (every frame
+ * is one clip), else the file's name without its extension.
+ */
+export const pictureKey = (fileName: string): string => clipKeyOfFile(fileName) ?? sequenceOf(fileName)?.stem ?? fileName.replace(/\.[^.]+$/, '');
+
 /** The key in what a script supervisor typed, or null when it is not a camera clip name. */
 export const clipKeyOfRef = (ref: string): string | null => {
   const found = /^\s*([A-Z])\s*[-_ ]?\s*(\d{1,3})\s*[-_ ]?\s*C\s*[-_ ]?\s*(\d{1,4})\b/i.exec(ref);

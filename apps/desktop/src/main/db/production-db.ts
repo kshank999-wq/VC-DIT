@@ -22,7 +22,7 @@ import type { SealExpected } from '../media/seal';
 import type { RelinkFound, RelinkLeg } from '../media/relink';
 import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
 import type { LogEntry, ParsedLog } from '../scriptlog/parse';
-import { clipKeyOfFile } from '../scriptlog/clip-key';
+import { clipKeyOfFile, isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
 import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch, type VfxFlag } from '../scriptlog/view';
 import type { MirrorFile, MirrorOutcome, MirrorPlan } from '../vfx/mirror';
 import type { MediaMeta, MetaResult } from '../media/metadata';
@@ -604,7 +604,6 @@ export interface DailyPlan {
   lut: { name: string; format: 'cube' | '3dl'; content: string } | null;
 }
 
-const VIDEO_FILE = /\.(mxf|mov|mp4|m4v|ari|arx|r3d|braw|crm|mts|m2ts|avi)$/i;
 const AUDIO_FILE = /\.(wav|bwf)$/i;
 
 /** A sync record as kept. */
@@ -1472,10 +1471,29 @@ export class ProductionDb {
 
   /** Media files whose header has not been read yet. */
   pendingMeta(day: number): { card: string; path: string; paths: string[] }[] {
-    const rows = this.rows<Record<string, SqlValue>>('select distinct card, path, file_name from clip where day = ? and meta is null', [day]);
-    return rows
-      .filter((row) => VIDEO_FILE.test(String(row['file_name'])) || AUDIO_FILE.test(String(row['file_name'])))
-      .map((row) => ({ card: String(row['card']), path: String(row['path']), paths: this.copiesOf(day, String(row['card']), String(row['path'])) }));
+    const rows = this.rows<Record<string, SqlValue>>('select distinct card, path, file_name, meta is null as pending from clip where day = ? order by path', [day]);
+    // An image sequence is read once, from its first frame: its thousands of frames are one clip.
+    const sequences = new Map<string, { first: Record<string, SqlValue>; frame: number; read: boolean }>();
+    const singles: Record<string, SqlValue>[] = [];
+    for (const row of rows) {
+      const name = String(row['file_name']);
+      const sequence = sequenceOf(name);
+      if (!sequence) {
+        if (Number(row['pending']) === 1 && (isPictureFile(name) || AUDIO_FILE.test(name))) singles.push(row);
+        continue;
+      }
+      const path = String(row['path']);
+      const key = `${String(row['card'])}|${path.slice(0, path.length - name.length)}${sequence.stem.toUpperCase()}`;
+      const group = sequences.get(key);
+      const read = Number(row['pending']) !== 1;
+      if (!group) sequences.set(key, { first: row, frame: sequence.frame, read });
+      else {
+        group.read ||= read;
+        if (sequence.frame < group.frame) Object.assign(group, { first: row, frame: sequence.frame });
+      }
+    }
+    const firsts = [...sequences.values()].filter((group) => !group.read).map((group) => group.first);
+    return [...singles, ...firsts].map((row) => ({ card: String(row['card']), path: String(row['path']), paths: this.copiesOf(day, String(row['card']), String(row['path'])) }));
   }
 
   saveMeta(day: number, card: string, path: string, result: MetaResult) {
@@ -1495,6 +1513,8 @@ export class ProductionDb {
     );
     const pictures = new Map<string, SyncMedia & { hint: { card: string; key: string } | null }>();
     const sounds = new Map<string, SyncMedia>();
+    /** Frames of each image sequence clip. */
+    const frames = new Map<string, number>();
     for (const row of rows) {
       const name = String(row['file_name']);
       const card = String(row['card']);
@@ -1506,16 +1526,22 @@ export class ProductionDb {
         metaError: parsed && !parsed.ok ? parsed.error : null,
         mtimeMs: Number(row['mtime_ms']),
       };
-      if (row['kind'] === 'camera' && VIDEO_FILE.test(name)) {
-        const key = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
+      if (row['kind'] === 'camera' && isPictureFile(name)) {
+        const key = pictureKey(name);
         const id = `${card}|${key}`;
-        // A clip in several files (RED spans): its first file speaks for it.
+        if (sequenceOf(name)) frames.set(id, (frames.get(id) ?? 0) + 1);
+        // A clip in several files (RED spans, every frame of a sequence): its first file speaks for it.
         if (!pictures.has(id)) pictures.set(id, { ...media, key, paths: this.copiesOf(day, card, path), hint: hints.get(id) ?? null });
       } else if (row['kind'] === 'sound' && AUDIO_FILE.test(name)) {
         const key = name.replace(/\.[^.]+$/, '');
         const id = `${card}|${key}`;
         if (!sounds.has(id)) sounds.set(id, { ...media, key, paths: this.copiesOf(day, card, path) });
       }
+    }
+    // An image sequence runs as long as its frames do, at the rate its first frame gives.
+    for (const [id, count] of frames) {
+      const picture = pictures.get(id)!;
+      if (picture.meta?.sequence && picture.meta.rate) picture.meta = { ...picture.meta, durationSec: (count * picture.meta.rate.den) / picture.meta.rate.num };
     }
     return { pictures: [...pictures.values()], sounds: [...sounds.values()] };
   }
@@ -1630,7 +1656,7 @@ export class ProductionDb {
       [day, card],
     ).filter((row) => {
       const name = String(row['file_name']);
-      return (clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '')) === clip;
+      return (pictureKey(name)) === clip;
     });
     if (rows.length === 0) return [];
     const files = new Map<string, MirrorFile>();
@@ -1756,7 +1782,7 @@ export class ProductionDb {
     const card = matched
       ? String(matched['clip_card'])
       : this.rows<Record<string, SqlValue>>('select card, file_name from clip where day = ?', [day]).find(
-          (row) => (clipKeyOfFile(String(row['file_name'])) ?? String(row['file_name']).replace(/\.[^.]+$/, '')) === key,
+          (row) => pictureKey(String(row['file_name'])) === key,
         )?.['card'];
     if (!card) throw new Error(`No clip named ${key} was ingested today.`);
     if (this.logView(day).vfx.some((shot) => shot.clip === key)) throw new Error(`${key} is already on the VFX list.`);
@@ -2195,8 +2221,8 @@ export class ProductionDb {
     const sounds = new Map<string, string>();
     for (const row of this.rows<Record<string, SqlValue>>('select card, file_name, kind from clip where day = ? order by path', [day])) {
       const name = String(row['file_name']);
-      if (row['kind'] === 'camera' && VIDEO_FILE.test(name)) {
-        const id = `${String(row['card'])}|${clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '')}`;
+      if (row['kind'] === 'camera' && isPictureFile(name)) {
+        const id = `${String(row['card'])}|${pictureKey(name)}`;
         if (!files.has(id)) files.set(id, name);
       } else if (row['kind'] === 'sound' && AUDIO_FILE.test(name)) {
         sounds.set(`${String(row['card'])}|${name.replace(/\.[^.]+$/, '')}`, name);
@@ -2585,9 +2611,9 @@ export class ProductionDb {
     const clips = new Map<string, { card: string; clip: string }>();
     for (const row of this.rows<Record<string, SqlValue>>("select card, file_name from clip where day = ? and kind = 'camera' order by card, path", [day])) {
       const name = String(row['file_name']);
-      if (!VIDEO_FILE.test(name)) continue;
+      if (!isPictureFile(name)) continue;
       const card = String(row['card']);
-      const clip = clipKeyOfFile(name) ?? name.replace(/\.[^.]+$/, '');
+      const clip = pictureKey(name);
       if (!clips.has(`${card}|${clip}`)) clips.set(`${card}|${clip}`, { card, clip });
     }
     return [...clips.values()];

@@ -2,6 +2,8 @@ import { open } from 'node:fs/promises';
 import { readMxfAudio, readMxfInfo } from './mxf';
 import { readQuickTimeAudio, readQuickTimeInfo } from './quicktime';
 import { readWavInfo, readWavSamples } from './wav';
+import { readDngInfo } from './dng';
+import { decodeLtc } from '../ltc';
 
 /**
  * What VC DIT reads from a media file's header (spec "Clip / Audio File":
@@ -12,9 +14,13 @@ import { readWavInfo, readWavSamples } from './wav';
 
 export interface MediaMeta {
   kind: 'picture' | 'sound';
-  format: 'QuickTime' | 'MXF' | 'WAV';
+  format: 'QuickTime' | 'MXF' | 'WAV' | 'DNG';
   /** Picture: the first frame's timecode as a frame count at its timebase. */
   tc: { frames: number; base: number; dropFrame: boolean } | null;
+  /** Where the timecode came from: the file's own (header) or LTC on one of its audio channels. */
+  tcFrom?: 'header' | 'audio';
+  /** An image sequence: this is its first frame, and durationSec is one frame (the clip is all its frames). */
+  sequence?: boolean;
   /** Picture rate as a fraction. */
   rate: { num: number; den: number } | null;
   durationSec: number;
@@ -31,6 +37,19 @@ export interface MediaMeta {
 export type MetaResult = { ok: true; meta: MediaMeta } | { ok: false; error: string };
 
 const extension = (path: string) => path.toLowerCase().split('.').pop() ?? '';
+
+/** How much of a clip's sound is searched for LTC, on each channel: a few seconds is many frames of it. */
+const LTC_SECONDS = 6;
+
+/** The clip's timecode from LTC on one of its audio channels (the first that has it), or null. */
+const ltcOf = async (read: (channel: number) => Promise<Float32Array>, channels: number, sampleRate: number, rate: { num: number; den: number } | null) => {
+  for (let channel = 0; channel < Math.min(channels, 8); channel += 1) {
+    const samples = await read(channel).catch(() => null);
+    const found = samples ? decodeLtc(samples, sampleRate, rate ? rate.num / rate.den : null) : null;
+    if (found) return found;
+  }
+  return null;
+};
 const NO_READER: Record<string, string> = {
   r3d: 'RED R3D timecode needs the RED SDK; sync these by waveform from a proxy, or manually.',
   braw: 'Blackmagic RAW timecode needs the Blackmagic SDK; sync these manually for now.',
@@ -68,12 +87,15 @@ export const readMediaMeta = async (path: string): Promise<MetaResult> => {
     }
     if (type === 'mov' || type === 'mp4' || type === 'm4v') {
       const info = await readQuickTimeInfo(file);
+      const audio = info.audio;
+      const ltc = !info.timecode && audio && audio.chunks.length ? await ltcOf((channel) => readQuickTimeAudio(file!, audio, LTC_SECONDS, channel), audio.channels, audio.sampleRate, info.rate) : null;
       return {
         ok: true,
         meta: {
           kind: 'picture',
           format: 'QuickTime',
-          tc: info.timecode,
+          tc: info.timecode ?? ltc,
+          ...(info.timecode ? { tcFrom: 'header' as const } : ltc ? { tcFrom: 'audio' as const } : {}),
           rate: info.rate,
           durationSec: info.durationSec,
           soundStartSec: null,
@@ -86,12 +108,14 @@ export const readMediaMeta = async (path: string): Promise<MetaResult> => {
     }
     if (type === 'mxf') {
       const info = await readMxfInfo(file);
+      const ltc = !info.timecode && info.audio ? await ltcOf((channel) => readMxfAudio(file!, info, LTC_SECONDS, channel), info.audio.channels, info.audio.sampleRate, info.rate) : null;
       return {
         ok: true,
         meta: {
           kind: 'picture',
           format: 'MXF',
-          tc: info.timecode,
+          tc: info.timecode ?? ltc,
+          ...(info.timecode ? { tcFrom: 'header' as const } : ltc ? { tcFrom: 'audio' as const } : {}),
           rate: info.rate,
           durationSec: info.durationSec,
           soundStartSec: null,
@@ -99,6 +123,27 @@ export const readMediaMeta = async (path: string): Promise<MetaResult> => {
           channels: info.audio?.channels ?? null,
           hasAudio: Boolean(info.audio),
           ixml: null,
+        },
+      };
+    }
+    if (type === 'dng') {
+      // One frame of a CinemaDNG sequence: the clip's timecode and rate are on it.
+      const info = await readDngInfo(file);
+      return {
+        ok: true,
+        meta: {
+          kind: 'picture',
+          format: 'DNG',
+          tc: info.timecode,
+          ...(info.timecode ? { tcFrom: 'header' as const } : {}),
+          rate: info.rate,
+          durationSec: info.rate ? info.rate.den / info.rate.num : 0,
+          soundStartSec: null,
+          sampleRate: null,
+          channels: null,
+          hasAudio: false,
+          ixml: null,
+          sequence: true,
         },
       };
     }

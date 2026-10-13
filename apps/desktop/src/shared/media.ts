@@ -248,6 +248,8 @@ export interface BrowseEntry {
   items: number | null;
   /** Shares its data with another name (a hard-linked scene view or VFX mirror), or a link. */
   linked: boolean;
+  /** An image sequence shown as one clip: its frames, and the first and last frame numbers. It points at its first frame; size is all of them. */
+  sequence?: { frames: number; first: number; last: number };
 }
 
 export type BrowseListing = { ok: true; entries: BrowseEntry[]; more: number } | { ok: false; reason: string };

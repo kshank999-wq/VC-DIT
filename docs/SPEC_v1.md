@@ -131,6 +131,8 @@ A workflow is a saved way to offload a kind of card: **any camera**, a **camera 
 
 - Ingest picture and production sound as separate source classes.
 - Primary automatic sync: matching production timecode.
+- **Timecode from the camera's audio (LTC).** A clip whose file has no timecode of its own (a mirrorless camera, a DSLR or a drone fed by a sync box through its microphone input) is checked for SMPTE LTC on each audio channel, over its first six seconds; the first channel that gives three frames in a row counting up gives the clip's start timecode, worked back to its first frame. Drop-frame LTC is read as drop-frame. A clip's own timecode always wins.
+- **Image sequences** (ARRIRAW .ari, CinemaDNG, EXR, DPX) are one clip each: a frame is known by a long frame number (six digits or more), or a dot before it as in shot.0001.exr, so stills such as DSC01234.DNG are not taken for one. The clip is named by its camera key where it has one (A001C001), else by the sequence's name. Its timecode is read once, from its first frame (CinemaDNG: TimeCodes and FrameRate tags), and its length is its frames at that rate. The Files panel shows a sequence as one line: Clip0001.[000001-003200].dng, its frames and their size together.
 - Fallback sync: waveform/audio analysis when scratch audio is available.
 - Manual offset/slate correction controls for exceptions.
 - Batch sync by scene/setup/take and display confidence/status.

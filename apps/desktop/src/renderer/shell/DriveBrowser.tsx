@@ -183,7 +183,9 @@ export function DriveBrowser({ query }: { query: string }) {
             </span>
           ) : null}
           <span className="grow" />
-          <span className="mono tree-count">{entry.kind === 'folder' ? (entry.items ?? '') : entry.kind === 'file' ? formatBytes(entry.size) : ''}</span>
+          <span className="mono tree-count">
+            {entry.kind === 'folder' ? (entry.items ?? '') : entry.kind === 'file' ? `${entry.sequence ? `${entry.sequence.frames.toLocaleString('en-US')} frames · ` : ''}${formatBytes(entry.size)}` : ''}
+          </span>
           {status ? <span className="dot" style={tone(statusVar(status))} title={leg ? `${leg.name}: ${legNow}` : undefined} /> : null}
           <button
             type="button"

@@ -3,6 +3,7 @@ import { join, relative, resolve, sep } from 'node:path';
 import type { BrowseEntry, BrowseListing, BrowseSearch } from '../../shared/media';
 import { sameOrInside } from './rules';
 import { isIgnored } from './transfer';
+import { sequenceOf } from '../scriptlog/clip-key';
 
 /**
  * The Files panel's look at what is really on a drive: one folder at a
@@ -52,8 +53,43 @@ export const listFolder = async (root: string, rel: string, limit = 2000): Promi
   } catch {
     return { ok: false, reason: 'Not on this drive (yet).' };
   }
-  const names = (await readdir(dir).catch(() => [] as string[])).filter((name) => !hidden(name));
-  const entries = (await Promise.all(names.slice(0, limit).map((name) => entry(dir, name, root)))).filter((item): item is BrowseEntry => item !== null).sort(order);
+  const all = (await readdir(dir).catch(() => [] as string[])).filter((name) => !hidden(name));
+  // An image sequence's thousands of frames are one clip: one line, named for its frames.
+  const sequences = new Map<string, { names: string[]; first: number; last: number }>();
+  const names: string[] = [];
+  for (const name of all) {
+    const frame = sequenceOf(name);
+    if (!frame) {
+      names.push(name);
+      continue;
+    }
+    const key = `${frame.stem}|${frame.extension}`;
+    const group = sequences.get(key);
+    if (group) {
+      group.names.push(name);
+      group.first = Math.min(group.first, frame.frame);
+      group.last = Math.max(group.last, frame.frame);
+    } else sequences.set(key, { names: [name], first: frame.frame, last: frame.frame });
+  }
+  const singles = (await Promise.all(names.slice(0, limit).map((name) => entry(dir, name, root)))).filter((item): item is BrowseEntry => item !== null);
+  const clips: BrowseEntry[] = [];
+  for (const group of sequences.values()) {
+    if (group.names.length === 1) {
+      const one = await entry(dir, group.names[0]!, root);
+      if (one) clips.push(one);
+      continue;
+    }
+    const sorted = group.names.sort((a, b) => sequenceOf(a)!.frame - sequenceOf(b)!.frame);
+    const head = await entry(dir, sorted[0]!, root);
+    if (!head) continue;
+    let size = 0;
+    for (const name of sorted) size += await stat(join(dir, name)).then((info) => info.size, () => 0);
+    const { stem, extension } = sequenceOf(sorted[0]!)!;
+    const digits = String(group.last).length;
+    const pad = (n: number) => String(n).padStart(Math.max(digits, /(\d+)\.[^.]+$/.exec(sorted[0]!)![1]!.length), '0');
+    clips.push({ ...head, name: `${stem}.[${pad(group.first)}-${pad(group.last)}].${extension}`, size, sequence: { frames: sorted.length, first: group.first, last: group.last } });
+  }
+  const entries = [...singles, ...clips].sort(order);
   return { ok: true, entries, more: Math.max(0, names.length - limit) };
 };
 
