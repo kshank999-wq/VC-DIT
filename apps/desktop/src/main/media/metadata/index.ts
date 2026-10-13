@@ -3,6 +3,7 @@ import { readMxfAudio, readMxfInfo } from './mxf';
 import { readQuickTimeAudio, readQuickTimeInfo } from './quicktime';
 import { readWavInfo, readWavSamples } from './wav';
 import { readDngInfo } from './dng';
+import { readDpxInfo, readExrInfo } from './frames';
 import { decodeLtc } from '../ltc';
 
 /**
@@ -14,7 +15,7 @@ import { decodeLtc } from '../ltc';
 
 export interface MediaMeta {
   kind: 'picture' | 'sound';
-  format: 'QuickTime' | 'MXF' | 'WAV' | 'DNG';
+  format: 'QuickTime' | 'MXF' | 'WAV' | 'DNG' | 'DPX' | 'EXR';
   /** Picture: the first frame's timecode as a frame count at its timebase. */
   tc: { frames: number; base: number; dropFrame: boolean } | null;
   /** Where the timecode came from: the file's own (header) or LTC on one of its audio channels. */
@@ -53,7 +54,7 @@ const ltcOf = async (read: (channel: number) => Promise<Float32Array>, channels:
 const NO_READER: Record<string, string> = {
   r3d: 'RED R3D timecode needs the RED SDK; sync these by waveform from a proxy, or manually.',
   braw: 'Blackmagic RAW timecode needs the Blackmagic SDK; sync these manually for now.',
-  ari: 'ARRIRAW (.ari) frames are not read yet; sync these manually for now.',
+  ari: "ARRIRAW (.ari) frame headers are ARRI's own and not read: sync these by waveform or by hand. ARRIRAW recorded as MXF has its timecode read, and FFmpeg cannot render .ari dailies (use the ARRIRAW Converter).",
   crm: 'Canon RAW timecode needs the Canon SDK; sync these manually for now.',
 };
 
@@ -126,14 +127,14 @@ export const readMediaMeta = async (path: string): Promise<MetaResult> => {
         },
       };
     }
-    if (type === 'dng') {
-      // One frame of a CinemaDNG sequence: the clip's timecode and rate are on it.
-      const info = await readDngInfo(file);
+    if (type === 'dng' || type === 'dpx' || type === 'exr') {
+      // One frame of an image sequence (CinemaDNG, DPX, OpenEXR): the clip's timecode and rate are on it.
+      const info = type === 'dng' ? await readDngInfo(file) : type === 'dpx' ? await readDpxInfo(file) : await readExrInfo(file);
       return {
         ok: true,
         meta: {
           kind: 'picture',
-          format: 'DNG',
+          format: type === 'dng' ? 'DNG' : type === 'dpx' ? 'DPX' : 'EXR',
           tc: info.timecode,
           ...(info.timecode ? { tcFrom: 'header' as const } : {}),
           rate: info.rate,

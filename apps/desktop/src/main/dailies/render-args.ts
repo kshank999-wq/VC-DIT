@@ -20,6 +20,8 @@ export interface RenderJob {
   label: string;
   clip: string;
   clipPath: string;
+  /** An image sequence: clipPath is an FFmpeg frame pattern (Clip0001_%06d.dng) read from this frame on. */
+  sequence?: { start: number } | null;
   rate: { num: number; den: number };
   durationSec: number;
   /** The clip's first frame as a timecode frame count, and its timebase. */
@@ -106,7 +108,10 @@ export const renderArgs = (job: RenderJob, ffmpeg: Pick<Ffmpeg, 'encoders' | 'fi
   const { width, height, letterbox } = size(job.choice.resolution);
   const codec = videoCodec(job.choice.codec, ffmpeg);
   const fps = job.rate.num / job.rate.den;
-  const args: string[] = ['-y', '-i', job.clipPath];
+  // A sequence's frames are read as one clip at the picture's rate, from its first frame.
+  const args: string[] = job.sequence
+    ? ['-y', '-framerate', `${job.rate.num}/${job.rate.den}`, '-start_number', String(job.sequence.start), '-i', job.clipPath]
+    : ['-y', '-i', job.clipPath];
 
   // ------------------------------------------------ picture
   const video: string[] = [];
