@@ -66,6 +66,8 @@ contextBridge.exposeInMainWorld('vcdit', {
     setLutRule: (scope: string, target: string, lutId: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-rule', scope, target, lutId),
     removeLutRule: (id: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-lut-rule-remove', id),
     previewLook: (clipId: string, lutId: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-look-preview', clipId, lutId),
+    lookTable: (lutId: number): Promise<unknown> => ipcRenderer.invoke('vcdit:project-look-table', lutId),
+    saveGrade: (name: string, cdl: unknown, baseLutId: number | null): Promise<unknown> => ipcRenderer.invoke('vcdit:project-grade-save', name, cdl, baseLutId),
     saveDailies: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-settings', settings),
     startDailies: (settings: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-start', settings),
     stopDailies: (): Promise<unknown> => ipcRenderer.invoke('vcdit:project-dailies-stop'),

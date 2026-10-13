@@ -1,3 +1,4 @@
+import type { Cdl } from '../../shared/grade';
 import type { ChecksumMethod, DeviceInfo, VolumeRole } from '../../shared/media';
 import type { LutScope, MatchCandidate, MatchEntry, MirrorMethod, Production, SceneStatus, SetupEntry, ShootDay, TakeEntry, VfxLocation } from '../../shared/project';
 
@@ -28,6 +29,7 @@ export type ScreenId =
   | 'vfx'
   | 'sync'
   | 'looks'
+  | 'grade'
   | 'dailies'
   | 'delivery'
   | 'reports';
@@ -162,6 +164,10 @@ export interface Lut {
   /** From the production database. */
   id?: number;
   isDefault?: boolean;
+  /** An ASC CDL's numbers, to grade from. */
+  sop?: Cdl;
+  /** Made on the Grade screen, over this show LUT. */
+  grade?: { baseLutId: number | null };
 }
 
 export interface LutRule {

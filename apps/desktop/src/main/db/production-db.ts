@@ -524,6 +524,12 @@ MIGRATIONS.push(`
 // LTO tape (spec §4.3.4): a destination written in tape runs, not card by card.
 MIGRATIONS.push(`alter table transfer_destination add column tape integer not null default 0;`);
 
+// The Grade screen: a look made there is a CDL over a show LUT; it keeps which one, to be opened and graded again.
+MIGRATIONS.push(`
+  alter table lut add column grade integer not null default 0;
+  alter table lut add column grade_base integer;
+`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -1846,7 +1852,8 @@ export class ProductionDb {
 
   luts(): LutEntry[] {
     const fallback = this.rows<Record<string, SqlValue>>("select lut_id from lut_rule where scope = 'Project'")[0]?.['lut_id'];
-    return this.rows<Record<string, SqlValue>>('select id, name, format, kind, size, title, imported_at, cdl is not null as is_cdl from lut order by name').map((row) => ({
+    const ids = new Set(this.rows<Record<string, SqlValue>>('select id from lut').map((row) => Number(row['id'])));
+    return this.rows<Record<string, SqlValue>>('select id, name, format, kind, size, title, imported_at, cdl, grade, grade_base from lut order by name').map((row) => ({
       id: Number(row['id']),
       name: String(row['name']),
       title: String(row['title']),
@@ -1855,8 +1862,35 @@ export class ProductionDb {
       format: row['format'] as LutEntry['format'],
       importedAt: String(row['imported_at']),
       isDefault: Number(row['id']) === Number(fallback),
-      cdl: Number(row['is_cdl']) === 1,
+      cdl: row['cdl'] !== null,
+      ...(row['cdl'] !== null ? { sop: JSON.parse(String(row['cdl'])) as Cdl } : {}),
+      ...(Number(row['grade']) === 1 ? { grade: { baseLutId: row['grade_base'] !== null && ids.has(Number(row['grade_base'])) ? Number(row['grade_base']) : null } } : {}),
     }));
+  }
+
+  /**
+   * Keep a grade from the Grade screen: its CDL, and the .cube baked from it
+   * over its show LUT. Saved again under the same name, it replaces that
+   * grade (its rules keep pointing at it); a LUT that was imported under the
+   * name is never overwritten.
+   */
+  saveGrade(name: string, cdl: Cdl, baseLutId: number | null, cube: string, title: string): number {
+    const clean = name.trim().replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80);
+    if (!clean) throw new Error('Name the grade.');
+    const fileName = /\.cube$/i.test(clean) ? clean : `${clean}.cube`;
+    const values = JSON.stringify({ slope: cdl.slope, offset: cdl.offset, power: cdl.power, sat: cdl.sat });
+    const existing = this.rows<Record<string, SqlValue>>('select id, grade from lut where name = ?', [fileName])[0];
+    if (existing) {
+      if (Number(existing['grade']) !== 1) throw new Error(`${fileName} is an imported LUT. Save the grade under another name.`);
+      const id = Number(existing['id']);
+      this.transaction(() =>
+        this.run('update lut set content = ?, cdl = ?, grade_base = ?, title = ?, imported_at = ? where id = ?', [cube, values, baseLutId, title, now(), id]),
+      );
+      return id;
+    }
+    const id = this.addLut(fileName, { format: 'cube', kind: '3D', size: 33, title }, cube, values);
+    this.transaction(() => this.run('update lut set grade = 1, grade_base = ? where id = ?', [baseLutId, id]));
+    return id;
   }
 
   /** Add a LUT to the library: checked first; the same name with different contents is refused, not replaced. */

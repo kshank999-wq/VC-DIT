@@ -10,12 +10,9 @@
  * the dailies apply like any other LUT.
  */
 
-export interface Cdl {
-  slope: [number, number, number];
-  offset: [number, number, number];
-  power: [number, number, number];
-  sat: number;
-}
+import { applyCdl, type Cdl } from '../../shared/grade';
+
+export { applyCdl, type Cdl };
 
 export interface NamedCdl extends Cdl {
   /** The correction's id: often the clip or look name. */
@@ -59,13 +56,6 @@ export const parseCdl = (fileName: string, text: string): NamedCdl[] => {
       sat,
     };
   });
-};
-
-/** One colour through the CDL: SOP per channel (clamped before the power), then saturation by Rec. 709 luma. */
-export const applyCdl = (cdl: Cdl, rgb: [number, number, number]): [number, number, number] => {
-  const sop = rgb.map((value, i) => Math.min(1, Math.max(0, value * cdl.slope[i]! + cdl.offset[i]!)) ** cdl.power[i]!) as [number, number, number];
-  const luma = 0.2126 * sop[0] + 0.7152 * sop[1] + 0.0722 * sop[2];
-  return sop.map((value) => Math.min(1, Math.max(0, luma + cdl.sat * (value - luma)))) as [number, number, number];
 };
 
 /** The CDL baked into a 3D .cube, red fastest, as the dailies apply it. */

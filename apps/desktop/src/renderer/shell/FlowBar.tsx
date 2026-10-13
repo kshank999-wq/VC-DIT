@@ -52,12 +52,14 @@ const SUB_TABS: Partial<Record<ScreenId, { screen: ScreenId; label: string }[]>>
   ],
   looks: [
     { screen: 'looks', label: 'Looks' },
+    { screen: 'grade', label: 'Grade' },
     { screen: 'dailies', label: 'Dailies' },
     { screen: 'delivery', label: 'Delivery' },
   ],
 };
 SUB_TABS.match = SUB_TABS.scenes;
 SUB_TABS.takes = SUB_TABS.scenes;
+SUB_TABS.grade = SUB_TABS.looks;
 SUB_TABS.dailies = SUB_TABS.looks;
 SUB_TABS.delivery = SUB_TABS.looks;
 

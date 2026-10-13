@@ -1,10 +1,12 @@
 import { access, copyFile, mkdir, mkdtemp, open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import type { LookTable } from '../../shared/grade';
 import type { DailiesSettings, DailyRender } from '../../shared/project';
 import type { DailyPlan, ProductionDb } from '../db/production-db';
 import { runFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
 import { createHasher, prepareChecksums } from '../media/checksum';
+import { sampleLut } from '../looks/sample';
 import { dayFolder, segment } from '../media/rules';
 import { renderArgs, type RenderJob } from './render-args';
 import { sequencePattern } from '../scriptlog/clip-key';
@@ -249,6 +251,15 @@ export class DailiesService {
     } catch {
       // The dailies themselves are made and recorded; the extras can be written again next time.
     }
+  }
+
+  /** A library look as a table, for the Grade screen to apply live and to bake a grade over. */
+  async lookTable(lutId: number): Promise<LookTable> {
+    const ffmpeg = await this.deps.ffmpeg();
+    if (!ffmpeg) throw new Error('FFmpeg is not available, so looks cannot be read on this computer.');
+    const look = this.deps.db().lutFile(lutId);
+    if (!look) throw new Error('That look is not in the library.');
+    return sampleLut(ffmpeg, look);
   }
 
   /** One frame of a clip, as it is and through a look, for the Looks screen. */

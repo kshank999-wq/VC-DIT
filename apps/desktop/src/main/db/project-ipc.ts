@@ -17,6 +17,8 @@ import { findMoved } from '../media/relink';
 import { segment } from '../media/rules';
 import { DEFAULT_DAILIES, DELIVERY_PACKAGES, FORMAT_RULES, LUT_SCOPES, MIRROR_METHODS, SCENE_STATUSES, type DailiesSettings, type DayNote, type DeliveryPackageId, type CameraReportInput, type DeliverySettings, type FormatRule, type SlateInput, type LutScope, type MirrorMethod, type Production, type ProjectResult, type ProjectState, type SceneEntry, type ShootDay } from '../../shared/project';
 import { DailiesService } from '../dailies/dailies-service';
+import { cubeText, gradeTable, limitCdl, type Cdl } from '../../shared/grade';
+import { aleSop } from '../looks/cdl';
 import { AUDIO, CODECS, RESOLUTIONS } from '../dailies/render-args';
 import { locateFfmpeg, type Ffmpeg } from '../ffmpeg/ffmpeg';
 import transferWorkerPath from '../media/transfer-worker?modulePath';
@@ -92,6 +94,18 @@ const scenePatch = (input: unknown): Partial<Omit<SceneEntry, 'id'>> => {
 };
 
 /** Only the settings a dailies run has, each of the right kind. */
+/** A grade from the Grade screen, as numbers: anything else is refused before it is held to the limits. */
+const gradeCdl = (input: unknown): Cdl => {
+  const value = (input ?? {}) as Record<string, unknown>;
+  const three = (key: string): [number, number, number] => {
+    const list = value[key];
+    if (!Array.isArray(list) || list.length !== 3 || list.some((item) => typeof item !== 'number' || !Number.isFinite(item))) throw new Error(`The grade's ${key} is not three numbers.`);
+    return list as [number, number, number];
+  };
+  if (typeof value['sat'] !== 'number' || !Number.isFinite(value['sat'])) throw new Error("The grade's saturation is not a number.");
+  return { slope: three('slope'), offset: three('offset'), power: three('power'), sat: value['sat'] };
+};
+
 const dailiesSettings = (input: unknown): DailiesSettings => {
   const value = (input ?? {}) as Record<string, unknown>;
   const pick = <T extends string>(options: readonly T[], given: unknown, fallback: T): T => (options.includes(given as T) ? (given as T) : fallback);
@@ -560,6 +574,29 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       return { ok: false, reason: (cause as Error).message };
     }
   });
+
+  ipcMain.handle('vcdit:project-look-table', async (_e, lutId: unknown) => {
+    try {
+      const table = await rendering.lookTable(Number(lutId));
+      return { ok: true, size: table.size, data: table.data };
+    } catch (cause) {
+      return { ok: false, reason: (cause as Error).message };
+    }
+  });
+  ipcMain.handle('vcdit:project-grade-save', (_e, name: unknown, cdl: unknown, baseLutId: unknown) =>
+    answer(async () => {
+      const db = library.current;
+      const grade = limitCdl(gradeCdl(cdl));
+      const base = baseLutId === null || baseLutId === undefined ? null : Number(baseLutId);
+      const baseLut = base === null ? null : db.luts().find((lut) => lut.id === base);
+      if (base !== null && !baseLut) throw new Error('That show LUT is no longer in the library.');
+      const named = text(name, 80) ?? '';
+      if (baseLut && baseLut.name.replace(/\.cube$/i, '') === named.replace(/\.cube$/i, '')) throw new Error('A grade cannot be saved over the LUT it sits on. Give it a name of its own.');
+      const table = gradeTable(grade, base === null ? null : await rendering.lookTable(base));
+      const title = baseLut ? `ASC CDL over ${baseLut.name}` : 'ASC CDL on LOG';
+      db.saveGrade(named, grade, base, cubeText(named, table, [`ASC CDL ${aleSop(grade)} SAT ${grade.sat}`, baseLut ? `Over ${baseLut.name}` : 'On LOG']), title);
+    }),
+  );
 
   // ------------------------------------------------ dailies
   ipcMain.handle('vcdit:project-dailies-settings', (_e, settings: unknown) => answer(() => library.current.saveDailiesSettings(dailiesSettings(settings))));
