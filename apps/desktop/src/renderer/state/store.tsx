@@ -161,7 +161,7 @@ export const initialState = (): AppState => ({
   previewClips: [],
   renders: [],
   dailiesActivity: null,
-  frameio: { available: false, user: null, target: null, activity: null, problem: null },
+  frameio: { available: false, user: null, target: null, autoPublish: false, activity: null, problem: null },
   ffmpeg: null,
   dailies: structuredClone(demo.DAILIES),
   packages: structuredClone(demo.PACKAGES),

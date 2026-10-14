@@ -189,6 +189,8 @@ interface ProjectApi {
     workspaceId: string | null,
   ) => Promise<{ ok: true; items: { id: string; name: string; rootFolderId?: string; viewUrl?: string | null }[] } | { ok: false; reason: string }>;
   setFrameioTarget: (target: import('../shared/project').FrameioTarget | null) => Promise<ProjectResult>;
+  /** Publish on its own after each dailies run. */
+  setFrameioAuto: (on: boolean) => Promise<ProjectResult>;
   publishFrameio: () => Promise<ProjectResult>;
   stopFrameio: () => Promise<ProjectResult>;
   /** A Frame.io page in the browser (only frame.io addresses). */

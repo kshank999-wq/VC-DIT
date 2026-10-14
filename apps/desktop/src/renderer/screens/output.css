@@ -183,3 +183,4 @@
 .fio-field { display: grid; gap: 4px; }
 .fio-notice { margin: 0; }
 .fio-body .summary-row { gap: 10px; padding-top: 4px; }
+.fio-auto { cursor: pointer; }

@@ -30,6 +30,8 @@ export interface DailiesDeps {
   /** A destination by id: a mounted destination volume or a destination folder. */
   destination: (id: string) => { name: string; root: string } | null;
   changed: () => void;
+  /** A run has ended: how many dailies it rendered, and whether it was stopped. */
+  finished?: (run: { rendered: number; stopped: boolean }) => void;
 }
 
 const firstReadable = async (paths: string[]) => {
@@ -103,12 +105,19 @@ export class DailiesService {
       );
     }
     db.saveDailiesSettings(settings);
-    this.controller = new AbortController();
-    void this.render(ffmpeg, db, day, plans, settings, destination.root, this.controller.signal).finally(() => {
-      this.controller = null;
-      this.activity = null;
-      this.deps.changed();
-    });
+    const controller = new AbortController();
+    this.controller = controller;
+    let rendered = 0;
+    void this.render(ffmpeg, db, day, plans, settings, destination.root, controller.signal)
+      .then((count) => {
+        rendered = count;
+      })
+      .finally(() => {
+        this.controller = null;
+        this.activity = null;
+        this.deps.changed();
+        this.deps.finished?.({ rendered, stopped: controller.signal.aborted });
+      });
     return { takes: plans.length };
   }
 
@@ -125,7 +134,7 @@ export class DailiesService {
     settings: DailiesSettings,
     root: string,
     signal: AbortSignal,
-  ) {
+  ): Promise<number> {
     const production = db.production();
     const dayDir = join(root, segment(production.name || production.code), dayFolder(day));
     const ours = new Set(db.renders(day.number).map((render) => render.output));
@@ -251,6 +260,7 @@ export class DailiesService {
     } catch {
       // The dailies themselves are made and recorded; the extras can be written again next time.
     }
+    return done.filter((render) => render.state === 'done').length;
   }
 
   /** A library look as a table, for the Grade screen to apply live and to bake a grade over. */

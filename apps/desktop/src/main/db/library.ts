@@ -118,7 +118,7 @@ export class Library {
       dailies: db.dailiesSettings(),
       renders: db.renders(day.number).map(({ checksum: _checksum, ...render }) => render),
       dailiesActivity: null,
-      frameio: { available: false, user: null, target: db.frameioTarget(), activity: null, problem: null },
+      frameio: { available: false, user: null, target: db.frameioTarget(), autoPublish: db.frameioAuto(), activity: null, problem: null },
       ffmpeg: null,
       delivery: {
         settings: db.deliverySettings(),

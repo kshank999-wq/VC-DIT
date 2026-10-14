@@ -19,7 +19,7 @@ export const fresh = (patch: Partial<ProjectState> = {}): ProjectState => ({
   dailies: DEFAULT_DAILIES,
   renders: [],
   dailiesActivity: null,
-  frameio: { available: false, user: null, target: null, activity: null, problem: null },
+  frameio: { available: false, user: null, target: null, autoPublish: false, activity: null, problem: null },
   ffmpeg: null,
   organize: { placed: 0, references: 0, failed: 0, pending: 0, folders: [], problems: [], activity: null, check: null },
   media: { cameraFiles: 0, soundFiles: 0, cards: 0, home: null },
