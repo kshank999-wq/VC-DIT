@@ -3,6 +3,7 @@ import { DAILIES_AUDIO, DAILIES_CODECS, DAILIES_GROUPING, DAILIES_LOOKS, DAILIES
 import type { DailiesOptions, Scene } from '../model/types';
 import { dailiesSettings, projectApi } from '../state/engine';
 import { DESTINATION_ROLES, useStore } from '../state/store';
+import { FrameioPublish } from '../ui/FrameioPublish';
 import { Chip, ScreenHeader, StartButton, StatusText, statusVar, tone } from '../ui/kit';
 import './output.css';
 
@@ -257,6 +258,7 @@ export function Dailies() {
         </section>
 
         {api ? (
+          <div className="stack gap-20">
           <section className="card">
             <div className="card-head">
               <h3>Rendered today</h3>
@@ -281,6 +283,17 @@ export function Dailies() {
                       <span className="mono muted">{render.clip}</span>
                       <span className="grow" />
                       <Chip color={statusVar(render.state === 'done' ? (render.warnings.length ? 'needs' : 'done') : 'problem')}>{render.state === 'done' ? 'Rendered' : 'Failed'}</Chip>
+                      {render.frameio?.state === 'done' && render.frameio.viewUrl ? (
+                        <button type="button" className="btn ghost small" title="Open it on Frame.io" onClick={() => void api.openFrameio(render.frameio!.viewUrl!)}>
+                          On Frame.io ↗
+                        </button>
+                      ) : render.frameio?.state === 'done' ? (
+                        <Chip color={statusVar('done')}>On Frame.io</Chip>
+                      ) : render.frameio?.state === 'failed' ? (
+                        <span title={render.frameio.error ?? ''}>
+                          <Chip color={statusVar('problem')}>Frame.io failed</Chip>
+                        </span>
+                      ) : null}
                       {render.state === 'done' ? (
                         <button type="button" className="btn ghost small" onClick={() => void api.showDaily(render.output)}>
                           Show
@@ -295,8 +308,9 @@ export function Dailies() {
                 ))}
               </ul>
             )}
-            <p className="muted small fio-note">Publishing to Frame.io comes with the Frame.io connection.</p>
           </section>
+          <FrameioPublish />
+          </div>
         ) : (
         <section className="card">
           <div className="card-head">

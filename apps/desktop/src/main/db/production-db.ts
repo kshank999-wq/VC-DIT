@@ -42,7 +42,7 @@ import type { ViewClip } from '../organize/view';
 import { SCENE_VIEW, SELECTS_VIEW, applyNaming } from '../../shared/project';
 import { segment } from '../media/rules';
 import { resolveAssignment, reportClipKey, SOURCE_WORD, splitSlate, takeNumber, type Assignment, type Claim } from '../organize/assign';
-import type { AssignedClip, CameraReportInput, CameraReportRow, DriveSeal, MatchEntry, SetupEntry, SlateInput, TakesState } from '../../shared/project';
+import type { AssignedClip, CameraReportInput, CameraReportRow, DriveSeal, FrameioTarget, MatchEntry, SetupEntry, SlateInput, TakesState } from '../../shared/project';
 import {
   DEFAULT_DELIVERY,
   DELIVERY_PACKAGES,
@@ -528,6 +528,26 @@ MIGRATIONS.push(`alter table transfer_destination add column tape integer not nu
 MIGRATIONS.push(`
   alter table lut add column grade integer not null default 0;
   alter table lut add column grade_base integer;
+`);
+
+// Frame.io (spec §4.8): where the production publishes its dailies, and each daily published there.
+MIGRATIONS.push(`
+  alter table production add column frameio text;
+  create table frameio_upload (
+    day integer not null,
+    take_id text not null,
+    clip_key text not null,
+    project_id text not null,
+    file_id text,
+    name text not null,
+    bytes integer not null,
+    checksum text,
+    state text not null check (state in ('done', 'failed')),
+    error text,
+    view_url text,
+    at text not null,
+    primary key (day, take_id, clip_key)
+  );
 `);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
@@ -2144,7 +2164,12 @@ export class ProductionDb {
   }
 
   renders(day: number): (DailyRender & { checksum: string | null })[] {
+    const project = this.frameioTarget()?.projectId ?? null;
+    const published = new Map(
+      this.rows<Record<string, SqlValue>>('select * from frameio_upload where day = ?', [day]).map((row) => [`${String(row['take_id'])}|${String(row['clip_key'])}`, row]),
+    );
     return this.rows<Record<string, SqlValue>>('select * from dailies_render where day = ? order by label, clip_key', [day]).map((row) => ({
+      ...this.publishedAs(published.get(`${String(row['take_id'])}|${String(row['clip_key'])}`), project, (row['checksum'] as string | null) ?? null),
       takeId: String(row['take_id']),
       label: String(row['label']),
       clip: String(row['clip_key']),
@@ -2157,6 +2182,46 @@ export class ProductionDb {
       checksum: (row['checksum'] as string | null) ?? null,
       warnings: JSON.parse(String(row['warnings'])) as string[],
     }));
+  }
+
+  /** A daily's Frame.io record, when it is of this render (same checksum) in the project published to now. */
+  private publishedAs(row: Record<string, SqlValue> | undefined, project: string | null, checksum: string | null): { frameio?: DailyRender['frameio'] } {
+    if (!row || String(row['project_id']) !== project || (row['checksum'] ?? null) !== checksum) return {};
+    return { frameio: { state: row['state'] as 'done' | 'failed', error: (row['error'] as string | null) ?? null, viewUrl: (row['view_url'] as string | null) ?? null } };
+  }
+
+  // ------------------------------------------------ Frame.io
+
+  frameioTarget(): FrameioTarget | null {
+    const raw = this.value<string>('select frameio from production where id = 1');
+    return raw ? (JSON.parse(raw) as FrameioTarget) : null;
+  }
+
+  saveFrameioTarget(target: FrameioTarget | null) {
+    this.transaction(() => this.run('update production set frameio = ? where id = 1', [target ? JSON.stringify(target) : null]));
+  }
+
+  /** What was last published for a daily: its file on Frame.io, which render (checksum), and how it went. */
+  frameioUpload(day: number, takeId: string, clip: string): { projectId: string; fileId: string | null; checksum: string | null; state: 'done' | 'failed' } | null {
+    const row = this.rows<Record<string, SqlValue>>('select project_id, file_id, checksum, state from frameio_upload where day = ? and take_id = ? and clip_key = ?', [day, takeId, clip])[0];
+    return row
+      ? { projectId: String(row['project_id']), fileId: (row['file_id'] as string | null) ?? null, checksum: (row['checksum'] as string | null) ?? null, state: row['state'] as 'done' | 'failed' }
+      : null;
+  }
+
+  saveFrameioUpload(
+    day: number,
+    takeId: string,
+    clip: string,
+    record: { projectId: string; fileId: string | null; name: string; bytes: number; checksum: string | null; state: 'done' | 'failed'; error: string | null; viewUrl: string | null },
+  ) {
+    this.transaction(() =>
+      this.run(
+        `insert or replace into frameio_upload (day, take_id, clip_key, project_id, file_id, name, bytes, checksum, state, error, view_url, at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [day, takeId, clip, record.projectId, record.fileId, record.name, record.bytes, record.checksum, record.state, record.error, record.viewUrl, now()],
+      ),
+    );
   }
 
   // ------------------------------------------------ delivery

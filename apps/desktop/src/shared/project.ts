@@ -244,6 +244,31 @@ export interface DailyRender {
   codec: string;
   bytes: number | null;
   warnings: string[];
+  /** Published to the production's Frame.io project (this render, not an earlier one of the take). */
+  frameio?: { state: 'done' | 'failed'; error: string | null; viewUrl: string | null };
+}
+
+/** Where a production publishes its dailies on Frame.io: an account's workspace's project. */
+export interface FrameioTarget {
+  accountId: string;
+  accountName: string;
+  workspaceId: string;
+  workspaceName: string;
+  projectId: string;
+  projectName: string;
+  rootFolderId: string;
+  viewUrl: string | null;
+}
+
+export interface FrameioState {
+  /** This build can sign in to Frame.io (it carries an Adobe client id). */
+  available: boolean;
+  /** Who is signed in to Frame.io on this computer, or null. */
+  user: string | null;
+  target: FrameioTarget | null;
+  activity: string | null;
+  /** The last publish's outcome, when it was not all well. */
+  problem: string | null;
 }
 
 /** The day's script supervisor log, as last imported. */
@@ -287,6 +312,7 @@ export interface ProjectState {
   renders: DailyRender[];
   /** What dailies rendering is doing now, or null. */
   dailiesActivity: string | null;
+  frameio: FrameioState;
   /** The FFmpeg this app renders with, or null when there is none. */
   ffmpeg: { version: string } | null;
   delivery: DeliveryState;

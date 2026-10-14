@@ -29,6 +29,9 @@ jobs:
       # Built into the app: where it checks its license, and the key that checks the answer.
       MAIN_VITE_SITE_URL: ${{ vars.MAIN_VITE_SITE_URL || 'https://vc-dit.com' }}
       MAIN_VITE_LICENSE_PUBLIC_KEY: ${{ vars.MAIN_VITE_LICENSE_PUBLIC_KEY }}
+      # Frame.io sign-in (an Adobe OAuth Native App credential). Unset: the app cannot publish to Frame.io.
+      MAIN_VITE_FRAMEIO_CLIENT_ID: ${{ vars.MAIN_VITE_FRAMEIO_CLIENT_ID }}
+      MAIN_VITE_FRAMEIO_REDIRECT_URI: ${{ vars.MAIN_VITE_FRAMEIO_REDIRECT_URI }}
     steps:
       - uses: actions/checkout@v4
 

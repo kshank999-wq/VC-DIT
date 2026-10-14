@@ -179,4 +179,18 @@ interface ProjectApi {
   setFilmStudioKey: (key: string) => Promise<{ ok: true; link: FilmStudioLink } | { ok: false; reason: string }>;
   clearFilmStudioKey: () => Promise<FilmStudioLink>;
   showDaily: (path: string) => Promise<void>;
+  /** Sign in to Frame.io in the browser; resolves when the sign-in comes back (or fails, or is cancelled). */
+  connectFrameio: () => Promise<ProjectResult>;
+  cancelFrameio: () => Promise<void>;
+  disconnectFrameio: () => Promise<ProjectResult>;
+  /** Accounts (no ids), an account's workspaces, or a workspace's projects. */
+  browseFrameio: (
+    accountId: string | null,
+    workspaceId: string | null,
+  ) => Promise<{ ok: true; items: { id: string; name: string; rootFolderId?: string; viewUrl?: string | null }[] } | { ok: false; reason: string }>;
+  setFrameioTarget: (target: import('../shared/project').FrameioTarget | null) => Promise<ProjectResult>;
+  publishFrameio: () => Promise<ProjectResult>;
+  stopFrameio: () => Promise<ProjectResult>;
+  /** A Frame.io page in the browser (only frame.io addresses). */
+  openFrameio: (url: string) => Promise<void>;
 }

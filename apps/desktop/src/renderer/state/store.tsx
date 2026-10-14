@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, type Dispatch, type ReactNode } from 'react';
 import type { MediaState, Workflow } from '../../shared/media';
-import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, DriveSeal, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
+import type { DailyRender, DayNote, DeliveryPackageId, DeliveryState, DriveSeal, FrameioState, NoteInput, OrganizeState, ProjectState, SlateInput, TakesState } from '../../shared/project';
 import * as demo from '../model/demo';
 import type {
   ChecksumMethod,
@@ -97,6 +97,8 @@ export interface AppState {
   previewClips: { id: string; label: string }[];
   renders: DailyRender[];
   dailiesActivity: string | null;
+  /** Frame.io: whether this build can sign in, who is, and where the dailies publish. */
+  frameio: FrameioState;
   ffmpeg: { version: string } | null;
   dailies: DailiesOptions;
   packages: DeliveryPackage[];
@@ -159,6 +161,7 @@ export const initialState = (): AppState => ({
   previewClips: [],
   renders: [],
   dailiesActivity: null,
+  frameio: { available: false, user: null, target: null, activity: null, problem: null },
   ffmpeg: null,
   dailies: structuredClone(demo.DAILIES),
   packages: structuredClone(demo.PACKAGES),

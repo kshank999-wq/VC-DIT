@@ -157,10 +157,25 @@ artifacts, and, after approval in the `release` environment, publishes them
 | --- | --- | --- |
 | Variable | `MAIN_VITE_SITE_URL` | `https://vc-dit.com` |
 | Variable | `MAIN_VITE_LICENSE_PUBLIC_KEY` | Optional. When unset, the build fetches it from the live site |
+| Variable | `MAIN_VITE_FRAMEIO_CLIENT_ID` | Optional. The Adobe client id for publishing dailies to Frame.io (below). Unset: no Frame.io |
+| Variable | `MAIN_VITE_FRAMEIO_REDIRECT_URI` | With the client id: the redirect URI Adobe assigned it |
 | Variable | `SUPABASE_URL` | `https://wdpbzwqzjpxabvfailly.supabase.co` (the publish job) |
 | Secret | `SUPABASE_SERVICE_ROLE_KEY` | For the publish job |
 | Secret | `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Mac signing and notarization: set all five with the one-line script below |
 | Secret | `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, `AZURE_SIGNING_PROFILE` | Windows signing via Azure Artifact Signing (**pending**) |
+
+**Frame.io (publishing dailies).** Frame.io V4 signs in through Adobe. In the
+[Adobe Developer Console](https://developer.adobe.com/console), create a
+project, add the **Frame.io API**, and choose **OAuth Native App** as the
+credential (no client secret: the app signs each person in in their own
+browser with PKCE). Adobe assigns the credential a redirect URI of the form
+`adobe+<hash>://adobeid/<client id>`. Set the two repository variables above
+to the client id and that redirect URI. The build registers the app for the
+redirect's scheme (on macOS through the installer's Info.plist,
+`apps/desktop/scripts/package.mjs`). A loopback redirect
+(`http://127.0.0.1:<port>/callback`) also works, if your credential allows one.
+The person's Frame.io sign-in stays on their computer, sealed by the
+operating system's keychain; it is never in a production file.
 
 **Mac signing, in one line.** On the Mac that has your "Developer ID
 Application" certificate, paste into Terminal:
