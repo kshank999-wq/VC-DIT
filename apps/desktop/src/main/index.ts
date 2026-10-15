@@ -11,6 +11,7 @@ import type { SyncService } from './sync/sync-service';
 import type { VfxService } from './vfx/vfx-service';
 import { registerMedia } from './media/media-ipc';
 import { frameioOpened, registerFrameioScheme } from './frameio/connection';
+import { prepareSmoke, SMOKE, smokeFailed, watchSmoke } from './smoke';
 
 /**
  * Electron main process for VC DIT.
@@ -39,6 +40,7 @@ const createMainWindow = (): BrowserWindow => {
     },
   });
   window.once('ready-to-show', () => window.show());
+  watchSmoke(window);
   // Links open in the browser, never inside the app.
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -78,6 +80,7 @@ const allowAudioInputOnly = () => {
  * browser handing back the Frame.io sign-in on Windows) brings this one
  * forward and passes on what it was opened with.
  */
+prepareSmoke();
 const primary = app.requestSingleInstanceLock();
 if (!primary) app.quit();
 app.on('second-instance', (_event, argv) => {
@@ -144,6 +147,10 @@ void app.whenReady().then(async () => {
   // A start that fails must say so, not sit there with no window.
   const detail = cause instanceof Error ? (cause.stack ?? cause.message) : String(cause);
   console.error('VC DIT could not start:', detail);
+  if (SMOKE) {
+    smokeFailed(`start: ${detail}`);
+    return;
+  }
   dialog.showErrorBox('VC DIT could not start', detail);
   app.exit(1);
 });

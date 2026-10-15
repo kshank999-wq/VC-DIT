@@ -23,3 +23,24 @@ jobs:
         run: npm run build -w @vcdit/desktop
       - name: Build the website (vc-dit.com)
         run: npm run build -w @vcdit/web
+
+  # The real desktop app, started on a virtual screen: it opens its window, visits
+  # every screen and quits (apps/desktop/src/main/smoke.ts). A start that fails, a
+  # screen that does not draw, or an error in its console fails the build.
+  launch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build the desktop bundles
+        run: npm run build -w @vcdit/desktop
+      - name: Start the app and visit every screen
+        working-directory: apps/desktop
+        env:
+          VCDIT_SMOKE: 1
+        run: timeout 180 xvfb-run -a ../../node_modules/.bin/electron --no-sandbox . 2>/dev/null | tee smoke.log; test "${PIPESTATUS[0]}" -eq 0 && grep -q '^VCDIT_SMOKE OK' smoke.log
+        shell: bash
