@@ -1,6 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, session, shell, systemPreferences } from 'electron';
 import { join } from 'node:path';
 import { registerLicensing } from './licensing-ipc';
+import { registerUpdates } from './updates-ipc';
 import type { Library } from './db/library';
 import { registerProject } from './db/project-ipc';
 import type { MediaService } from './media/media-service';
@@ -103,6 +104,7 @@ void app.whenReady().then(async () => {
   allowAudioInputOnly();
   // Before the first window, so it opens knowing whether transfers may start and which production is open.
   await registerLicensing();
+  await registerUpdates();
   const project = await registerProject({
     busy: () => media?.busy() ?? false,
     opened: (transfers) => media?.load(transfers),

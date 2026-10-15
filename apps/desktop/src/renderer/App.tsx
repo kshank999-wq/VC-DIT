@@ -7,6 +7,7 @@ import { Header } from './shell/Header';
 import { LicenseDialog } from './shell/License';
 import { PreferencesDialog } from './shell/Preferences';
 import { SafeToClearNotices } from './ui/ClearCard';
+import { UpdateNotice } from './ui/UpdateNotice';
 import { useStore } from './state/store';
 import { useAccess } from './ui/kit';
 
@@ -79,6 +80,7 @@ export function App() {
       <FilesPanel />
       {licenseOpen ? <LicenseDialog onClose={() => setLicenseOpen(false)} /> : null}
       <SafeToClearNotices />
+      <UpdateNotice />
       {prefsOpen ? <PreferencesDialog onClose={() => setPrefsOpen(false)} /> : null}
     </div>
   );

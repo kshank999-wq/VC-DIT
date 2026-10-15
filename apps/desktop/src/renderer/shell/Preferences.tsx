@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { DEFAULT_PREFS, FILES_WIDTH, useStore, type IconSize, type ThemeChoice } from '../state/store';
 import { DeviceIcon, ICON_PX } from '../ui/media-icons';
+import { UpdateCheck } from '../ui/UpdateNotice';
 
 /**
  * This computer's preferences (kept on it, not in the production): the
@@ -80,6 +81,8 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
           />
           <span className="faint small">Or drag the panel's left edge. Double-click the edge to go back to {FILES_WIDTH.default}px.</span>
         </label>
+
+        <UpdateCheck />
 
         <div className="row" style={{ justifyContent: 'space-between' }}>
           <button type="button" className="btn ghost" onClick={() => dispatch({ type: 'setPrefs', prefs: DEFAULT_PREFS })}>

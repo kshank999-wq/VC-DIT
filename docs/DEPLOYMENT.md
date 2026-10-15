@@ -153,6 +153,15 @@ Windows installer and the macOS universal DMG, uploads them as workflow
 artifacts, and, after approval in the `release` environment, publishes them
 (`apps/web/scripts/publish-release.mjs`).
 
+**Update notices.** Installed copies ask `vc-dit.com/api/releases` (public:
+versions and notes, never where the installer is) shortly after start and
+every six hours. When a newer version is published for their platform, they
+show "VC DIT x.y.z is available" with its release notes, and Download (the
+site's download page, through the license as always), Later (until tomorrow)
+and Skip this version. Preferences has Check for updates. Publishing a build
+is therefore what tells every installed copy about it; the first lines of its
+release notes are what people read.
+
 | Kind | Name | Value |
 | --- | --- | --- |
 | Variable | `MAIN_VITE_SITE_URL` | `https://vc-dit.com` |
