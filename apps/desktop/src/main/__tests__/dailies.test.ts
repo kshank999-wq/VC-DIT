@@ -50,7 +50,11 @@ const settings = (patch: Partial<DailiesSettings> = {}): DailiesSettings => ({
 
 const finished = () => vi.waitFor(() => expect(dailies.busy()).toBe(false), { timeout: 20000, interval: 50 });
 
+/** Each run's end, as the Frame.io auto-publish hears it. */
+let runs: { rendered: number; stopped: boolean }[];
+
 beforeEach(async () => {
+  runs = [];
   base = await mkdtemp(join(tmpdir(), 'vcdit-dailies-'));
   db = await ProductionDb.open(join(base, 'p.vcdit'), { wasm, create: { name: 'NIGHTJAR', code: 'NJR', frameRate: '23.976 fps' } });
   db.updateDay(1, { date: '2026-10-07' });
@@ -61,6 +65,7 @@ beforeEach(async () => {
     font: FONT,
     destination: (id) => (id === 'raid' ? { name: 'RAID', root: join(base, 'RAID') } : null),
     changed: () => undefined,
+    finished: (run) => void runs.push(run),
   });
   await ingest('A001', false, [
     { name: 'A001C001_261007_R1AB.mov', from: 'clip.mov' },
@@ -119,6 +124,7 @@ describe.skipIf(!ffmpeg)('dailies, rendered', () => {
     db.importLut('Warm.cube', tintCube);
     await dailies.start(settings());
     await finished();
+    await vi.waitFor(() => expect(runs).toEqual([{ rendered: 1, stopped: false }]));
     const [render] = db.renders(1);
     const dayDir = join(base, 'RAID', 'NIGHTJAR', 'SHOOT_DAY_001_2026-10-07');
     expect(render).toMatchObject({

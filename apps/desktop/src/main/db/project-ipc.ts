@@ -279,6 +279,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       available: frameioConfig() !== null,
       user: frameioWho,
       target: library.current.frameioTarget(),
+      autoPublish: library.current.frameioAuto(),
       activity: publisher?.activity ?? null,
       problem: publisher?.problem ?? null,
     },
@@ -315,6 +316,11 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
     font: join(resources, 'fonts', 'IBMPlexMono-Medium.ttf'),
     destination: (id) => hooks.destinations().find((destination) => destination.id === id) ?? null,
     changed: broadcast,
+    // Dailies rendered, and the production publishes on its own: to Frame.io they go.
+    finished: ({ rendered, stopped }) => {
+      const db = library.current;
+      if (!stopped && rendered > 0 && db.frameioAuto() && db.frameioTarget()) void publisher?.auto();
+    },
   });
   const rendering = dailies;
   void ffmpegReady.then(broadcast);
@@ -995,6 +1001,7 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       library.current.saveFrameioTarget(target === null ? null : frameioTarget(target));
     }),
   );
+  ipcMain.handle('vcdit:frameio-auto', (_e, on: unknown) => answer(() => library.current.setFrameioAuto(on === true)));
   ipcMain.handle('vcdit:frameio-publish', () =>
     answer(async () => {
       if (rendering.busy()) throw new Error('Dailies are rendering. Publish when they have finished.');

@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('vcdit', {
     disconnectFrameio: (): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-disconnect'),
     browseFrameio: (accountId: string | null, workspaceId: string | null): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-browse', accountId, workspaceId),
     setFrameioTarget: (target: unknown): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-target', target),
+    setFrameioAuto: (on: boolean): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-auto', on),
     publishFrameio: (): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-publish'),
     stopFrameio: (): Promise<unknown> => ipcRenderer.invoke('vcdit:frameio-stop'),
     openFrameio: (url: string): Promise<void> => ipcRenderer.invoke('vcdit:frameio-open', url),

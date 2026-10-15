@@ -373,4 +373,42 @@ describe('publishing the day\'s dailies', () => {
       await db.close();
     }
   });
+
+  it('publishes on its own after dailies: now, or once the publish under way ends, and says what stops it', async () => {
+    const { db, day, daily } = await setUp();
+    try {
+      expect(db.frameioAuto()).toBe(false);
+      db.setFrameioAuto(true);
+      expect(db.frameioAuto()).toBe(true);
+      db.saveFrameioTarget(target);
+      const frameio = fakeFrameio();
+      let signedIn = false;
+      const publisher = new FrameioPublisher({
+        db: () => db,
+        session: async () => (signedIn ? new FrameioApi({ token: async () => 't', fetch: frameio.fetch, sleep: noSleep }) : null),
+        changed: () => undefined,
+        fetch: frameio.fetch,
+        sleep: noSleep,
+      });
+      await daily(1, 1500, 'aaa');
+      await publisher.auto();
+      expect(publisher.problem).toBe('Not published automatically: Connect Frame.io first.');
+      signedIn = true;
+      await publisher.auto();
+      expect(publisher.busy()).toBe(true);
+      // Rendered while that publish runs: it goes when that one ends.
+      await daily(2, 700, 'bbb');
+      await publisher.auto();
+      for (let i = 0; i < 500 && (frameio.files.size < 2 || publisher.busy()); i += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+      await finished(publisher);
+      expect([...frameio.files.values()].map((file) => file.name).sort()).toEqual(['4A-01.mov', '4A-02.mov']);
+      expect(db.renders(day.number).map((render) => render.frameio?.state)).toEqual(['done', 'done']);
+      // Nothing new: nothing to say.
+      await publisher.auto();
+      expect(publisher.busy()).toBe(false);
+      expect(publisher.problem).toBeNull();
+    } finally {
+      await db.close();
+    }
+  });
 });

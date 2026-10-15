@@ -266,6 +266,8 @@ export interface FrameioState {
   /** Who is signed in to Frame.io on this computer, or null. */
   user: string | null;
   target: FrameioTarget | null;
+  /** Publish on its own after each dailies run. */
+  autoPublish: boolean;
   activity: string | null;
   /** The last publish's outcome, when it was not all well. */
   problem: string | null;

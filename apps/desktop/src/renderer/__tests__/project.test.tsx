@@ -140,6 +140,7 @@ beforeEach(() => {
             ],
     })),
     setFrameioTarget: vi.fn(async (target: unknown) => ok((current = { ...current, frameio: { ...current.frameio, target: target as ProjectState['frameio']['target'] } }))),
+    setFrameioAuto: vi.fn(async (on: boolean) => ok((current = { ...current, frameio: { ...current.frameio, autoPublish: on } }))),
     publishFrameio: vi.fn(async () => ok({ ...current, frameio: { ...current.frameio, activity: 'Publishing 1 of 1 · 4A-02.mov · 0%' } })),
     stopFrameio: vi.fn(async () => ok(current)),
     openFrameio: vi.fn(async () => undefined),
@@ -515,7 +516,7 @@ describe('a production from the database', () => {
     current = fresh({
       ...logged,
       ffmpeg: { version: '6.0' },
-      frameio: { available: true, user: null, target: null, activity: null, problem: null },
+      frameio: { available: true, user: null, target: null, autoPublish: false, activity: null, problem: null },
       renders: [
         done(1, { state: 'done', error: null, viewUrl: 'https://next.frame.io/view/f1' }),
         done(2),
@@ -554,6 +555,11 @@ describe('a production from the database', () => {
       }),
     );
     expect(await screen.findByText('1 on Frame.io · 2 to publish')).toBeTruthy();
+    const auto = screen.getByRole('checkbox', { name: 'Publish on its own after each dailies run' }) as HTMLInputElement;
+    expect(auto.checked).toBe(false);
+    fireEvent.click(auto);
+    expect(api.setFrameioAuto).toHaveBeenCalledWith(true);
+    await waitFor(() => expect(auto.checked).toBe(true));
     fireEvent.click(screen.getByRole('button', { name: 'Publish 2 to Frame.io' }));
     expect(api.publishFrameio).toHaveBeenCalled();
     expect(await screen.findByText('Publishing 1 of 1 · 4A-02.mov · 0%')).toBeTruthy();

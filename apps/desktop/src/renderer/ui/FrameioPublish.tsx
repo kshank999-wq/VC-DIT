@@ -226,6 +226,14 @@ export function FrameioPublish() {
                 Change project
               </button>
             </div>
+            <label className="row gap-8 fio-auto">
+              <input
+                type="checkbox"
+                checked={frameio.autoPublish}
+                onChange={(event) => void act(api.setFrameioAuto(event.target.checked))}
+              />
+              <span className="small">Publish on its own after each dailies run</span>
+            </label>
             {frameio.problem ? (
               <p className="dailies-notice fio-notice" role="status" style={tone(statusVar('needs'))}>
                 {frameio.problem}

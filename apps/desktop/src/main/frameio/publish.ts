@@ -51,6 +51,8 @@ export class FrameioPublisher {
   activity: string | null = null;
   problem: string | null = null;
   private controller: AbortController | null = null;
+  /** Dailies were rendered while publishing: publish again when this one ends. */
+  private again = false;
 
   constructor(private readonly deps: PublisherDeps) {}
 
@@ -59,6 +61,7 @@ export class FrameioPublisher {
   }
 
   stop() {
+    this.again = false;
     this.controller?.abort();
   }
 
@@ -92,6 +95,28 @@ export class FrameioPublisher {
       });
   }
 
+  /**
+   * Publish on its own, after a dailies run: now, or once the publish under
+   * way has finished (so dailies rendered meanwhile go too). Never throws:
+   * what stops it is said where the publish's problems are.
+   */
+  async auto(): Promise<void> {
+    if (this.controller) {
+      this.again = true;
+      return;
+    }
+    try {
+      await this.start();
+    } catch (cause) {
+      const message = (cause as Error).message;
+      // Nothing new to send is no problem.
+      if (!/already on Frame\.io/.test(message)) {
+        this.problem = `Not published automatically: ${message}`;
+        this.deps.changed();
+      }
+    }
+  }
+
   /** Start publishing the open day; resolves once it has started, with how many dailies it will send. */
   async start(): Promise<{ files: number }> {
     if (this.controller) throw new Error('Dailies are already being published to Frame.io.');
@@ -112,6 +137,9 @@ export class FrameioPublisher {
       this.controller = null;
       this.activity = null;
       this.deps.changed();
+      const again = this.again && !controller.signal.aborted;
+      this.again = false;
+      if (again) void this.auto();
     });
     return { files: items.length };
   }

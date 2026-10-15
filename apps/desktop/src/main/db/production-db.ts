@@ -550,6 +550,9 @@ MIGRATIONS.push(`
   );
 `);
 
+// Frame.io: publish on its own after each dailies run.
+MIGRATIONS.push(`alter table production add column frameio_auto integer not null default 0;`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -2195,6 +2198,15 @@ export class ProductionDb {
   frameioTarget(): FrameioTarget | null {
     const raw = this.value<string>('select frameio from production where id = 1');
     return raw ? (JSON.parse(raw) as FrameioTarget) : null;
+  }
+
+  /** Publish to Frame.io on its own after each dailies run. */
+  frameioAuto(): boolean {
+    return Number(this.value<number>('select frameio_auto from production where id = 1')) === 1;
+  }
+
+  setFrameioAuto(on: boolean) {
+    this.transaction(() => this.run('update production set frameio_auto = ? where id = 1', [on ? 1 : 0]));
   }
 
   saveFrameioTarget(target: FrameioTarget | null) {
