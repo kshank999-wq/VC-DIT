@@ -13,6 +13,9 @@ interface Access {
   message: string | null;
 }
 
+/** Whether a newer VC DIT is out (src/main/updates.ts). */
+type UpdateState = import('../shared/updates').UpdateState;
+
 /** Whether the open production can send its day to VC Film Studio (src/main/film-studio-link.ts). */
 interface FilmStudioLink {
   linked: boolean;
@@ -33,6 +36,13 @@ interface Window {
       refresh: () => Promise<Access>;
       deactivate: () => Promise<Access>;
       open: (page: 'pricing' | 'download' | 'account') => Promise<void>;
+    };
+    /** Whether a newer VC DIT is out. Absent in the browser preview. */
+    updates?: {
+      now: () => UpdateState;
+      onChange: (listener: (state: UpdateState) => void) => () => void;
+      check: () => Promise<UpdateState>;
+      dismiss: (how: 'later' | 'skip') => Promise<UpdateState>;
     };
     /** May the app listen to an audio input (the sync box's timecode)? Asks on macOS. Absent in the browser preview. */
     microphone?: () => Promise<boolean>;

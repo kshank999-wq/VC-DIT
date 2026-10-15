@@ -17,6 +17,17 @@ contextBridge.exposeInMainWorld('vcdit', {
     deactivate: (): Promise<unknown> => ipcRenderer.invoke('vcdit:license-deactivate'),
     open: (page: string): Promise<void> => ipcRenderer.invoke('vcdit:license-open', page),
   },
+  /** Whether a newer VC DIT is out (src/main/updates.ts); the installer comes from the site's download page. */
+  updates: {
+    now: (): unknown => ipcRenderer.sendSync('vcdit:update-now'),
+    onChange: (listener: (state: unknown) => void): (() => void) => {
+      const handler = (_e: unknown, state: unknown) => listener(state);
+      ipcRenderer.on('vcdit:update', handler);
+      return () => ipcRenderer.removeListener('vcdit:update', handler);
+    },
+    check: (): Promise<unknown> => ipcRenderer.invoke('vcdit:update-check'),
+    dismiss: (how: 'later' | 'skip'): Promise<unknown> => ipcRenderer.invoke('vcdit:update-dismiss', how),
+  },
   /** May the app listen to an audio input (the sync box's timecode)? Asks on macOS. */
   microphone: (): Promise<boolean> => ipcRenderer.invoke('vcdit:microphone'),
   /** The production database (src/main/db): settings, shoot days, scene lists. */

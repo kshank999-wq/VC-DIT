@@ -136,3 +136,11 @@ body.resizing { cursor: col-resize; user-select: none; }
 .eject-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 50vh; overflow: auto; }
 .eject-list li { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-bottom: 1px solid var(--border); }
 .files-assign { justify-self: start; }
+
+/* A newer VC DIT: bottom left, clear of the safe-to-clear notices on the right. */
+.update-notice {
+  position: fixed; left: 18px; bottom: 18px; z-index: 15; width: min(560px, calc(100vw - 36px));
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 14px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+}
+.update-actions { flex-wrap: wrap; }
