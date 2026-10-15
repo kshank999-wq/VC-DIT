@@ -213,3 +213,9 @@ environment (Settings → Environments) with yourself as a required reviewer.
   `apps/web/.env.local`.
 - `npm run dev -w @vcdit/desktop`: the app. Without
   `MAIN_VITE_LICENSE_PUBLIC_KEY` it is a developer build with licensing off.
+- The launch check, as CI runs it (the `launch` job in `.github/workflows/ci.yml`):
+  `npm run build -w @vcdit/desktop`, then in `apps/desktop`
+  `VCDIT_SMOKE=1 npx electron .` (on Linux without a screen,
+  `xvfb-run -a npx electron --no-sandbox .`). The app starts on a fresh
+  profile of its own, visits every screen, prints `VCDIT_SMOKE OK …` or
+  `VCDIT_SMOKE FAIL <why>`, and quits with 0 or 1.
