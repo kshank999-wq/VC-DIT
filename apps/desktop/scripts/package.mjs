@@ -20,6 +20,9 @@ const builder = require.resolve('electron-builder/cli.js');
 const platform = process.argv.includes('--win') ? '--win' : '--mac';
 const fetched = spawnSync(process.execPath, [fileURLToPath(new URL('./fetch-ffmpeg.mjs', import.meta.url)), platform], { stdio: 'inherit' });
 if (fetched.status !== 0) process.exit(fetched.status ?? 1);
+// The runtime packages, where electron-builder packs them (see stage-deps.mjs).
+const staged = spawnSync(process.execPath, [fileURLToPath(new URL('./stage-deps.mjs', import.meta.url))], { stdio: 'inherit' });
+if (staged.status !== 0) process.exit(staged.status ?? 1);
 // The Frame.io sign-in comes back to the app on the custom scheme Adobe assigned its client
 // (MAIN_VITE_FRAMEIO_REDIRECT_URI, e.g. adobe+1a2b3c://adobeid/<client id>). The installer
 // registers the app for that scheme: on macOS it must be in Info.plist, which only

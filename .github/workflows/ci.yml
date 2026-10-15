@@ -24,9 +24,11 @@ jobs:
       - name: Build the website (vc-dit.com)
         run: npm run build -w @vcdit/web
 
-  # The real desktop app, started on a virtual screen: it opens its window, visits
-  # every screen and quits (apps/desktop/src/main/smoke.ts). A start that fails, a
-  # screen that does not draw, or an error in its console fails the build.
+  # The desktop app as it ships: packaged by electron-builder (as the installers are,
+  # runtime packages and all), then started on a virtual screen, where it opens its
+  # window, visits every screen and quits (apps/desktop/src/main/smoke.ts). A package
+  # missing something, a start that fails, a screen that does not draw, or an error in
+  # its console fails the build.
   launch:
     runs-on: ubuntu-latest
     steps:
@@ -38,9 +40,14 @@ jobs:
       - run: npm ci
       - name: Build the desktop bundles
         run: npm run build -w @vcdit/desktop
-      - name: Start the app and visit every screen
+      - name: Package the app
         working-directory: apps/desktop
+        run: |
+          node scripts/stage-deps.mjs
+          npx electron-builder --linux dir --x64 --publish never -c.electronVersion="$(node -p "require('electron/package.json').version")" -c.linux.executableName=vcdit -c.directories.output="$RUNNER_TEMP/packaged"
+      - name: Start the packaged app and visit every screen
+        working-directory: ${{ runner.temp }}/packaged/linux-unpacked
         env:
           VCDIT_SMOKE: 1
-        run: timeout 180 xvfb-run -a ../../node_modules/.bin/electron --no-sandbox . 2>/dev/null | tee smoke.log; test "${PIPESTATUS[0]}" -eq 0 && grep -q '^VCDIT_SMOKE OK' smoke.log
+        run: timeout 180 xvfb-run -a ./vcdit --no-sandbox 2>/dev/null | tee "$RUNNER_TEMP/smoke.log"; test "${PIPESTATUS[0]}" -eq 0 && grep -q '^VCDIT_SMOKE OK' "$RUNNER_TEMP/smoke.log"
         shell: bash
