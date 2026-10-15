@@ -26,6 +26,10 @@ publish: null
 # font travel as resources beside the app, outside the asar archive, so they
 # can be run and read as plain files.
 win:
+  # The program file has no space in its name: electron-builder 25 hands Azure Artifact
+  # Signing the path unquoted, so "VC DIT.exe" would be read as two files. Shortcuts,
+  # the Start menu and the installer still say VC DIT (productName).
+  executableName: VC-DIT
   extraResources:
     - from: build/ffmpeg/win32-x64
       to: ffmpeg/win32-x64
