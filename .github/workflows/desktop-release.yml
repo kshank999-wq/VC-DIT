@@ -150,6 +150,44 @@ jobs:
           fi
           npm run ${{ matrix.script }} -w @vcdit/desktop -- ${{ steps.notarize.outputs.flag }} $windows_flags
 
+      # The app just packaged, started as a person would start it: it opens its window,
+      # visits every screen and quits (apps/desktop/src/main/smoke.ts). A start that
+      # fails, a screen that does not draw or an error in its console fails the job,
+      # so no installer that cannot start is uploaded.
+      - name: Start the packaged app and visit every screen
+        shell: bash
+        working-directory: apps/desktop/release
+        env:
+          VCDIT_SMOKE: 1
+        run: |
+          if [ "${{ matrix.platform }}" = "windows" ]; then
+            app="$PWD/win-unpacked/VC-DIT.exe"
+          else
+            bundle=$(ls -d mac*/"VC DIT.app" | head -1)
+            app="$PWD/$bundle/Contents/MacOS/VC DIT"
+          fi
+          [ -x "$app" ] || { echo "::error::No packaged app at $app"; exit 1; }
+          result="$RUNNER_TEMP/vcdit-smoke.txt"
+          rm -f "$result"
+          VCDIT_SMOKE_RESULT="$result" "$app" > "$RUNNER_TEMP/vcdit-smoke.log" 2>&1 &
+          pid=$!
+          # The app quits by itself; give it three minutes, then stop it.
+          for _ in $(seq 1 90); do
+            [ -s "$result" ] && break
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 2
+          done
+          sleep 2
+          kill "$pid" 2>/dev/null || true
+          if [ "${{ matrix.platform }}" = "windows" ]; then taskkill //F //IM VC-DIT.exe >/dev/null 2>&1 || true; fi
+          if [ ! -s "$result" ]; then
+            echo "::error::The packaged app did not report within three minutes."
+            tail -n 40 "$RUNNER_TEMP/vcdit-smoke.log" || true
+            exit 1
+          fi
+          cat "$result"
+          grep -q '^VCDIT_SMOKE OK' "$result" || { echo "::error::$(cat "$result")"; exit 1; }
+
       - name: Checksum the installers
         shell: bash
         run: |
