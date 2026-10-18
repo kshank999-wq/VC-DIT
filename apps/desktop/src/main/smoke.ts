@@ -1,5 +1,5 @@
 import { app, type BrowserWindow } from 'electron';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -14,7 +14,14 @@ import { join } from 'node:path';
  * It fails on an error in the main process, an error logged in the window,
  * a page that does not load or a renderer that dies, a screen that does
  * not draw, or a start that takes over a minute. CI runs it on every push
- * (.github/workflows/ci.yml), so a broken start is found before an install.
+ * (.github/workflows/ci.yml), and the release build runs it on the app it
+ * has just packaged, on Windows and macOS, before uploading the installers
+ * (.github/workflows/desktop-release.yml), so a broken start is found before
+ * an install.
+ *
+ * With VCDIT_SMOKE_RESULT set, the same line is also written to that file:
+ * a windowed Windows program's console output need not reach the script
+ * that started it, but a file always does.
  */
 
 export const SMOKE = process.env['VCDIT_SMOKE'] === '1';
@@ -24,7 +31,16 @@ let done = false;
 const finish = (ok: boolean, detail: string) => {
   if (done) return;
   done = true;
-  process.stdout.write(`VCDIT_SMOKE ${ok ? 'OK' : 'FAIL'} ${detail}\n`);
+  const line = `VCDIT_SMOKE ${ok ? 'OK' : 'FAIL'} ${detail}\n`;
+  process.stdout.write(line);
+  const result = process.env['VCDIT_SMOKE_RESULT'];
+  if (result) {
+    try {
+      writeFileSync(result, line, 'utf8');
+    } catch {
+      // The exit code still says it.
+    }
+  }
   app.exit(ok ? 0 : 1);
 };
 
