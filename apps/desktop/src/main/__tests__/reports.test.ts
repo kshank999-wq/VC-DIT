@@ -182,9 +182,9 @@ describe('the day log for VC Film Studio', () => {
   it("names each roll's picture clips as copied, without their sidecars", async () => {
     const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
     expect(log.rolls[0]!.clipFiles).toEqual([
-      { clip: 'A015C001', file: 'A015C001_261007_R1AB.mxf', path: 'A015R1AB/A015C001_261007_R1AB.mxf', original: null, frames: null },
-      { clip: 'A015C002', file: 'A015C002_261007_R1AB.mxf', path: 'A015R1AB/A015C002_261007_R1AB.mxf', original: null, frames: null },
-      { clip: 'A015C003', file: 'A015C003_261007_R1AB.mxf', path: 'A015R1AB/A015C003_261007_R1AB.mxf', original: null, frames: null },
+      { clip: 'A015C001', file: 'A015C001_261007_R1AB.mxf', path: 'A015R1AB/A015C001_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
+      { clip: 'A015C002', file: 'A015C002_261007_R1AB.mxf', path: 'A015R1AB/A015C002_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
+      { clip: 'A015C003', file: 'A015C003_261007_R1AB.mxf', path: 'A015R1AB/A015C003_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
     ]);
     // The takes name the same clips, so Film Studio can find a take's file by its key.
     const named = new Set(log.rolls[0]!.clipFiles.map((c) => c.clip));
@@ -201,9 +201,24 @@ describe('the day log for VC Film Studio', () => {
       file('CLIP0001/Clip0001_000003.dng'),
       file('DCIM/DSC01234.DNG'),
     ])).toEqual([
-      { clip: 'Clip0001', file: 'Clip0001_000001.dng', path: 'CLIP0001/Clip0001_000001.dng', original: null, frames: 3 },
-      { clip: 'B002_MVI_0042', file: 'B002_MVI_0042.MP4', path: 'DCIM/100CANON/B002_MVI_0042.MP4', original: 'MVI_0042.MP4', frames: null },
+      { clip: 'Clip0001', file: 'Clip0001_000001.dng', path: 'CLIP0001/Clip0001_000001.dng', original: null, frames: 3, look: null, cdl: null },
+      { clip: 'B002_MVI_0042', file: 'B002_MVI_0042.MP4', path: 'DCIM/100CANON/B002_MVI_0042.MP4', original: 'MVI_0042.MP4', frames: null, look: null, cdl: null },
     ]);
+  });
+
+  it("gives each clip the look its dailies were graded with, and the CDL's numbers when the look is one", async () => {
+    const look = db.importLut('show.ccc', `<ColorCorrectionCollection>
+      <ColorCorrection id="EXT_DAY"><SOPNode><Slope>1.1 1.0 0.9</Slope><Offset>0.01 0 -0.02</Offset><Power>1 1 1.05</Power></SOPNode><SatNode><Saturation>0.9</Saturation></SatNode></ColorCorrection>
+    </ColorCorrectionCollection>`);
+    const plain = db.importLut('HLC_Show.cube', 'LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n');
+    db.setLutRule('Project', 'Default', plain);
+    db.setLutRule('Clip', 'A015C002', look);
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    const byClip = Object.fromEntries(log.rolls[0]!.clipFiles.map((c) => [c.clip, c]));
+    expect(byClip['A015C002']).toMatchObject({ look: 'show.ccc', cdl: { slope: [1.1, 1, 0.9], offset: [0.01, 0, -0.02], power: [1, 1, 1.05], sat: 0.9 } });
+    // A look that is a LUT, not a CDL: its name, and no numbers made up for it.
+    expect(byClip['A015C001']).toMatchObject({ look: 'HLC_Show.cube', cdl: null });
+    expect(JSON.parse(JSON.stringify(log))).toEqual(log);
   });
 
   it('gives each daily its Frame.io link when it was published, and says so when it failed', async () => {

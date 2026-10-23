@@ -1,4 +1,5 @@
 import type { ChecksumMethod } from '../../shared/media';
+import type { Cdl } from '../../shared/grade';
 import type { ReportEntry } from '../../shared/project';
 import type { ProductionDb, TransferRecord } from '../db/production-db';
 import { isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
@@ -18,7 +19,9 @@ import { isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
  *   picture clips in `clipFiles`: the clip's key as the takes name it
  *   (A015C002), the file as it was copied, and, when VC DIT renamed it on
  *   offload, the name it had on the card — so an editor's ALE or XML points
- *   at files that exist;
+ *   at files that exist — and the look the dailies were graded with, with
+ *   its ASC CDL numbers when the look is a CDL (slope, offset, power,
+ *   saturation), so the grade goes to editorial with the clip;
  * - the DIT's **notes**, each with its timecode and where that came from, and
  *   the shot it is about (or general);
  * - the takes, sync, dailies, VFX shots and deliveries, and the day's reports.
@@ -47,8 +50,11 @@ const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
  * every copy; `original` is the card's own name for it, only when VC DIT
  * renamed it on offload (renameForCard), else null.
  */
-export const clipFilesOf = (files: TransferRecord['files']) => {
-  const clips = new Map<string, { clip: string; file: string; path: string; original: string | null; frames: number | null }>();
+export const clipFilesOf = (files: TransferRecord['files'], gradeOf: (clip: string) => { look: string; cdl: Cdl | null } | undefined = () => undefined) => {
+  const clips = new Map<string, {
+    clip: string; file: string; path: string; original: string | null; frames: number | null;
+    look: string | null; cdl: Cdl | null;
+  }>();
   for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
     const name = baseName(file.path);
     if (!isPictureFile(name)) continue;
@@ -60,12 +66,16 @@ export const clipFilesOf = (files: TransferRecord['files']) => {
       if (known.frames !== null) known.frames += 1;
       continue;
     }
+    const clip = pictureKey(name);
+    const grade = gradeOf(clip);
     clips.set(id, {
-      clip: pictureKey(name),
+      clip,
       file: name,
       path: file.path,
       original: file.source && baseName(file.source) !== name ? baseName(file.source) : null,
       frames: sequence ? 1 : null,
+      look: grade?.look || null,
+      cdl: grade?.cdl ? { slope: grade.cdl.slope, offset: grade.cdl.offset, power: grade.cdl.power, sat: grade.cdl.sat } : null,
     });
   }
   return [...clips.values()];
@@ -75,6 +85,8 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
   const production = db.production();
   const shootDay = db.days().find((candidate) => candidate.number === day) ?? db.currentDay();
   const view = db.logView(day);
+  /* Each clip's look, by its rule (camera, day, scene, setup, clip), as the dailies applied it. */
+  const grades = new Map(db.editorialRows(day).map((row) => [`${row.card}|${row.clip}`, { look: row.look, cdl: row.cdl }]));
   const rolls = db.transfers(day).map((transfer) => {
     const bytes = transfer.files.reduce((sum, file) => sum + file.size, 0);
     return {
@@ -87,7 +99,7 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       /* When the card was erased for reuse, or null while it still holds the footage. */
       clearedAt: transfer.clearedAt ?? null,
       /* The picture clips by name: what the takes call them, what was copied, and what the card called them. */
-      clipFiles: clipFilesOf(transfer.files),
+      clipFiles: clipFilesOf(transfer.files, (clip) => grades.get(`${transfer.card}|${clip}`)),
       copies: transfer.destinations.map((leg, index) => {
         const outcomes = Object.values(leg.outcomes);
         const failed = outcomes.filter((outcome) => outcome.state === 'failed').length;
