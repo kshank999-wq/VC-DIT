@@ -14,6 +14,10 @@ import type { ProductionDb } from '../db/production-db';
  * - the DIT's **notes**, each with its timecode and where that came from, and
  *   the shot it is about (or general);
  * - the takes, sync, dailies, VFX shots and deliveries, and the day's reports.
+ *   A daily published to the production's Frame.io carries `frameio`: whether
+ *   it went up and the link to watch it, so Film Studio can show it beside the
+ *   daily. Added fields only: a Film Studio that does not know them ignores
+ *   them, so the schema stays dit-day/1.
  *
  * Film Studio matches the day by its date and the production by its code.
  */
@@ -92,7 +96,11 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       ),
     ),
     sync: db.syncView(day).map((item) => ({ clip: item.clip, take: item.take, sound: item.sound === '—' ? null : item.sound, method: item.method, offsetFrames: item.offsetFrames, accepted: item.accepted })),
-    dailies: db.renders(day).map((render) => ({ take: render.label, clip: render.clip, look: render.lut, codec: render.codec, bytes: render.bytes, result: render.state, error: render.error })),
+    dailies: db.renders(day).map((render) => ({
+      take: render.label, clip: render.clip, look: render.lut, codec: render.codec, bytes: render.bytes, result: render.state, error: render.error,
+      /* Only this render, in the project published to now (production-db publishedAs); null when not published. */
+      frameio: render.frameio ? { state: render.frameio.state, viewUrl: render.frameio.viewUrl, error: render.frameio.error } : null,
+    })),
     vfx: view.vfx.map((shot) => ({ scene: shot.scene, setup: shot.setup, take: shot.take, clip: shot.clip, note: shot.note, flaggedBy: shot.flaggedBy, sentToVfxPrep: shot.sentAt })),
     deliveries: db.deliveries(day).map((record) => ({
       package: record.packageName,

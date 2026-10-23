@@ -169,6 +169,27 @@ describe('the day log for VC Film Studio', () => {
     expect(JSON.parse(JSON.stringify(log))).toEqual(log);
   });
 
+  it('gives each daily its Frame.io link when it was published, and says so when it failed', async () => {
+    db.saveFrameioTarget({ accountId: 'acc', accountName: 'VC', workspaceId: 'ws', workspaceName: 'Dailies', projectId: 'p1', projectName: 'HALCYON', rootFolderId: 'root', viewUrl: null });
+    const render = (take: number, checksum: string) =>
+      db.saveRender(1, { takeId: `14|B|${take}`, clip: `A015C00${take}`, card: 'A015' }, {
+        takeId: `14|B|${take}`, label: `14B-0${take}`, clip: `A015C00${take}`, output: `/RAID/14B-0${take}.mov`,
+        state: 'done', error: null, lut: 'HLC_Show.cube', codec: 'ProRes 422 Proxy', bytes: 1000, warnings: [], checksum,
+      });
+    render(1, 'aaa');
+    render(2, 'bbb');
+    render(3, 'ccc');
+    db.saveFrameioUpload(1, '14|B|1', 'A015C001', { projectId: 'p1', fileId: 'f1', name: '14B-01.mov', bytes: 1000, checksum: 'aaa', state: 'done', error: null, viewUrl: 'https://next.frame.io/project/p1/view/f1' });
+    db.saveFrameioUpload(1, '14|B|2', 'A015C002', { projectId: 'p1', fileId: null, name: '14B-02.mov', bytes: 1000, checksum: 'bbb', state: 'failed', error: 'Upload refused: storage full', viewUrl: null });
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' }, new Date('2026-10-07T22:00:00Z'));
+    const byTake = Object.fromEntries(log.dailies.map((d) => [d.take, d.frameio]));
+    expect(byTake['14B-01']).toEqual({ state: 'done', viewUrl: 'https://next.frame.io/project/p1/view/f1', error: null });
+    expect(byTake['14B-02']).toEqual({ state: 'failed', viewUrl: null, error: 'Upload refused: storage full' });
+    // Not published: null, never a guess.
+    expect(byTake['14B-03']).toBeNull();
+    expect(log.schema).toBe(FILM_STUDIO_SCHEMA);
+  });
+
   it("names Film Studio's destination kinds from the drive", () => {
     expect([destinationKind('RAID_01', 0), destinationKind('RAID_02', 1), destinationKind('SHTL_03', 1), destinationKind('ARCHIVE_NAS', 2)]).toEqual(['primary', 'backup', 'shuttle', 'archive']);
   });
