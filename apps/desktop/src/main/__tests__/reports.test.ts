@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
-import { destinationKind, filmStudioDay, FILM_STUDIO_SCHEMA } from '../reports/film-studio';
+import { clipFilesOf, destinationKind, filmStudioDay, FILM_STUDIO_SCHEMA } from '../reports/film-studio';
 import { cardFolder } from '../media/rules';
 import { listSource, runTransfer, type LegPlan } from '../media/transfer';
 import { OrganizeService } from '../organize/organize-service';
@@ -177,6 +177,33 @@ describe('the day log for VC Film Studio', () => {
     const after = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
     expect(after.rolls[0]).toMatchObject({ label: 'A015', clearedAt: '2026-10-07T19:42:00.000Z' });
     expect(after.schema).toBe(FILM_STUDIO_SCHEMA);
+  });
+
+  it("names each roll's picture clips as copied, without their sidecars", async () => {
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(log.rolls[0]!.clipFiles).toEqual([
+      { clip: 'A015C001', file: 'A015C001_261007_R1AB.mxf', path: 'A015R1AB/A015C001_261007_R1AB.mxf', original: null, frames: null },
+      { clip: 'A015C002', file: 'A015C002_261007_R1AB.mxf', path: 'A015R1AB/A015C002_261007_R1AB.mxf', original: null, frames: null },
+      { clip: 'A015C003', file: 'A015C003_261007_R1AB.mxf', path: 'A015R1AB/A015C003_261007_R1AB.mxf', original: null, frames: null },
+    ]);
+    // The takes name the same clips, so Film Studio can find a take's file by its key.
+    const named = new Set(log.rolls[0]!.clipFiles.map((c) => c.clip));
+    expect(log.takes.flatMap((t) => t.clips).every((clip) => named.has(clip))).toBe(true);
+  });
+
+  it("keeps the card's own name for a clip renamed on offload, and counts a sequence as one clip", () => {
+    const file = (path: string, source?: string) => ({ path, ...(source ? { source } : {}), size: 1, mtimeMs: 0, hash: null, hashedAt: null });
+    expect(clipFilesOf([
+      file('DCIM/100CANON/B002_MVI_0042.MP4', 'DCIM/100CANON/MVI_0042.MP4'),
+      file('DCIM/100CANON/B002_MVI_0042.THM', 'DCIM/100CANON/MVI_0042.THM'),
+      file('CLIP0001/Clip0001_000002.dng'),
+      file('CLIP0001/Clip0001_000001.dng'),
+      file('CLIP0001/Clip0001_000003.dng'),
+      file('DCIM/DSC01234.DNG'),
+    ])).toEqual([
+      { clip: 'Clip0001', file: 'Clip0001_000001.dng', path: 'CLIP0001/Clip0001_000001.dng', original: null, frames: 3 },
+      { clip: 'B002_MVI_0042', file: 'B002_MVI_0042.MP4', path: 'DCIM/100CANON/B002_MVI_0042.MP4', original: 'MVI_0042.MP4', frames: null },
+    ]);
   });
 
   it('gives each daily its Frame.io link when it was published, and says so when it failed', async () => {

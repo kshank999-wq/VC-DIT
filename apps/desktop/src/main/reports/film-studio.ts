@@ -1,6 +1,7 @@
 import type { ChecksumMethod } from '../../shared/media';
 import type { ReportEntry } from '../../shared/project';
-import type { ProductionDb } from '../db/production-db';
+import type { ProductionDb, TransferRecord } from '../db/production-db';
+import { isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
 
 /**
  * The day's DIT log for VC Film Studio's DIT section (its "Media/data
@@ -13,7 +14,11 @@ import type { ProductionDb } from '../db/production-db';
  *   is only "verified" when every file on it verified. A card VC DIT erased
  *   for reuse carries `clearedAt`: when, after its own re-check of the
  *   copies (media-service clearCard), so Film Studio's data desk records the
- *   wipe and can hold it to the production's copy rule;
+ *   wipe and can hold it to the production's copy rule. Each roll lists its
+ *   picture clips in `clipFiles`: the clip's key as the takes name it
+ *   (A015C002), the file as it was copied, and, when VC DIT renamed it on
+ *   offload, the name it had on the card — so an editor's ALE or XML points
+ *   at files that exist;
  * - the DIT's **notes**, each with its timecode and where that came from, and
  *   the shot it is about (or general);
  * - the takes, sync, dailies, VFX shots and deliveries, and the day's reports.
@@ -33,6 +38,39 @@ const METHOD: Record<ChecksumMethod, 'xxhash64' | 'md5' | 'sha1'> = { xxHash64: 
 export const destinationKind = (name: string, index: number): 'primary' | 'backup' | 'shuttle' | 'archive' | 'cloud' =>
   /shuttle|shtl/i.test(name) ? 'shuttle' : /archive|lto|nas/i.test(name) ? 'archive' : index === 0 ? 'primary' : 'backup';
 
+const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+
+/**
+ * A roll's picture clips, one entry per clip: sidecars (.xml, .thm) are not
+ * clips, and the frames of an image sequence are one clip, named by its first
+ * frame and counted. `path` is where the clip is under the card's folder on
+ * every copy; `original` is the card's own name for it, only when VC DIT
+ * renamed it on offload (renameForCard), else null.
+ */
+export const clipFilesOf = (files: TransferRecord['files']) => {
+  const clips = new Map<string, { clip: string; file: string; path: string; original: string | null; frames: number | null }>();
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+    const name = baseName(file.path);
+    if (!isPictureFile(name)) continue;
+    const sequence = sequenceOf(name);
+    const folder = file.path.slice(0, file.path.length - name.length);
+    const id = sequence ? `${folder}${sequence.stem}` : file.path;
+    const known = clips.get(id);
+    if (known) {
+      if (known.frames !== null) known.frames += 1;
+      continue;
+    }
+    clips.set(id, {
+      clip: pictureKey(name),
+      file: name,
+      path: file.path,
+      original: file.source && baseName(file.source) !== name ? baseName(file.source) : null,
+      frames: sequence ? 1 : null,
+    });
+  }
+  return [...clips.values()];
+};
+
 export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntry[], tool: { name: string; version: string }, now = new Date()) => {
   const production = db.production();
   const shootDay = db.days().find((candidate) => candidate.number === day) ?? db.currentDay();
@@ -48,6 +86,8 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       bytes,
       /* When the card was erased for reuse, or null while it still holds the footage. */
       clearedAt: transfer.clearedAt ?? null,
+      /* The picture clips by name: what the takes call them, what was copied, and what the card called them. */
+      clipFiles: clipFilesOf(transfer.files),
       copies: transfer.destinations.map((leg, index) => {
         const outcomes = Object.values(leg.outcomes);
         const failed = outcomes.filter((outcome) => outcome.state === 'failed').length;
