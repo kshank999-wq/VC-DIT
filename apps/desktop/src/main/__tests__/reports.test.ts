@@ -169,6 +169,16 @@ describe('the day log for VC Film Studio', () => {
     expect(JSON.parse(JSON.stringify(log))).toEqual(log);
   });
 
+  it('says when each card was cleared, and null while it still holds the footage', async () => {
+    const before = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(before.rolls[0]!.clearedAt).toBeNull();
+    const transfer = db.transfers(1).find((t) => t.card === 'A015')!;
+    db.saveTransfer({ ...transfer, clearedAt: '2026-10-07T19:42:00.000Z' });
+    const after = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(after.rolls[0]).toMatchObject({ label: 'A015', clearedAt: '2026-10-07T19:42:00.000Z' });
+    expect(after.schema).toBe(FILM_STUDIO_SCHEMA);
+  });
+
   it('gives each daily its Frame.io link when it was published, and says so when it failed', async () => {
     db.saveFrameioTarget({ accountId: 'acc', accountName: 'VC', workspaceId: 'ws', workspaceName: 'Dailies', projectId: 'p1', projectName: 'HALCYON', rootFolderId: 'root', viewUrl: null });
     const render = (take: number, checksum: string) =>

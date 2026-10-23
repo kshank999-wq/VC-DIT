@@ -10,7 +10,10 @@ import type { ProductionDb } from '../db/production-db';
  * - each card as a **roll** (label, camera or sound, clips, bytes) with its
  *   **copies** (destination, checksum method, verified when, files, bytes, and
  *   what did not match), as in Film Studio's media_roll / media_copy. A copy
- *   is only "verified" when every file on it verified;
+ *   is only "verified" when every file on it verified. A card VC DIT erased
+ *   for reuse carries `clearedAt`: when, after its own re-check of the
+ *   copies (media-service clearCard), so Film Studio's data desk records the
+ *   wipe and can hold it to the production's copy rule;
  * - the DIT's **notes**, each with its timecode and where that came from, and
  *   the shot it is about (or general);
  * - the takes, sync, dailies, VFX shots and deliveries, and the day's reports.
@@ -43,6 +46,8 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       recordedOn: shootDay.date,
       clips: transfer.files.length,
       bytes,
+      /* When the card was erased for reuse, or null while it still holds the footage. */
+      clearedAt: transfer.clearedAt ?? null,
       copies: transfer.destinations.map((leg, index) => {
         const outcomes = Object.values(leg.outcomes);
         const failed = outcomes.filter((outcome) => outcome.state === 'failed').length;
