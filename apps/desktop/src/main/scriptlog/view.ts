@@ -1,6 +1,7 @@
 import type { LogSummary, MatchEntry, SceneEntry, SetupEntry, TakeEntry } from '../../shared/project';
 import type { Candidate } from './match';
 import type { LogEntry } from './parse';
+import { slateSummary } from './slate-manifest';
 
 /**
  * The day's log as the screens show it: the scene list with its setups and
@@ -54,7 +55,7 @@ export const candidateLabel = (candidate: Candidate, all: Candidate[]): string =
 const pad2 = (take: string) => take.padStart(2, '0');
 
 const frames = (tc: string, base: number): number | null => {
-  const found = /^(\d{2}):(\d{2}):(\d{2}):(\d{2,3})$/.exec(tc);
+  const found = /^(\d{2}):(\d{2}):(\d{2})[:;](\d{2,3})$/.exec(tc);
   if (!found) return null;
   return ((Number(found[1]) * 60 + Number(found[2])) * 60 + Number(found[3])) * base + Number(found[4]);
 };
@@ -155,6 +156,7 @@ export const buildLogView = (input: {
       if (entry.clipRefs[match.refIndex]) fields.push(['Log clip', entry.clipRefs[match.refIndex]!]);
       if (entry.roll) fields.push(['Log roll', entry.roll]);
       if (entry.tcIn) fields.push(['Log TC', entry.tcIn]);
+      if (entry.fromSlate) fields.push(['Slate', slateSummary(entry.fromSlate)]);
       if (entry.notes || entry.vfxNote) fields.push(['Note', entry.notes || `VFX — ${entry.vfxNote}`]);
       return {
         id: `${match.entryId}:${match.refIndex}`,
