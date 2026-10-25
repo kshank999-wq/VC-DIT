@@ -11,8 +11,18 @@ export interface AccountSubscription {
   status: string;
   currentPeriodEnd: string | null;
   cancelAtPeriodEnd: boolean;
+  /** Granted by hand, not bought (the owner's own license): no Stripe customer behind it. */
+  complimentary: boolean;
   license: { serial: string; status: LicenseStatus; maxActivations: number } | null;
 }
+
+/**
+ * A license granted by hand rather than bought carries a placeholder in place
+ * of the Stripe ids (`comp_…`), so no webhook ever touches it and it never
+ * renews or ends. docs/DEPLOYMENT.md has the SQL that grants one.
+ */
+export const COMPLIMENTARY_PREFIX = 'comp_';
+export const isComplimentary = (stripeCustomerId: string): boolean => stripeCustomerId.startsWith(COMPLIMENTARY_PREFIX);
 
 export const loadAccount = async (client: SupabaseClient, userId: string): Promise<AccountSubscription[]> => {
   const { data: subs } = await client
@@ -34,6 +44,7 @@ export const loadAccount = async (client: SupabaseClient, userId: string): Promi
       status: sub.status as string,
       currentPeriodEnd: (sub.current_period_end as string | null) ?? null,
       cancelAtPeriodEnd: Boolean(sub.cancel_at_period_end),
+      complimentary: isComplimentary(sub.stripe_customer_id as string),
       license: license
         ? { serial: license.serial as string, status: license.status as LicenseStatus, maxActivations: license.max_activations as number }
         : null,

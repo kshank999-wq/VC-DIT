@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
 import { dayEntries, dayReportHtml } from '../reports/day-report';
-import { destinationKind, filmStudioDay, FILM_STUDIO_SCHEMA } from '../reports/film-studio';
+import { clipFilesOf, destinationKind, filmStudioDay, FILM_STUDIO_SCHEMA } from '../reports/film-studio';
 import { cardFolder } from '../media/rules';
 import { listSource, runTransfer, type LegPlan } from '../media/transfer';
 import { OrganizeService } from '../organize/organize-service';
@@ -167,6 +167,79 @@ describe('the day log for VC Film Studio', () => {
     });
     // It is plain data that survives the trip as JSON.
     expect(JSON.parse(JSON.stringify(log))).toEqual(log);
+  });
+
+  it('says when each card was cleared, and null while it still holds the footage', async () => {
+    const before = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(before.rolls[0]!.clearedAt).toBeNull();
+    const transfer = db.transfers(1).find((t) => t.card === 'A015')!;
+    db.saveTransfer({ ...transfer, clearedAt: '2026-10-07T19:42:00.000Z' });
+    const after = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(after.rolls[0]).toMatchObject({ label: 'A015', clearedAt: '2026-10-07T19:42:00.000Z' });
+    expect(after.schema).toBe(FILM_STUDIO_SCHEMA);
+  });
+
+  it("names each roll's picture clips as copied, without their sidecars", async () => {
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    expect(log.rolls[0]!.clipFiles).toEqual([
+      { clip: 'A015C001', file: 'A015C001_261007_R1AB.mxf', path: 'A015R1AB/A015C001_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
+      { clip: 'A015C002', file: 'A015C002_261007_R1AB.mxf', path: 'A015R1AB/A015C002_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
+      { clip: 'A015C003', file: 'A015C003_261007_R1AB.mxf', path: 'A015R1AB/A015C003_261007_R1AB.mxf', original: null, frames: null, look: null, cdl: null },
+    ]);
+    // The takes name the same clips, so Film Studio can find a take's file by its key.
+    const named = new Set(log.rolls[0]!.clipFiles.map((c) => c.clip));
+    expect(log.takes.flatMap((t) => t.clips).every((clip) => named.has(clip))).toBe(true);
+  });
+
+  it("keeps the card's own name for a clip renamed on offload, and counts a sequence as one clip", () => {
+    const file = (path: string, source?: string) => ({ path, ...(source ? { source } : {}), size: 1, mtimeMs: 0, hash: null, hashedAt: null });
+    expect(clipFilesOf([
+      file('DCIM/100CANON/B002_MVI_0042.MP4', 'DCIM/100CANON/MVI_0042.MP4'),
+      file('DCIM/100CANON/B002_MVI_0042.THM', 'DCIM/100CANON/MVI_0042.THM'),
+      file('CLIP0001/Clip0001_000002.dng'),
+      file('CLIP0001/Clip0001_000001.dng'),
+      file('CLIP0001/Clip0001_000003.dng'),
+      file('DCIM/DSC01234.DNG'),
+    ])).toEqual([
+      { clip: 'Clip0001', file: 'Clip0001_000001.dng', path: 'CLIP0001/Clip0001_000001.dng', original: null, frames: 3, look: null, cdl: null },
+      { clip: 'B002_MVI_0042', file: 'B002_MVI_0042.MP4', path: 'DCIM/100CANON/B002_MVI_0042.MP4', original: 'MVI_0042.MP4', frames: null, look: null, cdl: null },
+    ]);
+  });
+
+  it("gives each clip the look its dailies were graded with, and the CDL's numbers when the look is one", async () => {
+    const look = db.importLut('show.ccc', `<ColorCorrectionCollection>
+      <ColorCorrection id="EXT_DAY"><SOPNode><Slope>1.1 1.0 0.9</Slope><Offset>0.01 0 -0.02</Offset><Power>1 1 1.05</Power></SOPNode><SatNode><Saturation>0.9</Saturation></SatNode></ColorCorrection>
+    </ColorCorrectionCollection>`);
+    const plain = db.importLut('HLC_Show.cube', 'LUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n');
+    db.setLutRule('Project', 'Default', plain);
+    db.setLutRule('Clip', 'A015C002', look);
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' });
+    const byClip = Object.fromEntries(log.rolls[0]!.clipFiles.map((c) => [c.clip, c]));
+    expect(byClip['A015C002']).toMatchObject({ look: 'show.ccc', cdl: { slope: [1.1, 1, 0.9], offset: [0.01, 0, -0.02], power: [1, 1, 1.05], sat: 0.9 } });
+    // A look that is a LUT, not a CDL: its name, and no numbers made up for it.
+    expect(byClip['A015C001']).toMatchObject({ look: 'HLC_Show.cube', cdl: null });
+    expect(JSON.parse(JSON.stringify(log))).toEqual(log);
+  });
+
+  it('gives each daily its Frame.io link when it was published, and says so when it failed', async () => {
+    db.saveFrameioTarget({ accountId: 'acc', accountName: 'VC', workspaceId: 'ws', workspaceName: 'Dailies', projectId: 'p1', projectName: 'HALCYON', rootFolderId: 'root', viewUrl: null });
+    const render = (take: number, checksum: string) =>
+      db.saveRender(1, { takeId: `14|B|${take}`, clip: `A015C00${take}`, card: 'A015' }, {
+        takeId: `14|B|${take}`, label: `14B-0${take}`, clip: `A015C00${take}`, output: `/RAID/14B-0${take}.mov`,
+        state: 'done', error: null, lut: 'HLC_Show.cube', codec: 'ProRes 422 Proxy', bytes: 1000, warnings: [], checksum,
+      });
+    render(1, 'aaa');
+    render(2, 'bbb');
+    render(3, 'ccc');
+    db.saveFrameioUpload(1, '14|B|1', 'A015C001', { projectId: 'p1', fileId: 'f1', name: '14B-01.mov', bytes: 1000, checksum: 'aaa', state: 'done', error: null, viewUrl: 'https://next.frame.io/project/p1/view/f1' });
+    db.saveFrameioUpload(1, '14|B|2', 'A015C002', { projectId: 'p1', fileId: null, name: '14B-02.mov', bytes: 1000, checksum: 'bbb', state: 'failed', error: 'Upload refused: storage full', viewUrl: null });
+    const log = filmStudioDay(db, 1, await dayEntries(db, 1, organizer.view()), { name: 'VC DIT', version: '1.0.0' }, new Date('2026-10-07T22:00:00Z'));
+    const byTake = Object.fromEntries(log.dailies.map((d) => [d.take, d.frameio]));
+    expect(byTake['14B-01']).toEqual({ state: 'done', viewUrl: 'https://next.frame.io/project/p1/view/f1', error: null });
+    expect(byTake['14B-02']).toEqual({ state: 'failed', viewUrl: null, error: 'Upload refused: storage full' });
+    // Not published: null, never a guess.
+    expect(byTake['14B-03']).toBeNull();
+    expect(log.schema).toBe(FILM_STUDIO_SCHEMA);
   });
 
   it("names Film Studio's destination kinds from the drive", () => {

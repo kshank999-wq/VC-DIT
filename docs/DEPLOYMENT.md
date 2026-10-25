@@ -111,10 +111,36 @@ repository root, after `npm install`.
   2026. The security advisor reports only the three service-role-only tables
   (`email_events`, `rate_limits`, `stripe_webhook_events`) as having no
   policies, which is intended.
-- **Auth → Providers → Email:** on (magic link). The website is the only
-  place anyone signs in; the desktop app uses the authorization code.
+- **Auth → Providers → Email:** on. Customers sign in with a password or
+  an emailed link (`/signin`); a forgotten password is reset by a link to
+  `/account/password`, where a signed-in customer can also set one. The
+  website is the only place anyone signs in; the desktop app uses the
+  authorization code.
 - **Auth → URL configuration:** Site URL `https://vc-dit.com`, redirect
-  `https://vc-dit.com/auth/callback` (step 5 does both).
+  `https://vc-dit.com/auth/callback` (step 5 does both). With the Site URL
+  left at `http://localhost:3000`, every emailed link lands on localhost.
+- **Auth → SMTP settings:** custom SMTP through Resend, so sign-in emails
+  come from VC DIT and not from Supabase: host `smtp.resend.com`, port 465,
+  user `resend`, password a Resend API key, sender `noreply@vc-dit.com`,
+  sender name `VC DIT`. **Auth → Email templates:** subjects and wording say
+  VC DIT (Confirm signup, Magic link, Reset password).
+- **A license by hand** (the owner's own, a reviewer's): a subscription row
+  whose Stripe ids are placeholders starting `comp_`, so no webhook touches
+  it and it never renews or ends; the account page shows it as
+  Complimentary, without Manage billing.
+
+  ```sql
+  with s as (
+    insert into subscriptions (user_id, stripe_subscription_id, stripe_customer_id, stripe_price_id, plan, billing_interval, status)
+    values ('<auth user id>', 'comp_<name>', 'comp_<name>', 'comp', 'dit', 'year', 'active')
+    returning id
+  )
+  insert into licenses (user_id, subscription_id, serial, plan, status, max_activations)
+  select '<auth user id>', s.id, '<VCDIT-… code>', 'dit', 'active', 5 from s;
+  ```
+
+  The code comes from `generateSerial()` (`apps/web/src/lib/license.ts`).
+  The customer signs up on the site first, so the auth user exists.
 
 ## Vercel: environment variables
 

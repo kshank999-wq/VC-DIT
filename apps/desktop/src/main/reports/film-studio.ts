@@ -1,6 +1,8 @@
 import type { ChecksumMethod } from '../../shared/media';
+import type { Cdl } from '../../shared/grade';
 import type { ReportEntry } from '../../shared/project';
-import type { ProductionDb } from '../db/production-db';
+import type { ProductionDb, TransferRecord } from '../db/production-db';
+import { isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
 
 /**
  * The day's DIT log for VC Film Studio's DIT section (its "Media/data
@@ -10,10 +12,23 @@ import type { ProductionDb } from '../db/production-db';
  * - each card as a **roll** (label, camera or sound, clips, bytes) with its
  *   **copies** (destination, checksum method, verified when, files, bytes, and
  *   what did not match), as in Film Studio's media_roll / media_copy. A copy
- *   is only "verified" when every file on it verified;
+ *   is only "verified" when every file on it verified. A card VC DIT erased
+ *   for reuse carries `clearedAt`: when, after its own re-check of the
+ *   copies (media-service clearCard), so Film Studio's data desk records the
+ *   wipe and can hold it to the production's copy rule. Each roll lists its
+ *   picture clips in `clipFiles`: the clip's key as the takes name it
+ *   (A015C002), the file as it was copied, and, when VC DIT renamed it on
+ *   offload, the name it had on the card — so an editor's ALE or XML points
+ *   at files that exist — and the look the dailies were graded with, with
+ *   its ASC CDL numbers when the look is a CDL (slope, offset, power,
+ *   saturation), so the grade goes to editorial with the clip;
  * - the DIT's **notes**, each with its timecode and where that came from, and
  *   the shot it is about (or general);
  * - the takes, sync, dailies, VFX shots and deliveries, and the day's reports.
+ *   A daily published to the production's Frame.io carries `frameio`: whether
+ *   it went up and the link to watch it, so Film Studio can show it beside the
+ *   daily. Added fields only: a Film Studio that does not know them ignores
+ *   them, so the schema stays dit-day/1.
  *
  * Film Studio matches the day by its date and the production by its code.
  */
@@ -26,10 +41,52 @@ const METHOD: Record<ChecksumMethod, 'xxhash64' | 'md5' | 'sha1'> = { xxHash64: 
 export const destinationKind = (name: string, index: number): 'primary' | 'backup' | 'shuttle' | 'archive' | 'cloud' =>
   /shuttle|shtl/i.test(name) ? 'shuttle' : /archive|lto|nas/i.test(name) ? 'archive' : index === 0 ? 'primary' : 'backup';
 
+const baseName = (path: string) => path.split(/[\\/]/).pop() ?? path;
+
+/**
+ * A roll's picture clips, one entry per clip: sidecars (.xml, .thm) are not
+ * clips, and the frames of an image sequence are one clip, named by its first
+ * frame and counted. `path` is where the clip is under the card's folder on
+ * every copy; `original` is the card's own name for it, only when VC DIT
+ * renamed it on offload (renameForCard), else null.
+ */
+export const clipFilesOf = (files: TransferRecord['files'], gradeOf: (clip: string) => { look: string; cdl: Cdl | null } | undefined = () => undefined) => {
+  const clips = new Map<string, {
+    clip: string; file: string; path: string; original: string | null; frames: number | null;
+    look: string | null; cdl: Cdl | null;
+  }>();
+  for (const file of [...files].sort((a, b) => a.path.localeCompare(b.path))) {
+    const name = baseName(file.path);
+    if (!isPictureFile(name)) continue;
+    const sequence = sequenceOf(name);
+    const folder = file.path.slice(0, file.path.length - name.length);
+    const id = sequence ? `${folder}${sequence.stem}` : file.path;
+    const known = clips.get(id);
+    if (known) {
+      if (known.frames !== null) known.frames += 1;
+      continue;
+    }
+    const clip = pictureKey(name);
+    const grade = gradeOf(clip);
+    clips.set(id, {
+      clip,
+      file: name,
+      path: file.path,
+      original: file.source && baseName(file.source) !== name ? baseName(file.source) : null,
+      frames: sequence ? 1 : null,
+      look: grade?.look || null,
+      cdl: grade?.cdl ? { slope: grade.cdl.slope, offset: grade.cdl.offset, power: grade.cdl.power, sat: grade.cdl.sat } : null,
+    });
+  }
+  return [...clips.values()];
+};
+
 export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntry[], tool: { name: string; version: string }, now = new Date()) => {
   const production = db.production();
   const shootDay = db.days().find((candidate) => candidate.number === day) ?? db.currentDay();
   const view = db.logView(day);
+  /* Each clip's look, by its rule (camera, day, scene, setup, clip), as the dailies applied it. */
+  const grades = new Map(db.editorialRows(day).map((row) => [`${row.card}|${row.clip}`, { look: row.look, cdl: row.cdl }]));
   const rolls = db.transfers(day).map((transfer) => {
     const bytes = transfer.files.reduce((sum, file) => sum + file.size, 0);
     return {
@@ -39,6 +96,10 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       recordedOn: shootDay.date,
       clips: transfer.files.length,
       bytes,
+      /* When the card was erased for reuse, or null while it still holds the footage. */
+      clearedAt: transfer.clearedAt ?? null,
+      /* The picture clips by name: what the takes call them, what was copied, and what the card called them. */
+      clipFiles: clipFilesOf(transfer.files, (clip) => grades.get(`${transfer.card}|${clip}`)),
       copies: transfer.destinations.map((leg, index) => {
         const outcomes = Object.values(leg.outcomes);
         const failed = outcomes.filter((outcome) => outcome.state === 'failed').length;
@@ -92,7 +153,11 @@ export const filmStudioDay = (db: ProductionDb, day: number, reports: ReportEntr
       ),
     ),
     sync: db.syncView(day).map((item) => ({ clip: item.clip, take: item.take, sound: item.sound === '—' ? null : item.sound, method: item.method, offsetFrames: item.offsetFrames, accepted: item.accepted })),
-    dailies: db.renders(day).map((render) => ({ take: render.label, clip: render.clip, look: render.lut, codec: render.codec, bytes: render.bytes, result: render.state, error: render.error })),
+    dailies: db.renders(day).map((render) => ({
+      take: render.label, clip: render.clip, look: render.lut, codec: render.codec, bytes: render.bytes, result: render.state, error: render.error,
+      /* Only this render, in the project published to now (production-db publishedAs); null when not published. */
+      frameio: render.frameio ? { state: render.frameio.state, viewUrl: render.frameio.viewUrl, error: render.frameio.error } : null,
+    })),
     vfx: view.vfx.map((shot) => ({ scene: shot.scene, setup: shot.setup, take: shot.take, clip: shot.clip, note: shot.note, flaggedBy: shot.flaggedBy, sentToVfxPrep: shot.sentAt })),
     deliveries: db.deliveries(day).map((record) => ({
       package: record.packageName,
