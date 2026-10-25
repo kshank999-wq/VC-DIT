@@ -24,7 +24,7 @@ export default async function AccountPage() {
         <div className="eyebrow">Account</div>
         <h1>Your VC DIT</h1>
         <p className="muted">
-          Signed in as {user.email} · <SignOut />
+          Signed in as {user.email} · <Link href="/account/password">Password</Link> · <SignOut />
         </p>
       </div>
 
@@ -50,9 +50,13 @@ export default async function AccountPage() {
                 </span>
               </dd>
               <dt>Billing</dt>
-              <dd>{current.interval === 'year' ? 'Yearly' : 'Monthly'}</dd>
-              <dt>{current.cancelAtPeriodEnd || current.license?.status !== 'active' ? 'Ends' : 'Renews'}</dt>
-              <dd>{date(current.currentPeriodEnd)}</dd>
+              <dd>{current.complimentary ? 'Complimentary' : current.interval === 'year' ? 'Yearly' : 'Monthly'}</dd>
+              {current.complimentary ? null : (
+                <>
+                  <dt>{current.cancelAtPeriodEnd || current.license?.status !== 'active' ? 'Ends' : 'Renews'}</dt>
+                  <dd>{date(current.currentPeriodEnd)}</dd>
+                </>
+              )}
               <dt>Computers</dt>
               <dd>Up to {current.license?.maxActivations ?? DEVICES_PER_LICENSE}</dd>
             </dl>
@@ -67,9 +71,11 @@ export default async function AccountPage() {
             ) : (
               <p className="notice">Your authorization code is being issued; refresh in a moment.</p>
             )}
-            <div className="actions">
-              <BillingButton />
-            </div>
+            {current.complimentary ? null : (
+              <div className="actions">
+                <BillingButton />
+              </div>
+            )}
           </div>
           <div className="panel">
             <h2>Download</h2>
@@ -90,7 +96,7 @@ export default async function AccountPage() {
           <div className="panel">
             <h2>Computers</h2>
             <p className="muted">
-              Each subscription runs on {DEVICES_PER_LICENSE} computers. Lost one, or replacing a cart? Free its seat here and
+              Your subscription runs on {current.license?.maxActivations ?? DEVICES_PER_LICENSE} computers. Lost one, or replacing a cart? Free its seat here and
               activate the new one with your code.
             </p>
             <Devices />

@@ -100,7 +100,7 @@ section { margin-top: 40px; }
 .save { color: var(--green); font-size: 0.9rem; margin-left: 10px; }
 
 form.stack { display: grid; gap: 14px; max-width: 360px; }
-input[type='email'], input[type='text'] {
+input[type='email'], input[type='text'], input[type='password'] {
   background: var(--node); border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text);
   padding: 10px 12px; font: inherit;
 }
