@@ -95,6 +95,7 @@ and a transfer cut off by a crash shows as failed, never as safe.
 | File | Does |
 | --- | --- |
 | `parse.ts` | Reads a log into neutral entries (spec §4.5): CSV or tab-separated text (columns recognised by name, title rows skipped), Avid ALE, JSON, XML. Scene, setup, take, camera, clip, roll, sound, TC in/out, circle, print, VFX and its note, notes, lens. A row it cannot read is skipped and reported, never guessed |
+| `slate-manifest.ts` | VC Smart Slate's day (`vc-smart-slate.manifest/1`), recognised by its schema: one entry per take per camera, keeping the drop-frame `;`, the rational rate, the running time and every clap (with a manual correction beside the clap it corrects, and its reason), stored on the entry as `slate_detail`. A newer format is refused, not half-read. A `;` before the frames is kept from any log |
 | `xml.ts` | A small XML reader: no DTDs or external entities |
 | `clip-key.ts` | Clip names made comparable: "A015C002", "A15C2", A015C002_261005_R1AB.mxf, A015_C002_…R3D and A015_…_C002.braw are all `A015C002` |
 | `match.ts` | Each take to its camera clips and sound file. A clip name on exactly one card matches; anything weaker (roll and time, a name on two cards, one clip claimed by two takes) goes to Match review with ranked candidates; nothing to go on is unmatched |
