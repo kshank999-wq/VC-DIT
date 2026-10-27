@@ -35,9 +35,17 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="wrap">
-        <span>© {new Date().getFullYear()} VC DIT · a VC product</span>
+        <span>
+          © {new Date().getFullYear()} VC DIT · a <a href="https://vc-software.com">VC Software</a> product
+        </span>
         <span>
           <Link href="/download">Download</Link> · <Link href="/pricing">Pricing</Link> · <Link href="/account">Account</Link>
+        </span>
+        {/* The company's own pages: VC DIT has no privacy, terms or support
+            page of its own, and vc-software.com holds them for every VC app. */}
+        <span>
+          <a href="https://vc-software.com/support">Support</a> · <a href="https://vc-software.com/privacy">Privacy</a> ·{' '}
+          <a href="https://vc-software.com/terms">Terms</a>
         </span>
       </div>
     </footer>
