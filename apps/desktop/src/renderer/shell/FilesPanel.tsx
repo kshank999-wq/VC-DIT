@@ -69,7 +69,7 @@ export const buildTree = (state: AppState): Node[] => {
           path: 'day',
           name: `SHOOT_DAY_${String(state.day.number).padStart(3, '0')}`,
           color: 'var(--text)',
-          count: new Date(`${state.day.date}T12:00:00`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }),
+          count: new Date(`${state.day.date}T12:00:00`).toLocaleDateString('en-US', { day: '2-digit', month: 'short' }),
           children: [
             {
               path: 'ocf',

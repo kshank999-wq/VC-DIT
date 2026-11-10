@@ -9,7 +9,7 @@ export function Header({ onLicense, onPrefs }: { onLicense: () => void; onPrefs?
   const access = useAccess();
   const summary = overall(state);
   const date = new Date(`${state.day.date}T12:00:00`);
-  const dayLabel = date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).replace(',', '');
+  const dayLabel = date.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }).replace(',', '');
 
   return (
     <header className="app-header">

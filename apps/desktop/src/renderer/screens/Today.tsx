@@ -14,7 +14,7 @@ export function Today() {
   const steps = summarize(state);
   const summary = overall(state, steps);
   const list = todos(state);
-  const date = new Date(`${state.day.date}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '');
+  const date = new Date(`${state.day.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' }).replace(',', '');
 
   return (
     <div className="screen today">

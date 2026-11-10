@@ -219,7 +219,11 @@ const table = (head: string[], rows: unknown[][], empty = 'Nothing recorded.') =
 const clock = (iso: string | null | undefined) => {
   if (!iso) return '';
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString('en-GB', { hour12: false });
+  /* Month first (11/09/2026): a US crew reads 09/11 as September. 24-hour
+     clock kept; h23 so midnight prints 00, not 24. */
+  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString('en-US', {
+    month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+  });
 };
 
 const WORD: Record<ReportEntry['status'], string> = { done: 'ok', needs: 'needs', problem: 'problem', working: 'working', idle: 'idle' };
