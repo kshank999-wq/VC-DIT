@@ -1,3 +1,4 @@
+import { isSlateManifest, parseSlateManifest, type SlateTake } from './slate-manifest';
 import { parseXml, type XmlElement } from './xml';
 
 /**
@@ -33,9 +34,11 @@ export interface LogEntry {
   notes: string;
   lens: string;
   description: string;
+  /** What VC Smart Slate recorded about the take: its rate, its claps, its running time. */
+  fromSlate?: SlateTake;
 }
 
-export type LogFormat = 'CSV' | 'Tab-separated' | 'ALE' | 'JSON' | 'XML';
+export type LogFormat = 'CSV' | 'Tab-separated' | 'ALE' | 'JSON' | 'XML' | 'VC Smart Slate';
 
 export interface ParsedLog {
   format: LogFormat;
@@ -44,7 +47,7 @@ export interface ParsedLog {
   warnings: string[];
 }
 
-type Field = keyof Omit<LogEntry, 'line' | 'cameras' | 'clipRefs' | 'circle' | 'print' | 'vfx'> | 'camera' | 'clip' | 'circle' | 'print' | 'vfx';
+type Field = keyof Omit<LogEntry, 'line' | 'cameras' | 'clipRefs' | 'circle' | 'print' | 'vfx' | 'fromSlate'> | 'camera' | 'clip' | 'circle' | 'print' | 'vfx';
 
 /** Column names each field is known by, compared as lowercase letters and digits. */
 const ALIASES: Record<Field, string[]> = {
@@ -80,10 +83,12 @@ const TRUE = new Set(['y', 'yes', 'true', '1', 'x', '✓', '✔', '●', '◎', 
 const NO = /^\s*(n|no|false|0|n\/a|na|none|-|—)\s*$/i;
 const yes = (value: string | undefined) => (value ? TRUE.has(value.trim().toLowerCase()) : false);
 
-const TIMECODE = /^(\d{1,2})[:;.](\d{2})[:;.](\d{2})(?:[:;.](\d{2,3}))?$/;
+const TIMECODE = /^(\d{1,2})[:;.](\d{2})[:;.](\d{2})(?:([:;.])(\d{2,3}))?$/;
+/** "1:02:03:04" → "01:02:03:04". A `;` before the frames is drop frame and is kept: it is a different frame. */
 const timecode = (value: string) => {
   const found = TIMECODE.exec(value.trim());
-  return found ? [found[1]!.padStart(2, '0'), found[2], found[3], found[4] ?? '00'].join(':') : '';
+  if (!found) return '';
+  return `${found[1]!.padStart(2, '0')}:${found[2]}:${found[3]}${found[4] === ';' ? ';' : ':'}${found[5] ?? '00'}`;
 };
 
 const split = (value: string) =>
@@ -304,6 +309,16 @@ const parseXmlLog = (text: string, warnings: string[]): LogEntry[] => {
 
 // ---------------------------------------------------------------- the entry point
 
+/** The slate's manifest, recognised by its schema rather than by its columns. */
+const slateManifestIn = (text: string): Record<string, unknown> | null => {
+  try {
+    const data: unknown = JSON.parse(text);
+    return isSlateManifest(data) ? data : null;
+  } catch {
+    return null;
+  }
+};
+
 const delimiterOf = (text: string): string => {
   const sample = text.split(/\r?\n/).slice(0, 20).join('\n');
   const count = (char: string) => sample.split(char).length - 1;
@@ -326,6 +341,8 @@ export const parseScriptLog = (fileName: string, input: string | Uint8Array): Pa
     format = 'ALE';
     entries = parseAle(text, warnings);
   } else if (extension === 'json' || trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    const slate = slateManifestIn(text);
+    if (slate) return parseSlateManifest(slate);
     format = 'JSON';
     entries = parseJson(text, warnings);
   } else if (extension === 'xml' || trimmed.startsWith('<')) {

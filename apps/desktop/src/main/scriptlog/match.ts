@@ -88,7 +88,7 @@ const secondsOfDay = (ms: number) => {
 };
 const clock = (ms: number) => (ms ? new Date(ms).toTimeString().slice(0, 8) : '—');
 const tcSeconds = (tc: string): number | null => {
-  const found = /^(\d{2}):(\d{2}):(\d{2})(?::(\d{2,3}))?/.exec(tc);
+  const found = /^(\d{2}):(\d{2}):(\d{2})(?:[:;](\d{2,3}))?/.exec(tc);
   return found ? Number(found[1]) * 3600 + Number(found[2]) * 60 + Number(found[3]) + Number(found[4] ?? 0) / 100 : null;
 };
 

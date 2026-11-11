@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { clipKeyOfFile, clipKeyOfRef, rollKey, soundNamesFor } from '../scriptlog/clip-key';
 import { groupClips, matchDay, type DayClip } from '../scriptlog/match';
@@ -218,5 +219,49 @@ describe('matching the log to the clips', () => {
       ['A015C002', 70],
       ['A015C003', 70],
     ]);
+  });
+});
+
+describe('a day from VC Smart Slate', () => {
+  // The slate's own golden manifest (vc-smart-slate SlateCore/Tests/SlateCoreTests/Fixtures/sample-day.manifest.json).
+  const manifest = readFileSync(new URL('./fixtures/vc-smart-slate-day.manifest.json', import.meta.url), 'utf8');
+
+  it('is recognised by its schema, one entry per take per camera', () => {
+    const { format, entries, warnings } = parseScriptLog('Day 1.json', manifest);
+    expect(format).toBe('VC Smart Slate');
+    expect(warnings).toEqual([]);
+    expect(entries.map((e) => `${e.scene}${e.setup}-${e.take} ${e.cameras.join()} ${e.roll}`)).toEqual([
+      '14-1 A A015', '14-1 B B007', '14-2 A A015', '14-2 B B007', '14B-1 A A015',
+    ]);
+    expect(entries[2]).toMatchObject({ circle: true, soundRoll: 'S03', lens: '32mm', description: 'INT. DINING CAR - NIGHT — Master Med 50/50 2-shot' });
+    expect(entries[3]!.notes).toBe('Best for performance, "keep" — B: NG cam lose battery L2');
+  });
+
+  it('keeps drop frame, the rational rate and every clap, and a correction beside the clap it corrects', () => {
+    const [first, , second, , mos] = parseScriptLog('Day 1.json', manifest).entries;
+    expect(second!.tcIn).toBe('14:01:59;28');
+    expect(first!.fromSlate!.rate).toEqual({ numerator: 30000, denominator: 1001, dropFrame: true, label: '29.97 DF' });
+    expect(first!.tcIn).toBe('14:00:00;10');
+    expect(first!.fromSlate).toMatchObject({ manual: true, source: 'manual', epoch: 1, runningTimeMs: 90000 });
+    expect(first!.fromSlate!.claps).toEqual([
+      expect.objectContaining({
+        kind: 'slate', timecode: '14:00:00;00', frameCount: 1510488, lockState: 'locked',
+        correction: expect.objectContaining({ timecode: '14:00:00;10', reason: 'sticks seen 10 frames late on A', by: 'dit' }),
+      }),
+    ]);
+    // A marker named for camera A only is that camera's; its flag travels with it.
+    expect(mos!.fromSlate!.claps).toEqual([expect.objectContaining({ kind: 'marker', reviewFlags: ['unsyncedTimecode'] })]);
+    expect(mos!.fromSlate!.tags).toEqual(['mos']);
+  });
+
+  it('refuses a newer format rather than half-reading it', () => {
+    const newer = manifest.replace('"schema_version" : 1', '"schema_version" : 2').replace('"schema_version": 1', '"schema_version": 2');
+    expect(newer).not.toBe(manifest);
+    expect(() => parseScriptLog('Day 1.json', newer)).toThrow(/newer VC Smart Slate/);
+  });
+
+  it('keeps a drop-frame separator from any log, not only the slate', () => {
+    const { entries } = parseScriptLog('df.csv', 'Scene,Take,TC In\n3,1,01:00:00;02\n3,2,1:00:10:00\n');
+    expect(entries.map((e) => e.tcIn)).toEqual(['01:00:00;02', '01:00:10:00']);
   });
 });

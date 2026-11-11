@@ -22,6 +22,7 @@ import type { SealExpected } from '../media/seal';
 import type { RelinkFound, RelinkLeg } from '../media/relink';
 import { matchDay, type Candidate, type DayClip } from '../scriptlog/match';
 import type { LogEntry, ParsedLog } from '../scriptlog/parse';
+import type { SlateTake } from '../scriptlog/slate-manifest';
 import { clipKeyOfFile, isPictureFile, pictureKey, sequenceOf } from '../scriptlog/clip-key';
 import { buildLogView, candidateLabel, type StoredEntry, type StoredImport, type StoredMatch, type VfxFlag } from '../scriptlog/view';
 import type { MirrorFile, MirrorOutcome, MirrorPlan } from '../vfx/mirror';
@@ -552,6 +553,9 @@ MIGRATIONS.push(`
 
 // Frame.io: publish on its own after each dailies run.
 MIGRATIONS.push(`alter table production add column frameio_auto integer not null default 0;`);
+
+// A take from VC Smart Slate keeps its rate, its claps and its running time (JSON).
+MIGRATIONS.push(`alter table script_entry add column slate_detail text;`);
 
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
@@ -1238,8 +1242,8 @@ export class ProductionDb {
       for (const [position, entry] of entries.entries()) {
         this.run(
           `insert into script_entry (day, position, scene, setup, take, slate, cameras, clip_refs, roll, sound_roll, sound_ref, tc_in, tc_out,
-             circle, print, vfx, vfx_note, notes, lens, description)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             circle, print, vfx, vfx_note, notes, lens, description, slate_detail)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             day,
             position,
@@ -1261,6 +1265,7 @@ export class ProductionDb {
             entry.notes,
             entry.lens,
             entry.description,
+            entry.fromSlate ? JSON.stringify(entry.fromSlate) : null,
           ],
         );
       }
@@ -1316,6 +1321,7 @@ export class ProductionDb {
       notes: String(row['notes']),
       lens: String(row['lens']),
       description: String(row['description']),
+      ...(row['slate_detail'] ? { fromSlate: JSON.parse(String(row['slate_detail'])) as SlateTake } : {}),
     }));
   }
 

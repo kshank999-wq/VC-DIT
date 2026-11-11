@@ -1,0 +1,794 @@
+{
+  "detail" : {
+    "audit" : [
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000001",
+        "new_value" : "14",
+        "object_id" : "00000000-0000-4000-8000-000000000002",
+        "object_kind" : "scene"
+      },
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000003",
+        "new_value" : "",
+        "object_id" : "00000000-0000-4000-8000-000000000004",
+        "object_kind" : "setup"
+      },
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000005",
+        "new_value" : "B",
+        "object_id" : "00000000-0000-4000-8000-000000000006",
+        "object_kind" : "setup"
+      },
+      {
+        "action" : "cardChange",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000007",
+        "new_value" : "take 1 r1",
+        "object_id" : "00000000-0000-4000-8000-000000000004",
+        "object_kind" : "card"
+      },
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000008",
+        "new_value" : "1",
+        "object_id" : "00000000-0000-4000-8000-000000000009",
+        "object_kind" : "take"
+      },
+      {
+        "action" : "roll",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000010",
+        "new_value" : "14:00:00;00",
+        "object_id" : "00000000-0000-4000-8000-000000000011",
+        "object_kind" : "mark"
+      },
+      {
+        "action" : "clap",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000012",
+        "new_value" : "14:00:00;00",
+        "object_id" : "00000000-0000-4000-8000-000000000013",
+        "object_kind" : "clap"
+      },
+      {
+        "action" : "cut",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:01:30.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000014",
+        "new_value" : "14:01:29;29",
+        "object_id" : "00000000-0000-4000-8000-000000000015",
+        "object_kind" : "mark"
+      },
+      {
+        "action" : "cardChange",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:01:30.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000016",
+        "new_value" : "take 2 r2",
+        "object_id" : "00000000-0000-4000-8000-000000000004",
+        "object_kind" : "card"
+      },
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000017",
+        "new_value" : "2",
+        "object_id" : "00000000-0000-4000-8000-000000000018",
+        "object_kind" : "take"
+      },
+      {
+        "action" : "clap",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000019",
+        "new_value" : "14:01:59;28",
+        "object_id" : "00000000-0000-4000-8000-000000000020",
+        "object_kind" : "clap"
+      },
+      {
+        "action" : "tag",
+        "actor_id" : "scripty",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "field" : "tags",
+        "id" : "00000000-0000-4000-8000-000000000021",
+        "new_value" : "circle",
+        "object_id" : "00000000-0000-4000-8000-000000000018",
+        "object_kind" : "take"
+      },
+      {
+        "action" : "update",
+        "actor_id" : "scripty",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "field" : "notes",
+        "id" : "00000000-0000-4000-8000-000000000022",
+        "new_value" : "Best for performance, \"keep\"",
+        "object_id" : "00000000-0000-4000-8000-000000000018",
+        "object_kind" : "take",
+        "old_value" : ""
+      },
+      {
+        "action" : "update",
+        "actor_id" : "scripty",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "field" : "cameras.B.notes",
+        "id" : "00000000-0000-4000-8000-000000000023",
+        "new_value" : "NG cam lose battery L2",
+        "object_id" : "00000000-0000-4000-8000-000000000018",
+        "object_kind" : "take"
+      },
+      {
+        "action" : "correctTimecode",
+        "actor_id" : "dit",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "field" : "timecode",
+        "id" : "00000000-0000-4000-8000-000000000024",
+        "new_value" : "14:00:00;10",
+        "object_id" : "00000000-0000-4000-8000-000000000013",
+        "object_kind" : "clap",
+        "old_value" : "14:00:00;00",
+        "reason" : "sticks seen 10 frames late on A"
+      },
+      {
+        "action" : "cardChange",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:03:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000025",
+        "new_value" : "take 1 r3",
+        "object_id" : "00000000-0000-4000-8000-000000000006",
+        "object_kind" : "card"
+      },
+      {
+        "action" : "create",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:03:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000026",
+        "new_value" : "1",
+        "object_id" : "00000000-0000-4000-8000-000000000027",
+        "object_kind" : "take"
+      },
+      {
+        "action" : "clap",
+        "actor_id" : "ac",
+        "at" : "2026-10-22T21:03:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000028",
+        "new_value" : "14:02:59;28",
+        "object_id" : "00000000-0000-4000-8000-000000000029",
+        "object_kind" : "clap"
+      }
+    ],
+    "claps" : [
+      {
+        "camera_ids" : [
+          "A",
+          "B"
+        ],
+        "captured_utc" : "2026-10-22T21:00:00.000Z",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000013",
+        "monotonic" : {
+          "nanoseconds" : 1000000000
+        },
+        "operator_id" : "ac",
+        "ordinal" : 1,
+        "review_flags" : [
+
+        ],
+        "sequence" : 1,
+        "sync_state" : "locked",
+        "take_id" : "00000000-0000-4000-8000-000000000009",
+        "time_zone_id" : "America/Los_Angeles",
+        "timecode" : {
+          "accuracy" : "calibrated",
+          "error_estimate_ms" : 0,
+          "formatted" : "14:00:00;00",
+          "frame_count" : 1510488,
+          "id" : "00000000-0000-4000-8000-000000000031",
+          "lock_state" : "locked",
+          "provider_id" : "mock",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "sample_age_ms" : 0,
+          "source_epoch" : 1
+        },
+        "trigger" : {
+          "touch" : {
+
+          }
+        },
+        "type" : "slate",
+        "utc_offset_seconds" : -25200
+      },
+      {
+        "camera_ids" : [
+          "A",
+          "B"
+        ],
+        "captured_utc" : "2026-10-22T21:02:00.000Z",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000020",
+        "monotonic" : {
+          "nanoseconds" : 121000000000
+        },
+        "operator_id" : "ac",
+        "ordinal" : 1,
+        "review_flags" : [
+
+        ],
+        "sequence" : 2,
+        "sync_state" : "locked",
+        "take_id" : "00000000-0000-4000-8000-000000000018",
+        "time_zone_id" : "America/Los_Angeles",
+        "timecode" : {
+          "accuracy" : "calibrated",
+          "error_estimate_ms" : 0,
+          "formatted" : "14:01:59;28",
+          "frame_count" : 1514084,
+          "id" : "00000000-0000-4000-8000-000000000032",
+          "lock_state" : "locked",
+          "provider_id" : "mock",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "sample_age_ms" : 0,
+          "source_epoch" : 1
+        },
+        "trigger" : {
+          "touch" : {
+
+          }
+        },
+        "type" : "slate",
+        "utc_offset_seconds" : -25200
+      },
+      {
+        "camera_ids" : [
+          "A"
+        ],
+        "captured_utc" : "2026-10-22T21:03:00.000Z",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000029",
+        "monotonic" : {
+          "nanoseconds" : 181000000000
+        },
+        "operator_id" : "ac",
+        "ordinal" : 1,
+        "review_flags" : [
+          "unsyncedTimecode"
+        ],
+        "sequence" : 3,
+        "sync_state" : "holdover",
+        "take_id" : "00000000-0000-4000-8000-000000000027",
+        "time_zone_id" : "America/Los_Angeles",
+        "timecode" : {
+          "accuracy" : "sampled",
+          "error_estimate_ms" : 1,
+          "formatted" : "14:02:59;28",
+          "frame_count" : 1515882,
+          "id" : "00000000-0000-4000-8000-000000000033",
+          "lock_state" : "holdover",
+          "provider_id" : "mock",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "sample_age_ms" : 60000,
+          "source_epoch" : 1
+        },
+        "trigger" : {
+          "touch" : {
+
+          }
+        },
+        "type" : "marker",
+        "utc_offset_seconds" : -25200
+      }
+    ],
+    "corrections" : [
+      {
+        "actor_id" : "dit",
+        "at" : "2026-10-22T21:02:00.000Z",
+        "clap_id" : "00000000-0000-4000-8000-000000000013",
+        "id" : "00000000-0000-4000-8000-000000000034",
+        "reason" : "sticks seen 10 frames late on A",
+        "snapshot" : {
+          "accuracy" : "manual",
+          "formatted" : "14:00:00;10",
+          "frame_count" : 1510498,
+          "id" : "00000000-0000-4000-8000-000000000035",
+          "lock_state" : "manual",
+          "provider_id" : "manual",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "source_epoch" : 1
+        }
+      }
+    ],
+    "marks" : [
+      {
+        "captured_utc" : "2026-10-22T21:00:00.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000011",
+        "kind" : "roll",
+        "monotonic" : {
+          "nanoseconds" : 1000000000
+        },
+        "operator_id" : "ac",
+        "sync_state" : "locked",
+        "take_id" : "00000000-0000-4000-8000-000000000009",
+        "time_zone_id" : "America/Los_Angeles",
+        "timecode" : {
+          "accuracy" : "calibrated",
+          "error_estimate_ms" : 0,
+          "formatted" : "14:00:00;00",
+          "frame_count" : 1510488,
+          "id" : "00000000-0000-4000-8000-000000000036",
+          "lock_state" : "locked",
+          "provider_id" : "mock",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "sample_age_ms" : 0,
+          "source_epoch" : 1
+        },
+        "utc_offset_seconds" : -25200
+      },
+      {
+        "captured_utc" : "2026-10-22T21:01:30.000Z",
+        "device_id" : "ipad-2nd-ac",
+        "id" : "00000000-0000-4000-8000-000000000015",
+        "kind" : "cut",
+        "monotonic" : {
+          "nanoseconds" : 91000000000
+        },
+        "operator_id" : "ac",
+        "sync_state" : "locked",
+        "take_id" : "00000000-0000-4000-8000-000000000009",
+        "time_zone_id" : "America/Los_Angeles",
+        "timecode" : {
+          "accuracy" : "calibrated",
+          "error_estimate_ms" : 0,
+          "formatted" : "14:01:29;29",
+          "frame_count" : 1513185,
+          "id" : "00000000-0000-4000-8000-000000000037",
+          "lock_state" : "locked",
+          "provider_id" : "mock",
+          "rate" : {
+            "denominator" : 1001,
+            "drop_frame" : true,
+            "numerator" : 30000
+          },
+          "rate_mismatch" : false,
+          "sample_age_ms" : 0,
+          "source_epoch" : 1
+        },
+        "utc_offset_seconds" : -25200
+      }
+    ],
+    "scenes" : [
+      {
+        "id" : "00000000-0000-4000-8000-000000000002",
+        "number" : "14",
+        "slugline" : "INT. DINING CAR - NIGHT",
+        "superseded" : false
+      }
+    ],
+    "setups" : [
+      {
+        "camera_ids" : [
+          "A",
+          "B"
+        ],
+        "id" : "00000000-0000-4000-8000-000000000004",
+        "label" : "",
+        "scene_id" : "00000000-0000-4000-8000-000000000002"
+      },
+      {
+        "camera_ids" : [
+          "A"
+        ],
+        "id" : "00000000-0000-4000-8000-000000000006",
+        "label" : "B",
+        "scene_id" : "00000000-0000-4000-8000-000000000002"
+      }
+    ],
+    "sync_log" : [
+      {
+        "at" : {
+          "nanoseconds" : 1000000000
+        },
+        "epoch" : 1,
+        "kind" : "connected",
+        "provider_id" : "mock"
+      },
+      {
+        "at" : {
+          "nanoseconds" : 1000000000
+        },
+        "epoch" : 1,
+        "kind" : "verified",
+        "provider_id" : "mock"
+      },
+      {
+        "at" : {
+          "nanoseconds" : 181000000000
+        },
+        "detail" : "out of range",
+        "epoch" : 1,
+        "kind" : "lost",
+        "provider_id" : "mock"
+      }
+    ],
+    "takes" : [
+      {
+        "camera_ids" : [
+          "A",
+          "B"
+        ],
+        "cameras" : [
+          {
+            "camera_id" : "A",
+            "lens" : "32mm",
+            "roll" : "A015",
+            "shot_description" : "Master Med 50/50 2-shot"
+          },
+          {
+            "camera_id" : "B",
+            "lens" : "85mm",
+            "roll" : "B007",
+            "shot_description" : "Med Over Arnold R"
+          }
+        ],
+        "continuity_notes" : "",
+        "created_at" : "2026-10-22T21:00:00.000Z",
+        "created_by" : "ac",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "id" : "00000000-0000-4000-8000-000000000009",
+        "notes" : "",
+        "number" : 1,
+        "scene_id" : "00000000-0000-4000-8000-000000000002",
+        "setup_id" : "00000000-0000-4000-8000-000000000004",
+        "slate_number" : 1,
+        "sound_notes" : "",
+        "sound_roll" : "S03",
+        "tags" : [
+
+        ],
+        "version" : 1
+      },
+      {
+        "camera_ids" : [
+          "A",
+          "B"
+        ],
+        "cameras" : [
+          {
+            "camera_id" : "A",
+            "lens" : "32mm",
+            "roll" : "A015",
+            "shot_description" : "Master Med 50/50 2-shot"
+          },
+          {
+            "camera_id" : "B",
+            "lens" : "85mm",
+            "notes" : "NG cam lose battery L2",
+            "roll" : "B007",
+            "shot_description" : "Med Over Arnold R"
+          }
+        ],
+        "continuity_notes" : "",
+        "created_at" : "2026-10-22T21:02:00.000Z",
+        "created_by" : "ac",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "id" : "00000000-0000-4000-8000-000000000018",
+        "notes" : "Best for performance, \"keep\"",
+        "number" : 2,
+        "scene_id" : "00000000-0000-4000-8000-000000000002",
+        "setup_id" : "00000000-0000-4000-8000-000000000004",
+        "slate_number" : 1,
+        "sound_notes" : "",
+        "sound_roll" : "S03",
+        "tags" : [
+          "circle"
+        ],
+        "version" : 4
+      },
+      {
+        "camera_ids" : [
+          "A"
+        ],
+        "cameras" : [
+          {
+            "camera_id" : "A",
+            "lens" : "32mm",
+            "roll" : "A015",
+            "shot_description" : "Master Med 50/50 2-shot"
+          },
+          {
+            "camera_id" : "B",
+            "lens" : "85mm",
+            "roll" : "B007",
+            "shot_description" : "Med Over Arnold R"
+          }
+        ],
+        "continuity_notes" : "",
+        "created_at" : "2026-10-22T21:03:00.000Z",
+        "created_by" : "ac",
+        "day_id" : "00000000-0000-4000-8000-000000000030",
+        "id" : "00000000-0000-4000-8000-000000000027",
+        "notes" : "",
+        "number" : 1,
+        "scene_id" : "00000000-0000-4000-8000-000000000002",
+        "setup_id" : "00000000-0000-4000-8000-000000000006",
+        "slate_number" : 2,
+        "sound_notes" : "",
+        "sound_roll" : "S03",
+        "tags" : [
+          "mos"
+        ],
+        "version" : 1
+      }
+    ]
+  },
+  "dit_log" : [
+    {
+      "camera" : "A",
+      "camera_notes" : "",
+      "captured_local" : "2026-10-22T14:00:00.000-07:00",
+      "captured_utc" : "2026-10-22T21:00:00.000Z",
+      "circle" : false,
+      "clap_count" : 1,
+      "clap_event_ids" : [
+        "00000000-0000-4000-8000-000000000013"
+      ],
+      "drop_frame" : true,
+      "lens" : "32mm",
+      "notes" : "",
+      "roll" : "A015",
+      "running_time" : "01:30",
+      "running_time_ms" : 90000,
+      "scene" : "14",
+      "sequential_slate" : 1,
+      "setup" : "",
+      "shot_description" : "Master Med 50/50 2-shot",
+      "slugline" : "INT. DINING CAR - NIGHT",
+      "sound_roll" : "S03",
+      "sync_state" : "manual",
+      "tags" : [
+
+      ],
+      "take" : "1",
+      "take_id" : "00000000-0000-4000-8000-000000000009",
+      "tc_epoch" : 1,
+      "tc_frame_count" : 1510498,
+      "tc_in" : "14:00:00;10",
+      "tc_manual" : true,
+      "tc_rate" : "29.97 DF",
+      "tc_rate_denominator" : 1001,
+      "tc_rate_numerator" : 30000,
+      "tc_source" : "manual"
+    },
+    {
+      "camera" : "B",
+      "camera_notes" : "",
+      "captured_local" : "2026-10-22T14:00:00.000-07:00",
+      "captured_utc" : "2026-10-22T21:00:00.000Z",
+      "circle" : false,
+      "clap_count" : 1,
+      "clap_event_ids" : [
+        "00000000-0000-4000-8000-000000000013"
+      ],
+      "drop_frame" : true,
+      "lens" : "85mm",
+      "notes" : "",
+      "roll" : "B007",
+      "running_time" : "01:30",
+      "running_time_ms" : 90000,
+      "scene" : "14",
+      "sequential_slate" : 1,
+      "setup" : "",
+      "shot_description" : "Med Over Arnold R",
+      "slugline" : "INT. DINING CAR - NIGHT",
+      "sound_roll" : "S03",
+      "sync_state" : "manual",
+      "tags" : [
+
+      ],
+      "take" : "1",
+      "take_id" : "00000000-0000-4000-8000-000000000009",
+      "tc_epoch" : 1,
+      "tc_frame_count" : 1510498,
+      "tc_in" : "14:00:00;10",
+      "tc_manual" : true,
+      "tc_rate" : "29.97 DF",
+      "tc_rate_denominator" : 1001,
+      "tc_rate_numerator" : 30000,
+      "tc_source" : "manual"
+    },
+    {
+      "camera" : "A",
+      "camera_notes" : "",
+      "captured_local" : "2026-10-22T14:02:00.000-07:00",
+      "captured_utc" : "2026-10-22T21:02:00.000Z",
+      "circle" : true,
+      "clap_count" : 1,
+      "clap_event_ids" : [
+        "00000000-0000-4000-8000-000000000020"
+      ],
+      "drop_frame" : true,
+      "lens" : "32mm",
+      "notes" : "Best for performance, \"keep\"",
+      "roll" : "A015",
+      "running_time" : "",
+      "scene" : "14",
+      "sequential_slate" : 1,
+      "setup" : "",
+      "shot_description" : "Master Med 50/50 2-shot",
+      "slugline" : "INT. DINING CAR - NIGHT",
+      "sound_roll" : "S03",
+      "sync_state" : "locked",
+      "tags" : [
+        "circle"
+      ],
+      "take" : "2",
+      "take_id" : "00000000-0000-4000-8000-000000000018",
+      "tc_epoch" : 1,
+      "tc_frame_count" : 1514084,
+      "tc_in" : "14:01:59;28",
+      "tc_manual" : false,
+      "tc_rate" : "29.97 DF",
+      "tc_rate_denominator" : 1001,
+      "tc_rate_numerator" : 30000,
+      "tc_source" : "mock"
+    },
+    {
+      "camera" : "B",
+      "camera_notes" : "NG cam lose battery L2",
+      "captured_local" : "2026-10-22T14:02:00.000-07:00",
+      "captured_utc" : "2026-10-22T21:02:00.000Z",
+      "circle" : true,
+      "clap_count" : 1,
+      "clap_event_ids" : [
+        "00000000-0000-4000-8000-000000000020"
+      ],
+      "drop_frame" : true,
+      "lens" : "85mm",
+      "notes" : "Best for performance, \"keep\"",
+      "roll" : "B007",
+      "running_time" : "",
+      "scene" : "14",
+      "sequential_slate" : 1,
+      "setup" : "",
+      "shot_description" : "Med Over Arnold R",
+      "slugline" : "INT. DINING CAR - NIGHT",
+      "sound_roll" : "S03",
+      "sync_state" : "locked",
+      "tags" : [
+        "circle"
+      ],
+      "take" : "2",
+      "take_id" : "00000000-0000-4000-8000-000000000018",
+      "tc_epoch" : 1,
+      "tc_frame_count" : 1514084,
+      "tc_in" : "14:01:59;28",
+      "tc_manual" : false,
+      "tc_rate" : "29.97 DF",
+      "tc_rate_denominator" : 1001,
+      "tc_rate_numerator" : 30000,
+      "tc_source" : "mock"
+    },
+    {
+      "camera" : "A",
+      "camera_notes" : "",
+      "captured_local" : "2026-10-22T14:03:00.000-07:00",
+      "captured_utc" : "2026-10-22T21:03:00.000Z",
+      "circle" : false,
+      "clap_count" : 1,
+      "clap_event_ids" : [
+        "00000000-0000-4000-8000-000000000029"
+      ],
+      "drop_frame" : true,
+      "lens" : "32mm",
+      "notes" : "",
+      "roll" : "A015",
+      "running_time" : "",
+      "scene" : "14",
+      "sequential_slate" : 2,
+      "setup" : "B",
+      "shot_description" : "Master Med 50/50 2-shot",
+      "slugline" : "INT. DINING CAR - NIGHT",
+      "sound_roll" : "S03",
+      "sync_state" : "holdover",
+      "tags" : [
+        "mos"
+      ],
+      "take" : "1",
+      "take_id" : "00000000-0000-4000-8000-000000000027",
+      "tc_epoch" : 1,
+      "tc_frame_count" : 1515882,
+      "tc_in" : "14:02:59;28",
+      "tc_manual" : false,
+      "tc_rate" : "29.97 DF",
+      "tc_rate_denominator" : 1001,
+      "tc_rate_numerator" : 30000,
+      "tc_source" : "mock"
+    }
+  ],
+  "generated_at" : "2026-10-22T21:03:00.000Z",
+  "generator" : {
+    "application" : "VC Smart Slate",
+    "build" : "test",
+    "version" : "0.1.0"
+  },
+  "production" : {
+    "id" : "00000000-0000-4000-8000-000000000038",
+    "project_code" : "NT",
+    "rate" : {
+      "denominator" : 1001,
+      "drop_frame" : true,
+      "numerator" : 30000
+    },
+    "time_zone_id" : "America/Los_Angeles",
+    "title" : "Night Train"
+  },
+  "schema" : "vc-smart-slate.manifest/1",
+  "schema_version" : 1,
+  "shooting_day" : {
+    "day_number" : 12,
+    "id" : "00000000-0000-4000-8000-000000000030",
+    "local_date" : "2026-10-22",
+    "production_id" : "00000000-0000-4000-8000-000000000038",
+    "unit" : "Main"
+  }
+}
