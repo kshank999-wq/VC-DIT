@@ -314,11 +314,12 @@ export const dayReportHtml = (db: ProductionDb, day: number, entries: ReportEntr
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${html(production.name)} · Day ${shootDay.number} report</title>
 <style>
-  @page { size: A4 landscape; margin: 14mm; }
-  body { font: 10px/1.45 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #111; margin: 0; }
+  /* US Letter portrait, as the crew hand it in (Ken, 14 November 2026). */
+  @page { size: letter portrait; margin: 12mm; }
+  body { font: 9px/1.4 -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: #111; margin: 0; }
   h1 { font-size: 18px; margin: 0 0 4px; } h2 { font-size: 12.5px; margin: 18px 0 6px; border-bottom: 1px solid #999; padding-bottom: 3px; }
   p { margin: 2px 0; } .muted { color: #666; } .notes { margin: 6px 0; padding: 6px 8px; border-left: 3px solid #999; background: #f4f4f4; }
-  table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
+  table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: 3px 4px; border-bottom: 1px solid #ddd; vertical-align: top; }
   th { font-weight: 600; color: #444; } tr { page-break-inside: avoid; }
   .ok { color: #13703a; font-weight: 600; } .needs { color: #8a5a00; font-weight: 600; } .problem { color: #b3261e; font-weight: 700; } .working { color: #0b57d0; }
 </style></head><body>

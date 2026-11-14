@@ -214,7 +214,7 @@ const htmlToPdf = async (page: string): Promise<Buffer> => {
   try {
     await writeFile(join(dir, 'report.html'), page, 'utf8');
     await window.loadFile(join(dir, 'report.html'));
-    return await window.webContents.printToPDF({ landscape: true, pageSize: 'A4', printBackground: true });
+    return await window.webContents.printToPDF({ landscape: false, pageSize: 'Letter', printBackground: true, preferCSSPageSize: true });
   } finally {
     window.destroy();
     await rm(dir, { recursive: true, force: true });
