@@ -473,7 +473,11 @@ export const registerProject = async (hooks: ProjectHooks): Promise<Project> => 
       setup: (text(value['setup'], 8) ?? '').toUpperCase(),
       take: text(value['take'], 6) ?? '',
       circle: value['circle'] === true,
+      ng: value['ng'] === true,
       lens: text(value['lens'], 40) ?? '',
+      stop: text(value['stop'], 16) ?? '',
+      filters: text(value['filters'], 40) ?? '',
+      ran: text(value['ran'], 12) ?? '',
       notes: text(value['notes'], 400) ?? '',
     };
   };

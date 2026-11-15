@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { applyNaming, parseNaming } from '../../shared/project';
+import { applyNaming, parseNaming, reportMark } from '../../shared/project';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
 import { placeViews } from '../delivery/delivery-service';
 import { cardFolder } from '../media/rules';
@@ -254,6 +254,18 @@ describe('where clips go: the log, the camera report, the sound slate and the DI
     expect(view.reportProblems).toEqual([
       'A015: the report names A015C009 (Sc 14A T2), but it is not on the card.',
       'A015: 2 clips on the card are not in the report (A015C002, A015C003).',
+    ]);
+  });
+
+  it('reads the camera report template: one standard across the VC products', async () => {
+    const { REPORT_TEMPLATE } = await import('../organize/assign');
+    expect(REPORT_TEMPLATE.split('\n')[0]).toBe('Camera,Roll,Clip,Scene,Take,Mark,Lens,Stop,Filters,Ran,Notes');
+    const result = db.importCameraReport(1, parseScriptLog('template.csv', REPORT_TEMPLATE).entries);
+    expect(result).toMatchObject({ cards: ['A015'], rows: 3, skipped: [] });
+    expect(db.cameraReport(1).map((row) => [row.clip, row.scene, row.setup, row.take, reportMark(row), row.stop, row.filters, row.ran, row.notes])).toEqual([
+      ['C001', '14', 'B', '1', 'NG', 'T2.8', 'ND.6', '0:48', 'False start'],
+      ['C002', '14', 'B', '2', 'PRINT', 'T2.8', 'ND.6', '1:12', 'Boom in frame at the end'],
+      ['C003', '14', 'C', '1', 'HOLD', 'T2.8', '', '0:55', ''],
     ]);
   });
 

@@ -553,6 +553,14 @@ MIGRATIONS.push(`
 // Frame.io: publish on its own after each dailies run.
 MIGRATIONS.push(`alter table production add column frameio_auto integer not null default 0;`);
 
+// One camera report across the VC products (Ken, 14 November 2026): Clip, Scene, Take, Mark, Lens, Stop, Filters, Ran, Notes.
+MIGRATIONS.push(`
+  alter table camera_report add column ng integer not null default 0;
+  alter table camera_report add column stop text not null default '';
+  alter table camera_report add column filters text not null default '';
+  alter table camera_report add column ran text not null default '';
+`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -2630,7 +2638,11 @@ export class ProductionDb {
       setup: String(row['setup']),
       take: String(row['take']),
       circle: Number(row['circle']) === 1,
+      ng: Number(row['ng']) === 1,
       lens: String(row['lens']),
+      stop: String(row['stop'] ?? ''),
+      filters: String(row['filters'] ?? ''),
+      ran: String(row['ran'] ?? ''),
       notes: String(row['notes']),
       source: row['source'] as CameraReportRow['source'],
     }));
@@ -2642,8 +2654,9 @@ export class ProductionDb {
       this.run('delete from camera_report where day = ? and card = ?', [day, card]);
       for (const [position, row] of rows.entries()) {
         this.run(
-          'insert into camera_report (day, card, clip, scene, setup, take, circle, lens, notes, source, position) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-          [day, card, row.clip, row.scene, row.setup, takeNumber(row.take), row.circle ? 1 : 0, row.lens, row.notes, source, position],
+          'insert into camera_report (day, card, clip, scene, setup, take, circle, ng, lens, stop, filters, ran, notes, source, position) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [day, card, row.clip, row.scene, row.setup, takeNumber(row.take), row.circle ? 1 : 0, !row.circle && row.ng ? 1 : 0,
+            row.lens, row.stop ?? '', row.filters ?? '', row.ran ?? '', row.notes, source, position],
         );
       }
     });
@@ -2666,7 +2679,10 @@ export class ProductionDb {
           continue;
         }
         const rows = byCard.get(card) ?? [];
-        rows.push({ card, clip: ref, scene: entry.scene, setup: entry.setup, take: entry.take, circle: entry.circle || entry.print, lens: entry.lens, notes: entry.notes });
+        rows.push({
+          card, clip: ref, scene: entry.scene, setup: entry.setup, take: entry.take, circle: entry.circle || entry.print, ng: entry.ng ?? false,
+          lens: entry.lens, stop: entry.stop ?? '', filters: entry.filters ?? '', ran: entry.ran ?? '', notes: entry.notes,
+        });
         byCard.set(card, rows);
       }
     }

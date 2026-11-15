@@ -110,7 +110,11 @@ export interface PulledLine {
   setup: string;
   take: string;
   circle: boolean;
+  ng: boolean;
   lens: string;
+  stop: string;
+  filters: string;
+  ran: string;
   notes: string;
 }
 
@@ -121,8 +125,9 @@ export type PullResult =
 const str = (value: unknown, max: number) => (typeof value === 'string' || typeof value === 'number' ? String(value).trim().slice(0, max) : '');
 
 /**
- * Film Studio's line to VC DIT's. VC DIT keeps no stop or filter column, so
- * they go in front of the notes, where the day report shows them.
+ * Film Studio's line to VC DIT's: the same columns on both (one camera
+ * report, 14 November 2026). Mark and Ran come from Film Studio 0167; an
+ * older Film Studio sends neither, and the line is HOLD with no Ran.
  */
 export const pulledLine = (raw: unknown): PulledLine | null => {
   const line = (raw ?? {}) as Record<string, unknown>;
@@ -131,8 +136,13 @@ export const pulledLine = (raw: unknown): PulledLine | null => {
   const scene = str(line['scene'], 12).toUpperCase();
   const take = str(line['take'], 6);
   if (!card || !clip || !scene || !take) return null;
-  const notes = [str(line['stop'], 16), str(line['filter'], 40), str(line['notes'], 400)].filter(Boolean).join(' · ');
-  return { card, clip, scene, setup: str(line['setup'], 8).toUpperCase(), take, circle: line['circle'] === true, lens: str(line['lens'], 40), notes };
+  const circle = line['circle'] === true;
+  return {
+    card, clip, scene, setup: str(line['setup'], 8).toUpperCase(), take, circle,
+    ng: !circle && str(line['mark'], 8).toUpperCase() === 'NG',
+    lens: str(line['lens'], 40), stop: str(line['stop'], 16), filters: str(line['filter'] ?? line['filters'], 40),
+    ran: str(line['ran'], 12), notes: str(line['notes'], 400),
+  };
 };
 
 /**

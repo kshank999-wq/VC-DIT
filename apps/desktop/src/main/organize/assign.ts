@@ -110,10 +110,15 @@ export const expandRange = (from: string, to: string): string[] => {
 };
 
 /** The camera report file VC DIT reads best (any of the script log's column names also work). */
+/**
+ * The camera report's columns (one standard across the VC products, 14
+ * November 2026), with Camera and Roll in front because a file has no
+ * headings. Scene is the slate's label: 14B is scene 14, setup B.
+ */
 export const REPORT_TEMPLATE = [
-  'Roll,Clip,Scene,Setup,Take,Circle,Lens,Notes',
-  'A015,C001,14,B,1,,35mm,',
-  'A015,C002,14,B,2,Y,35mm,Boom in frame at the end',
-  'A015,C003,14,C,1,,50mm,',
+  'Camera,Roll,Clip,Scene,Take,Mark,Lens,Stop,Filters,Ran,Notes',
+  'A,A015,C001,14B,1,NG,35mm,T2.8,ND.6,0:48,False start',
+  'A,A015,C002,14B,2,PRINT,35mm,T2.8,ND.6,1:12,Boom in frame at the end',
+  'A,A015,C003,14C,1,HOLD,50mm,T2.8,,0:55,',
   '',
 ].join('\n');

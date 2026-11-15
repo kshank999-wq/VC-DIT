@@ -360,10 +360,10 @@ export const TAKES: TakesState = {
     { card: 'A015', clip: 'A015C006', scene: '', setup: '', take: '', circle: false, by: null, conflict: false, claims: [] },
   ],
   report: [
-    { id: 1, card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '1', circle: false, lens: '35mm', notes: '', source: 'entered' },
-    { id: 2, card: 'A015', clip: 'C002', scene: '14', setup: 'B', take: '2', circle: true, lens: '35mm', notes: '', source: 'entered' },
-    { id: 3, card: 'A015', clip: 'C003', scene: '14', setup: 'B', take: '4', circle: false, lens: '35mm', notes: 'Rolled long', source: 'entered' },
-    { id: 4, card: 'A015', clip: 'C004', scene: '14', setup: 'C', take: '1', circle: false, lens: '50mm', notes: '', source: 'entered' },
+    { id: 1, card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '1', circle: false, ng: true, lens: '35mm', stop: 'T2.8', filters: 'ND.6', ran: '0:48', notes: 'False start', source: 'entered' },
+    { id: 2, card: 'A015', clip: 'C002', scene: '14', setup: 'B', take: '2', circle: true, ng: false, lens: '35mm', stop: 'T2.8', filters: 'ND.6', ran: '1:12', notes: '', source: 'entered' },
+    { id: 3, card: 'A015', clip: 'C003', scene: '14', setup: 'B', take: '4', circle: false, ng: false, lens: '35mm', stop: 'T2.8', filters: 'ND.6', ran: '2:40', notes: 'Rolled long', source: 'entered' },
+    { id: 4, card: 'A015', clip: 'C004', scene: '14', setup: 'C', take: '1', circle: false, ng: false, lens: '50mm', stop: 'T2', filters: '', ran: '0:55', notes: '', source: 'entered' },
   ],
   reportProblems: ['A015: 2 clips on the card are not in the report (A015C005, A015C006).'],
 };

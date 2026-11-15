@@ -92,7 +92,9 @@ describe('getting the camera report', () => {
     const site = filmStudio(200, {
       ok: true, production: 'HALCYON', day: { number: 3, date: '2026-10-12' },
       lines: [
-        { camera: 'A', roll: 'a015', clip: 'c001', scene: '14', setup: 'b', take: 2, circle: true, lens: '35mm', stop: 'T2.8', filter: 'ND.6', notes: 'soft' },
+        { camera: 'A', roll: 'a015', clip: 'c001', scene: '14', setup: 'b', take: 2, circle: true, mark: 'PRINT', lens: '35mm', stop: 'T2.8', filter: 'ND.6', ran: '1:02', notes: 'soft' },
+        { camera: 'A', roll: 'A015', clip: 'C003', scene: '14', setup: 'B', take: 3, circle: false, mark: 'NG', lens: '35mm', notes: 'False start' },
+        { camera: 'A', roll: 'A015', clip: 'C004', scene: '14', setup: 'B', take: 4, circle: false, lens: '35mm' }, // an older Film Studio: no mark, no ran
         { roll: 'A015', clip: 'C002' }, // no scene or take: not a line
       ],
     });
@@ -101,7 +103,12 @@ describe('getting the camera report', () => {
     expect((site.calls[0]![1].headers as Record<string, string>).authorization).toBe(`Bearer ${KEY}`);
     expect(result).toEqual({
       ok: true, production: 'HALCYON', day: 3,
-      lines: [{ card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '2', circle: true, lens: '35mm', notes: 'T2.8 · ND.6 · soft' }],
+      // One camera report (14 November 2026): stop and filters are their own columns, with Mark and Ran.
+      lines: [
+        { card: 'A015', clip: 'C001', scene: '14', setup: 'B', take: '2', circle: true, ng: false, lens: '35mm', stop: 'T2.8', filters: 'ND.6', ran: '1:02', notes: 'soft' },
+        { card: 'A015', clip: 'C003', scene: '14', setup: 'B', take: '3', circle: false, ng: true, lens: '35mm', stop: '', filters: '', ran: '', notes: 'False start' },
+        { card: 'A015', clip: 'C004', scene: '14', setup: 'B', take: '4', circle: false, ng: false, lens: '35mm', stop: '', filters: '', ran: '', notes: '' },
+      ],
     });
   });
 

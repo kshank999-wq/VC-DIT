@@ -33,6 +33,12 @@ export interface LogEntry {
   notes: string;
   lens: string;
   description: string;
+  /** The camera report's own columns (14 November 2026); empty from a script log. */
+  stop?: string;
+  filters?: string;
+  ran?: string;
+  /** Marked NG (a Mark column of NG, or a false start). */
+  ng?: boolean;
 }
 
 export type LogFormat = 'CSV' | 'Tab-separated' | 'ALE' | 'JSON' | 'XML';
@@ -44,7 +50,7 @@ export interface ParsedLog {
   warnings: string[];
 }
 
-type Field = keyof Omit<LogEntry, 'line' | 'cameras' | 'clipRefs' | 'circle' | 'print' | 'vfx'> | 'camera' | 'clip' | 'circle' | 'print' | 'vfx';
+type Field = keyof Omit<LogEntry, 'line' | 'cameras' | 'clipRefs' | 'circle' | 'print' | 'vfx' | 'ng'> | 'camera' | 'clip' | 'circle' | 'print' | 'vfx' | 'mark';
 
 /** Column names each field is known by, compared as lowercase letters and digits. */
 const ALIASES: Record<Field, string[]> = {
@@ -66,6 +72,12 @@ const ALIASES: Record<Field, string[]> = {
   notes: ['notes', 'note', 'comments', 'comment', 'remarks', 'scriptnotes', 'editorialnotes'],
   lens: ['lens', 'focallength', 'mm', 'lenses'],
   description: ['description', 'scenedescription', 'slugline', 'set', 'setdescription'],
+  // The camera report's own columns (one standard, 14 November 2026).
+  stop: ['stop', 'tstop', 'fstop', 'iris', 'aperture'],
+  filters: ['filters', 'filter', 'filtration'],
+  ran: ['ran', 'runningtime', 'runtime', 'duration', 'length'],
+  // PRINT, NG or HOLD.
+  mark: ['mark', 'printhold', 'printng'],
 };
 
 const squash = (header: string) =>
@@ -137,7 +149,7 @@ const toEntry = (values: Map<Field, string>, line: number, warnings: string[]): 
     soundRef: get('soundRef'),
     tcIn,
     tcOut: timecode(get('tcOut')),
-    circle: yes(get('circle')) || marked,
+    circle: yes(get('circle')) || marked || /^\s*(print|circle)/i.test(get('mark')),
     print: yes(get('print')),
     // A VFX column may hold a yes, or the VFX note itself ("Sky replacement").
     vfx: yes(get('vfx')) || (Boolean(get('vfx')) && !NO.test(get('vfx'))) || Boolean(vfxNote),
@@ -145,6 +157,10 @@ const toEntry = (values: Map<Field, string>, line: number, warnings: string[]): 
     notes: get('notes'),
     lens: get('lens'),
     description: get('description'),
+    stop: get('stop'),
+    filters: get('filters'),
+    ran: get('ran'),
+    ng: /^\s*(ng|no\s*good|false\s*start)/i.test(get('mark')),
   };
 };
 

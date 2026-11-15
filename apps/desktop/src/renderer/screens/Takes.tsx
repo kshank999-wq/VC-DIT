@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { AssignedClip, AssignSource, CameraReportInput, CameraReportRow, ProjectResult, SlateInput } from '../../shared/project';
+import { CAMERA_REPORT_COLUMNS, reportMark } from '../../shared/project';
 import { projectApi } from '../state/engine';
 import { useStore } from '../state/store';
 import { FolderCheck } from '../ui/FolderCheck';
@@ -255,7 +256,9 @@ function CameraReport({ cards, report, problems, onAnswer }: { cards: string[]; 
   const next = (text: string, by = 1) => text.replace(/(\d+)(?!.*\d)/, (digits) => String(Number(digits) + by).padStart(digits.length, '0'));
   const addRow = () => {
     const last = editing[editing.length - 1];
-    setRows([...editing, last ? { ...last, clip: next(last.clip), take: next(last.take), circle: false, notes: '' } : { card, clip: 'C001', scene: '', setup: '', take: '1', circle: false, lens: '', notes: '' }]);
+    setRows([...editing, last
+      ? { ...last, clip: next(last.clip), take: next(last.take), circle: false, ng: false, ran: '', notes: '' }
+      : { card, clip: 'C001', scene: '', setup: '', take: '1', circle: false, ng: false, lens: '', stop: '', filters: '', ran: '', notes: '' }]);
   };
   // A run of clips, one take each: C001–C005 as takes 1–5.
   const addRun = () => {
@@ -270,7 +273,11 @@ function CameraReport({ cards, report, problems, onAnswer }: { cards: string[]; 
       setup: run.setup,
       take: String((Number(run.take) || 1) + i),
       circle: false,
+      ng: false,
       lens: run.lens,
+      stop: '',
+      filters: '',
+      ran: '',
       notes: '',
     }));
     setRows([...editing, ...added]);
@@ -321,14 +328,11 @@ function CameraReport({ cards, report, problems, onAnswer }: { cards: string[]; 
 
       <table className="takes-table takes-report-table">
         <thead>
+          {/* One camera report across the VC products (14 November 2026). */}
           <tr>
-            <th>Clip</th>
-            <th>Sc</th>
-            <th>Setup</th>
-            <th>Take</th>
-            <th>◎</th>
-            <th>Lens</th>
-            <th>Notes</th>
+            {CAMERA_REPORT_COLUMNS.map((title) => (
+              <th key={title}>{title}</th>
+            ))}
             <th />
           </tr>
         </thead>
@@ -339,19 +343,44 @@ function CameraReport({ cards, report, problems, onAnswer }: { cards: string[]; 
                 <input className="input mono" value={row.clip} aria-label={`Clip, line ${index + 1}`} onChange={(event) => update(index, { clip: event.target.value.toUpperCase() })} />
               </td>
               <td>
-                <input className="input mono" value={row.scene} aria-label={`Scene, line ${index + 1}`} onChange={(event) => update(index, { scene: event.target.value.toUpperCase() })} />
-              </td>
-              <td>
-                <input className="input mono" value={row.setup} aria-label={`Setup, line ${index + 1}`} onChange={(event) => update(index, { setup: event.target.value.toUpperCase() })} />
+                {/* The slate's label: 14B is scene 14, setup B. */}
+                <input
+                  className="input mono"
+                  value={`${row.scene}${row.setup}`}
+                  aria-label={`Scene, line ${index + 1}`}
+                  onChange={(event) => {
+                    const value = event.target.value.toUpperCase().replace(/\s+/g, '');
+                    const parts = /^(\d+)([A-Z]{0,3})$/.exec(value);
+                    update(index, parts ? { scene: parts[1]!, setup: parts[2]! } : { scene: value, setup: '' });
+                  }}
+                />
               </td>
               <td>
                 <input className="input mono" value={row.take} aria-label={`Take, line ${index + 1}`} onChange={(event) => update(index, { take: event.target.value.replace(/\D/g, '') })} />
               </td>
               <td>
-                <Check checked={row.circle} onChange={() => update(index, { circle: !row.circle })} label={`Circle, line ${index + 1}`} />
+                <select
+                  className="input"
+                  value={reportMark(row)}
+                  aria-label={`Mark, line ${index + 1}`}
+                  onChange={(event) => update(index, { circle: event.target.value === 'PRINT', ng: event.target.value === 'NG' })}
+                >
+                  <option value="PRINT">PRINT</option>
+                  <option value="NG">NG</option>
+                  <option value="HOLD">HOLD</option>
+                </select>
               </td>
               <td>
                 <input className="input" value={row.lens} aria-label={`Lens, line ${index + 1}`} onChange={(event) => update(index, { lens: event.target.value })} />
+              </td>
+              <td>
+                <input className="input" value={row.stop ?? ''} aria-label={`Stop, line ${index + 1}`} onChange={(event) => update(index, { stop: event.target.value })} />
+              </td>
+              <td>
+                <input className="input" value={row.filters ?? ''} aria-label={`Filters, line ${index + 1}`} onChange={(event) => update(index, { filters: event.target.value })} />
+              </td>
+              <td>
+                <input className="input mono" value={row.ran ?? ''} aria-label={`Ran, line ${index + 1}`} onChange={(event) => update(index, { ran: event.target.value })} />
               </td>
               <td>
                 <input className="input" value={row.notes} aria-label={`Notes, line ${index + 1}`} onChange={(event) => update(index, { notes: event.target.value })} />

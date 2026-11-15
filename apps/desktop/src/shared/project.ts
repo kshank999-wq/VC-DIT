@@ -619,13 +619,31 @@ export interface CameraReportRow {
   setup: string;
   take: string;
   circle: boolean;
+  /** No good: NG on the report (a false start is NG). Circle wins: a circled take is PRINT. */
+  ng: boolean;
   lens: string;
+  stop: string;
+  filters: string;
+  /** How long the take ran, "1:02", as the slate timed it. */
+  ran: string;
   notes: string;
   /** Typed in VC DIT, imported from a file, or from VC Film Studio. */
   source: 'entered' | 'csv' | 'film-studio';
 }
 
-export type CameraReportInput = Omit<CameraReportRow, 'id' | 'source'>;
+/** A line as written or imported: stop, filters, ran and NG may be left out. */
+export type CameraReportInput = Omit<CameraReportRow, 'id' | 'source' | 'ng' | 'stop' | 'filters' | 'ran'>
+  & Partial<Pick<CameraReportRow, 'ng' | 'stop' | 'filters' | 'ran'>>;
+
+/**
+ * One camera report across VC Smart Slate, VC Film Studio and VC DIT (Ken,
+ * 14 November 2026): these nine columns, under a camera-and-roll heading.
+ */
+export const CAMERA_REPORT_COLUMNS = ['Clip', 'Scene', 'Take', 'Mark', 'Lens', 'Stop', 'Filters', 'Ran', 'Notes'] as const;
+
+/** PRINT, NG or HOLD, as on every facing page and camera report. */
+export const reportMark = (row: Pick<CameraReportRow, 'circle'> & { ng?: boolean }): 'PRINT' | 'NG' | 'HOLD' =>
+  row.circle ? 'PRINT' : row.ng ? 'NG' : 'HOLD';
 
 /** A camera clip of the day and where it goes. */
 export interface AssignedClip {
