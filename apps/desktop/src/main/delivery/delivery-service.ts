@@ -249,7 +249,7 @@ export class DeliveryService {
         const base = join(dir, `${segment(production.code || production.name)}_D${String(day.number).padStart(3, '0')}_${stamp(new Date())}`);
         await mkdir(dir, { recursive: true });
         const title = `${production.name || production.code} · Day ${day.number}`;
-        await writeFile(`${base}.ale`, editorialAle(rows, production.frameRate), 'utf8');
+        await writeFile(`${base}.ale`, editorialAle(rows, production.frameRate, { number: day.number, date: day.date }), 'utf8');
         await writeFile(`${base}_sync.csv`, editorialCsv(rows), 'utf8');
         // For Final Cut Pro and Resolve, and for Premiere: the same clips, linked to the copies on this drive.
         await writeFile(`${base}.fcpxml`, editorialFcpxml(rows, { frameRate: production.frameRate, event: title, root: place.root }), 'utf8');

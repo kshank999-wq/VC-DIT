@@ -561,6 +561,9 @@ MIGRATIONS.push(`
   alter table camera_report add column ran text not null default '';
 `);
 
+// One ALE across the VC products (Ken, 15 November 2026): a take the log marks NG is rejected in editorial's FCPXML.
+MIGRATIONS.push(`alter table script_entry add column ng integer not null default 0;`);
+
 /** One clip in the scene view or the selects, and every destination holding its verified copy. */
 export interface OrganizeView extends ViewClip {
   kind: 'scene' | 'select';
@@ -606,11 +609,20 @@ export interface EditorialRow {
   scene: string;
   setup: string;
   take: string;
+  /** The camera letter: the take's own when it names one camera, else the clip's first letter. */
+  camera: string;
+  lens: string;
+  /** The shot as the log describes it. */
+  description: string;
   circle: boolean;
+  /** Marked NG, or a false start. */
+  ng: boolean;
   notes: string;
   roll: string;
   soundRoll: string;
   soundFile: string;
+  /** The card's own name for the clip, only when VC DIT renamed it on offload. */
+  cardFile: string;
   sync: string;
   /** Where the sound starts relative to the clip's first frame, in frames. */
   syncFrames: number | null;
@@ -1246,8 +1258,8 @@ export class ProductionDb {
       for (const [position, entry] of entries.entries()) {
         this.run(
           `insert into script_entry (day, position, scene, setup, take, slate, cameras, clip_refs, roll, sound_roll, sound_ref, tc_in, tc_out,
-             circle, print, vfx, vfx_note, notes, lens, description)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             circle, print, vfx, vfx_note, notes, lens, description, ng)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             day,
             position,
@@ -1269,6 +1281,7 @@ export class ProductionDb {
             entry.notes,
             entry.lens,
             entry.description,
+            entry.ng ? 1 : 0,
           ],
         );
       }
@@ -1324,6 +1337,7 @@ export class ProductionDb {
       notes: String(row['notes']),
       lens: String(row['lens']),
       description: String(row['description']),
+      ng: Number(row['ng']) === 1,
     }));
   }
 
@@ -2344,12 +2358,17 @@ export class ProductionDb {
     }
     const syncs = new Map(this.syncRecords(day).map((record) => [`${record.card}|${record.clipKey}`, record]));
     const files = new Map<string, string>();
+    const originals = new Map<string, string>();
     const sounds = new Map<string, string>();
-    for (const row of this.rows<Record<string, SqlValue>>('select card, file_name, kind from clip where day = ? order by path', [day])) {
+    for (const row of this.rows<Record<string, SqlValue>>('select card, file_name, kind, source_path from clip where day = ? order by path', [day])) {
       const name = String(row['file_name']);
       if (row['kind'] === 'camera' && isPictureFile(name)) {
         const id = `${String(row['card'])}|${pictureKey(name)}`;
-        if (!files.has(id)) files.set(id, name);
+        if (!files.has(id)) {
+          files.set(id, name);
+          const original = row['source_path'] ? String(row['source_path']).split(/[\\/]/).pop()! : name;
+          if (original !== name) originals.set(id, original);
+        }
       } else if (row['kind'] === 'sound' && AUDIO_FILE.test(name)) {
         sounds.set(`${String(row['card'])}|${name.replace(/\.[^.]+$/, '')}`, name);
       }
@@ -2365,6 +2384,10 @@ export class ProductionDb {
         const sync = syncs.get(id);
         const synced = sync && sync.method !== 'None' && sync.soundKey;
         const rule = this.ruleFor(rules, day, { scene: entry?.scene ?? '', setup: entry?.setup ?? '', clip: picture.key });
+        // The camera: the take's, when it names one; else the clip's first letter (A015C002 is camera A), if the take allows it.
+        const letter = /^[A-Za-z]/.exec(picture.key)?.[0]?.toUpperCase() ?? '';
+        const cameras = (entry?.cameras ?? []).map((camera) => camera.toUpperCase());
+        const camera = cameras.length === 1 ? cameras[0]! : letter && (cameras.length === 0 || cameras.includes(letter)) ? letter : '';
         return {
           clip: picture.key,
           card: picture.card,
@@ -2375,8 +2398,13 @@ export class ProductionDb {
           scene: entry?.scene ?? '',
           setup: entry?.setup ?? '',
           take: entry?.take ?? '',
+          camera,
+          lens: entry?.lens ?? '',
+          description: entry?.description ?? '',
           circle: Boolean(entry && (entry.circle || entry.print)),
+          ng: Boolean(entry?.ng),
           notes: entry?.notes ?? '',
+          cardFile: originals.get(id) ?? '',
           roll: entry?.roll || picture.card,
           soundRoll: synced ? (entry?.soundRoll || sync.soundCard || '') : '',
           soundFile: synced ? (sounds.get(`${sync.soundCard}|${sync.soundKey}`) ?? sync.soundKey!) : '',

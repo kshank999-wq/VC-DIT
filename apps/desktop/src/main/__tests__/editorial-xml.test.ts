@@ -36,11 +36,16 @@ const row = (patch: Partial<EditorialRow> = {}): EditorialRow => ({
   scene: '14',
   setup: 'B',
   take: '3',
+  camera: 'A',
+  lens: '',
+  description: '',
   circle: true,
+  ng: false,
   notes: 'great & <loud>',
   roll: 'A015',
   soundRoll: 'S004',
   soundFile: '14B-03.WAV',
+  cardFile: '',
   sync: 'Timecode',
   syncFrames: -12.4,
   look: 'EXT_DAY.cc',
@@ -53,7 +58,7 @@ const row = (patch: Partial<EditorialRow> = {}): EditorialRow => ({
   soundDurationSec: 14.5,
   ...patch,
 });
-const unsynced = row({ clip: 'B007C001', file: 'B007C001.mov', card: 'B007', scene: '', setup: '', take: '', circle: false, tc: null, sync: 'None', syncFrames: null, soundFile: '', soundPaths: [], cdl: null, look: '', notes: '', paths: [`${RAID}/CAMERA_ORIGINALS/B007/B007C001.mov`] });
+const unsynced = row({ clip: 'B007C001', file: 'B007C001.mov', card: 'B007', camera: 'B', scene: '', setup: '', take: '', circle: false, tc: null, sync: 'None', syncFrames: null, soundFile: '', soundPaths: [], cdl: null, look: '', notes: '', paths: [`${RAID}/CAMERA_ORIGINALS/B007/B007C001.mov`] });
 
 /** The little of jsdom's DOM these tests read (the main process is built without DOM types). */
 interface Node {
@@ -141,8 +146,8 @@ describe('editorial XML', () => {
       // Not on the shuttle: its first copy.
       `file://${RAID}/CAMERA_ORIGINALS/B007/B007C001.mov`,
     ]);
-    const synced = doc.querySelector('sync-clip')!;
-    expect(synced.getAttribute('name')).toBe('14B-03');
+    const synced = doc.querySelector('event > sync-clip')!;
+    expect(synced.getAttribute('name')).toBe('14B-03 A');
     const start = 1217772;
     expect(synced.getAttribute('start')).toBe(`${start * 1001}/24000s`);
     // Sound starts 12 frames before picture: it is placed at picture's first frame, 12 frames in.
@@ -150,9 +155,16 @@ describe('editorial XML', () => {
     const soundStart = Math.round(50739 * (24000 / 1001));
     expect(sound.getAttribute('offset')).toBe(`${start * 1001}/24000s`);
     expect(sound.getAttribute('start')).toBe(`${(soundStart + 12) * 1001}/24000s`);
-    expect([...synced.querySelectorAll('keyword')].map((k) => k.getAttribute('value'))).toEqual(['Circled', 'Look EXT_DAY.cc']);
+    // The slate's and Film Studio's keywords, rating and Final Cut fields (15 November 2026).
+    expect([...synced.querySelectorAll('keyword')].map((k) => k.getAttribute('value'))).toEqual(['Sc 14, Setup B, Circled', 'Look EXT_DAY.cc']);
+    expect(synced.querySelector('rating')!.getAttribute('value')).toBe('favorite');
     expect(synced.querySelector('note')!.textContent).toBe('great & <loud>');
-    expect(synced.querySelector('md[key="com.apple.proapps.studio.scene"]')!.getAttribute('value')).toBe('14');
+    const md = (key: string) => synced.querySelector(`md[key="com.apple.proapps.${key}"]`)?.getAttribute('value');
+    expect([md('studio.scene'), md('studio.shot'), md('studio.angle'), md('studio.reel'), md('mio.cameraName')]).toEqual(['14', '03', 'A', 'A015', 'Camera A']);
+    // Two projects, as the slate's: every take end to end, and the circled ones. A clip of no take is in the event only.
+    const projects = [...doc.querySelectorAll('project')];
+    expect(projects.map((p) => p.getAttribute('name'))).toEqual(['HALCYON · Day 14, all takes', 'HALCYON · Day 14, circled']);
+    expect(projects.map((p) => p.querySelector('sequence > spine')!.children.length)).toEqual([1, 1]);
     // A clip with no sound and no timecode is a plain clip, named by the clip.
     const plain = doc.querySelector('event > asset-clip')!;
     expect([plain.getAttribute('name'), plain.getAttribute('start')]).toEqual(['B007C001', '0s']);
@@ -163,7 +175,7 @@ describe('editorial XML', () => {
     expect(doc.querySelector('xmeml')!.getAttribute('version')).toBe('4');
     expect([...doc.querySelectorAll('xmeml > bin > children > bin > name')].map((n) => n.textContent)).toEqual(['Scene 14', 'No scene']);
     const clip = doc.querySelector('clip')!;
-    expect(clip.querySelector('name')!.textContent).toBe('14B-03');
+    expect(clip.querySelector('name')!.textContent).toBe('14B-03 A');
     expect(clip.querySelector('rate ntsc')!.textContent).toBe('TRUE');
     expect(clip.querySelector('video file pathurl')!.textContent).toBe(`file://${RAID}/CAMERA_ORIGINALS/A015/A015C002_261007_R1AB.mov`);
     expect(clip.querySelector('video file timecode string')!.textContent).toBe('14:05:40:12');
@@ -182,7 +194,7 @@ describe('editorial XML', () => {
     expect(editorialCdl([unsynced])).toBeNull();
     const ccc = editorialCdl([row(), unsynced])!;
     expect(parseCdl('day.ccc', ccc).map((look) => look.id)).toEqual(['A015C002']);
-    const ale = editorialAle([row(), unsynced], '23.976 fps').split('\n');
+    const ale = editorialAle([row(), unsynced], '23.976 fps').split('\r\n');
     const columns = ale[ale.indexOf('Column') + 1]!.split('\t');
     const first = ale[ale.indexOf('Data') + 1]!.split('\t');
     expect(first[columns.indexOf('ASC_SOP')]).toBe('(1.1 1 0.9)(0.01 0 -0.02)(1 1 1.05)');

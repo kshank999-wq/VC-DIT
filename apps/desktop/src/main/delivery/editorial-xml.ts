@@ -2,13 +2,19 @@ import { pathToFileURL } from 'node:url';
 import { timecodeLabel } from '../dailies/render-args';
 import type { EditorialRow } from '../db/production-db';
 import { aleSop, cdlCollection } from '../looks/cdl';
+import { takeName, takeNumber } from './editorial';
 
 /**
  * The day's camera clips for edit systems that read XML rather than an ALE:
  *
  * - FCPXML (1.10), which Final Cut Pro and DaVinci Resolve import: one event
- *   for the day, each clip with its scene, take, camera roll and note, circled
- *   takes keyworded, and a synced clip where the sound was synced.
+ *   for the day, each clip with its scene, take, camera roll and note, and a
+ *   synced clip where the sound was synced. ONE FCPXML (Ken, 15 November
+ *   2026): laid out as VC Smart Slate's and VC Film Studio's are — the same
+ *   clip names, keywords ("Sc 14, Setup B, Circled"), ratings (circled a
+ *   favourite, NG rejected) and Final Cut metadata, and two projects in the
+ *   event, every take end to end and the circled ones — with what only VC
+ *   DIT has: links to the media on the drive and the synced sound.
  * - Final Cut Pro 7 XML (xmeml 4), which Premiere Pro (and Resolve) import:
  *   bins by scene, each clip a merged clip of picture and the synced sound,
  *   lined up by the sync offset.
@@ -43,7 +49,7 @@ const timingOf = (row: EditorialRow | undefined, frameRate: string): Timing => {
 /** The copy on the drive being written to, else the first copy. */
 const pick = (paths: string[], root: string | null): string | null => (root ? paths.find((path) => path.startsWith(root)) : undefined) ?? paths[0] ?? null;
 const fileUrl = (path: string) => pathToFileURL(path).href;
-const name = (row: EditorialRow) => (row.take ? `${row.scene}${row.setup}-${row.take.padStart(2, '0')}` : row.clip);
+const name = takeName;
 const frames = (row: EditorialRow, t: Timing) => Math.max(1, Math.round((row.durationSec ?? 0) * (t.num / t.den)));
 /** Where the sound starts against picture, in whole frames (positive: after the first frame). */
 const shift = (row: EditorialRow) => Math.round(row.syncFrames ?? 0);
@@ -58,7 +64,8 @@ export const editorialFcpxml = (rows: EditorialRow[], options: { frameRate: stri
   const t = timingOf(rows.find((row) => row.rate), options.frameRate);
   const format = `<format id="r1" frameDuration="${time(1, t)}" width="1920" height="1080"/>`;
   const assets: string[] = [];
-  const clips: string[] = [];
+  /* Each clip as a function of where it sits: in the event, and in each project's spine. */
+  const items: { row: EditorialRow; length: number; at: (offset: string, indent: string) => string }[] = [];
   rows.forEach((row, index) => {
     const picture = pick(row.paths, options.root);
     if (!picture) return;
@@ -70,55 +77,81 @@ export const editorialFcpxml = (rows: EditorialRow[], options: { frameRate: stri
       `    <asset id="${pictureId}" name="${xml(row.clip)}" start="${time(start, t)}" duration="${time(length, t)}" hasVideo="1" hasAudio="1" format="r1" audioSources="1" audioChannels="2" audioRate="48000">\n` +
         `      <media-rep kind="original-media" src="${xml(fileUrl(picture))}"/>\n    </asset>`,
     );
+    // Final Cut's own fields, as the slate and Film Studio fill them: Scene, Take, Camera Angle, Reel, the card's name, Camera Name.
     const metadata = [
       ['com.apple.proapps.studio.scene', row.scene],
-      ['com.apple.proapps.studio.shot', row.setup],
-      ['com.apple.proapps.studio.take', row.take],
-      ['com.apple.proapps.studio.cameraName', row.card],
-      ['com.apple.proapps.studio.reel', row.roll],
-      ['com.apple.proapps.studio.angle', row.clip],
+      ['com.apple.proapps.studio.shot', takeNumber(row)],
+      ['com.apple.proapps.studio.angle', row.camera],
+      ['com.apple.proapps.studio.reel', row.roll || row.clip],
+      ['com.apple.proapps.mio.originalFileName', row.cardFile],
+      ['com.apple.proapps.mio.cameraName', row.camera ? `Camera ${row.camera}` : ''],
     ]
       .filter(([, value]) => value)
-      .map(([key, value]) => `        <md key="${key}" value="${xml(value!)}"/>`);
-    // FCPXML's order: the note first, then the clip's own content, then keywords, then metadata.
-    const note = row.notes ? [`      <note>${xml(row.notes.replace(/\s+/g, ' ').trim())}</note>`] : [];
+      .map(([key, value]) => `  <md key="${key}" value="${xml(value!)}"/>`);
+    const span = `start="${time(start, t)}" duration="${time(length, t)}"`;
+    const keyword = [row.scene || row.setup ? `Sc ${row.scene}` : null, row.setup ? `Setup ${row.setup}` : null, row.circle ? 'Circled' : null, row.ng ? 'NG' : null]
+      .filter(Boolean)
+      .join(', ');
+    // FCPXML's order: the note first, then the clip's own content, then keywords and ratings, then metadata.
+    const note = row.notes ? [`<note>${xml(row.notes.replace(/\s+/g, ' ').trim())}</note>`] : [];
     const tags = [
-      ...(row.circle ? [`      <keyword start="${time(start, t)}" duration="${time(length, t)}" value="Circled"/>`] : []),
-      ...(row.look ? [`      <keyword start="${time(start, t)}" duration="${time(length, t)}" value="Look ${xml(row.look)}"/>`] : []),
-      ...(metadata.length ? ['      <metadata>', ...metadata, '      </metadata>'] : []),
+      ...(keyword ? [`<keyword ${span} value="${xml(keyword)}"/>`] : []),
+      ...(row.look ? [`<keyword ${span} value="Look ${xml(row.look)}"/>`] : []),
+      ...(row.circle ? [`<rating ${span} value="favorite"/>`] : row.ng ? [`<rating ${span} value="reject"/>`] : []),
+      ...(metadata.length ? ['<metadata>', ...metadata, '</metadata>'] : []),
     ];
     const sound = synced(row) ? pick(row.soundPaths, options.root) : null;
-    if (!sound) {
-      clips.push(
-        `    <asset-clip ref="${pictureId}" name="${xml(name(row))}" offset="0s" start="${time(start, t)}" duration="${time(length, t)}" format="r1" tcFormat="${tcFormat}">\n${[...note, ...tags].join('\n')}\n    </asset-clip>`,
-      );
-      return;
-    }
     // The sound, lined up by the sync offset, on the lane below picture.
     const soundId = `s${index + 1}`;
     const soundStart = Math.round((row.soundStartSec ?? 0) * (t.num / t.den));
     const soundLength = Math.max(1, Math.round((row.soundDurationSec ?? (row.durationSec ?? 0) + Math.abs(shift(row)) * (t.den / t.num)) * (t.num / t.den)));
-    assets.push(
-      `    <asset id="${soundId}" name="${xml(row.soundFile)}" start="${time(soundStart, t)}" duration="${time(soundLength, t)}" hasAudio="1" audioSources="1" audioChannels="${row.soundChannels ?? 2}" audioRate="${row.sampleRate ?? 48000}">\n` +
-        `      <media-rep kind="original-media" src="${xml(fileUrl(sound))}"/>\n    </asset>`,
-    );
-    const lead = Math.max(0, shift(row));
-    const skip = Math.max(0, -shift(row));
-    const heard = Math.max(1, Math.min(length - lead, soundLength - skip));
-    clips.push(
-      [
-        `    <sync-clip name="${xml(name(row))}" offset="0s" start="${time(start, t)}" duration="${time(length, t)}" format="r1" tcFormat="${tcFormat}">`,
-        ...note,
-        '      <spine>',
-        `        <asset-clip ref="${pictureId}" name="${xml(row.clip)}" offset="${time(start, t)}" start="${time(start, t)}" duration="${time(length, t)}" format="r1" tcFormat="${tcFormat}">`,
-        `          <asset-clip ref="${soundId}" lane="-1" name="${xml(row.soundFile)}" offset="${time(start + lead, t)}" start="${time(soundStart + skip, t)}" duration="${time(heard, t)}"/>`,
-        '        </asset-clip>',
-        '      </spine>',
-        ...tags,
-        '    </sync-clip>',
-      ].join('\n'),
-    );
+    const lines = (offset: string): string[] => {
+      if (!sound) return [`<asset-clip ref="${pictureId}" name="${xml(name(row))}" offset="${offset}" ${span} format="r1" tcFormat="${tcFormat}">`, ...note.map((l) => `  ${l}`), ...tags.map((l) => `  ${l}`), '</asset-clip>'];
+      const lead = Math.max(0, shift(row));
+      const skip = Math.max(0, -shift(row));
+      const heard = Math.max(1, Math.min(length - lead, soundLength - skip));
+      return [
+        `<sync-clip name="${xml(name(row))}" offset="${offset}" ${span} format="r1" tcFormat="${tcFormat}">`,
+        ...note.map((l) => `  ${l}`),
+        '  <spine>',
+        `    <asset-clip ref="${pictureId}" name="${xml(row.clip)}" offset="${time(start, t)}" ${span} format="r1" tcFormat="${tcFormat}">`,
+        `      <asset-clip ref="${soundId}" lane="-1" name="${xml(row.soundFile)}" offset="${time(start + lead, t)}" start="${time(soundStart + skip, t)}" duration="${time(heard, t)}"/>`,
+        '    </asset-clip>',
+        '  </spine>',
+        ...tags.map((l) => `  ${l}`),
+        '</sync-clip>',
+      ];
+    };
+    if (sound) {
+      assets.push(
+        `    <asset id="${soundId}" name="${xml(row.soundFile)}" start="${time(soundStart, t)}" duration="${time(soundLength, t)}" hasAudio="1" audioSources="1" audioChannels="${row.soundChannels ?? 2}" audioRate="${row.sampleRate ?? 48000}">\n` +
+          `      <media-rep kind="original-media" src="${xml(fileUrl(sound))}"/>\n    </asset>`,
+      );
+    }
+    items.push({ row, length, at: (offset, indent) => lines(offset).map((line) => `${indent}${line}`).join('\n') });
   });
+
+  /* Two projects, as the slate's and Film Studio's: every take end to end, and the circled ones. */
+  const tcFormat = rows.find((row) => row.tc)?.tc?.dropFrame ? 'DF' : 'NDF';
+  const project = (label: string, picked: typeof items) => {
+    let at = 0;
+    const spine = picked.map((item) => {
+      const out = item.at(time(at, t), '            ');
+      at += item.length;
+      return out;
+    });
+    return [
+      `      <project name="${xml(`${options.event}, ${label}`)}">`,
+      `        <sequence format="r1" duration="${time(Math.max(at, 1), t)}" tcStart="0s" tcFormat="${tcFormat}">`,
+      '          <spine>',
+      ...spine,
+      '          </spine>',
+      '        </sequence>',
+      '      </project>',
+    ].join('\n');
+  };
+  const takes = items.filter((item) => item.row.take);
+
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE fcpxml>',
@@ -129,7 +162,9 @@ export const editorialFcpxml = (rows: EditorialRow[], options: { frameRate: stri
     '  </resources>',
     '  <library>',
     `    <event name="${xml(options.event)}">`,
-    ...clips.map((clip) => clip.replace(/^/gm, '  ')),
+    ...items.map((item) => item.at('0s', '      ')),
+    project('all takes', takes),
+    project('circled', takes.filter((item) => item.row.circle)),
     '    </event>',
     '  </library>',
     '</fcpxml>',

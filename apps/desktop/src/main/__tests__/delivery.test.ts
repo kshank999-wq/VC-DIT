@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_DELIVERY, deliveryNeed, type DeliverySettings } from '../../shared/project';
 import { ProductionDb, type EditorialRow } from '../db/production-db';
 import { DeliveryService, type RunTransfer } from '../delivery/delivery-service';
-import { editorialAle, editorialCsv } from '../delivery/editorial';
+import { ALE_COLUMNS, editorialAle, editorialCsv } from '../delivery/editorial';
 import { createHasher, prepareChecksums } from '../media/checksum';
 import { writeReports } from '../media/reports';
 import { runTransfer } from '../media/transfer';
@@ -200,11 +200,16 @@ describe('the editorial lists', () => {
     scene: '14',
     setup: 'B',
     take: '3',
+    camera: 'A',
+    lens: '32mm',
+    description: 'Med Over Arnold R',
     circle: true,
+    ng: false,
     notes: 'great\tperformance\nhold',
     roll: 'A015',
     soundRoll: 'S004',
     soundFile: '14B-03.WAV',
+    cardFile: 'A015C002_261007_R1AB.mov',
     sync: 'Timecode',
     syncFrames: -12.5,
     look: 'NJR_Show_v3.cube',
@@ -219,15 +224,32 @@ describe('the editorial lists', () => {
   });
 
   it('writes an ALE editors can import', () => {
-    const ale = editorialAle([row(), row({ clip: 'B007C001', take: '', tc: null, soundFile: '', sync: 'None', syncFrames: null, circle: false })], '23.976 fps');
-    const lines = ale.split('\n');
+    const ale = editorialAle([row(), row({ clip: 'B007C001', take: '', tc: null, soundFile: '', sync: 'None', syncFrames: null, circle: false })], '23.976 fps', { number: 14, date: '2026-10-07' });
+    const lines = ale.split('\r\n');
     expect(lines.slice(0, 5)).toEqual(['Heading', 'FIELD_DELIM\tTABS', 'VIDEO_FORMAT\t1080', 'AUDIO_FORMAT\t48khz', 'FPS\t23.976']);
     const columns = lines[lines.indexOf('Column') + 1]!.split('\t');
     const data = lines.slice(lines.indexOf('Data') + 1, -1).map((line) => Object.fromEntries(line.split('\t').map((value, i) => [columns[i], value])));
-    expect(data[0]).toMatchObject({ Name: '14B-03', Tracks: 'VA1A2', Start: '14:05:40:12', End: '14:05:50:12', Tape: 'A015C002', 'Sync Offset': '-12.5', Circled: 'Yes' });
+    expect(data[0]).toMatchObject({
+      Name: '14B-03 A', Tracks: 'VA1A2', Start: '14:05:40:12', End: '14:05:50:12', Tape: 'A015C002', 'Source File': 'A015C002_261007_R1AB.mov',
+      Scene: '14', Take: '03', Camera: 'A', Camroll: 'A015', Lens: '32mm', Circled: 'Y', 'Shoot Date': '2026-10-07', 'Shoot Day': '14',
+      Look: 'NJR_Show_v3.cube', Description: 'Med Over Arnold R', 'TC From': 'camera clip', 'Audio File': '14B-03.WAV', 'Sync Method': 'Timecode', 'Sync Offset': '-12.5',
+    });
     // Tabs and line breaks in a note never break the columns.
     expect(data[0]!['Comments']).toBe('great performance hold');
-    expect(data[1]).toMatchObject({ Name: 'B007C001', Tracks: 'V', Start: '', 'Sync Method': 'None' });
+    expect(data[1]).toMatchObject({ Name: 'B007C001', Tracks: 'V', Start: '', Take: '', 'TC From': 'none', 'Sync Method': 'None' });
+  });
+
+  it('has the ALE columns of VC Smart Slate and VC Film Studio, in their order, then the sound (15 November 2026)', () => {
+    // The slate's SlateCore/Export/Editorial.swift aleColumns and Film Studio's lib/export/takes-interchange.ts ALE_COLUMNS.
+    const standard = ['Name', 'Tracks', 'Start', 'End', 'Tape', 'Source File', 'Card File', 'Scene', 'Take', 'Camera', 'Camroll', 'Soundroll',
+      'Lens', 'Circled', 'Shoot Date', 'Shoot Day', 'Look', 'ASC_SOP', 'ASC_SAT', 'Description', 'Comments', 'Slate', 'TC From'];
+    expect(ALE_COLUMNS.slice(0, standard.length)).toEqual(standard);
+    expect(ALE_COLUMNS.slice(standard.length)).toEqual(['Audio File', 'Sync Method', 'Sync Offset']);
+    const lines = editorialAle([row()], '23.976 fps').split('\r\n');
+    expect(lines[lines.indexOf('Column') + 1]).toBe(ALE_COLUMNS.join('\t'));
+    // Two cameras on one take never share a name.
+    const names = editorialAle([row(), row({ clip: 'B007C002', card: 'B007', camera: 'B' })], '23.976 fps').split('\r\n').filter((line) => line.startsWith('14B-03'));
+    expect(names.map((line) => line.split('\t')[0])).toEqual(['14B-03 A', '14B-03 B']);
   });
 
   it('writes drop-frame timecode the way editors expect', () => {

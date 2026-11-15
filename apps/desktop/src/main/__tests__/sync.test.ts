@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ProductionDb, type TransferRecord } from '../db/production-db';
+import { editorialAle } from '../delivery/editorial';
 import { parseScriptLog } from '../scriptlog/parse';
 import { analyse, readFirstMeta } from '../sync/analyse';
 import { SyncService, type RunAnalysis } from '../sync/sync-service';
@@ -27,7 +28,7 @@ let db: ProductionDb;
 let sync: SyncService;
 
 /** Cards on disk, recorded as ingested (read from where they are). */
-const ingest = async (card: string, sound: boolean, files: { name: string; from?: string; bytes?: Buffer }[]) => {
+const ingest = async (card: string, sound: boolean, files: { name: string; from?: string; bytes?: Buffer; source?: string }[]) => {
   const root = join(base, card);
   await mkdir(join(root, 'CLIPS'), { recursive: true });
   const listed: TransferRecord['files'] = [];
@@ -37,7 +38,7 @@ const ingest = async (card: string, sound: boolean, files: { name: string; from?
     else await writeFile(path, file.bytes!);
     // Camera and recorder stopped within a minute of each other.
     await utimes(path, new Date('2026-10-07T14:06:00'), new Date('2026-10-07T14:06:00'));
-    listed.push({ path: `CLIPS/${file.name}`, size: (await stat(path)).size, mtimeMs: (await stat(path)).mtimeMs, hash: null, hashedAt: null });
+    listed.push({ path: `CLIPS/${file.name}`, size: (await stat(path)).size, mtimeMs: (await stat(path)).mtimeMs, hash: null, hashedAt: null, ...(file.source ? { source: file.source } : {}) });
   }
   db.saveTransfer({ id: card, day: 1, card, label: card, sourceRoot: root, sound, checksum: 'xxHash64', startedAt: 'x', finishedAt: 'y', files: listed, destinations: [] });
 };
@@ -83,6 +84,27 @@ describe('sync', () => {
     // Nothing changed: a second run does no work and keeps everything.
     await sync.run();
     expect(db.syncView(1)).toEqual(view);
+  });
+
+  it("gives editorial each clip's camera, lens, description and the card's own name, and names it by slate and camera (15 November 2026)", async () => {
+    await ingest('A001', false, [
+      { name: 'A001C001_261007_R1AB.mov', from: 'clip.mov', source: 'CLIPS/A001C001.MOV' },
+      { name: 'A001C002_261007_R1AB.mxf', from: 'clip.mxf' },
+    ]);
+    await ingest('S001', true, [{ name: '14B-03.WAV', bytes: wav(SOUND_START_FRAMES) }]);
+    db.importLog(1, 'log.csv', parseScriptLog('log.csv', 'Scene,Setup,Take,Clip,Lens,Description,Mark\n14,B,3,A001C001,32mm,Med Over Arnold R,NG\n'));
+    await sync.run();
+
+    const rows = db.editorialRows(1);
+    expect(rows.map((row) => [row.clip, row.camera, row.lens, row.description, row.ng, row.cardFile])).toEqual([
+      ['A001C001', 'A', '32mm', 'Med Over Arnold R', true, 'A001C001.MOV'],
+      // Matched to no take: the camera from its name, nothing else claimed.
+      ['A001C002', 'A', '', '', false, ''],
+    ]);
+    const ale = editorialAle(rows, '23.976 fps', { number: 1, date: '2026-10-07' }).split('\r\n');
+    const columns = ale[ale.indexOf('Column') + 1]!.split('\t');
+    const first = Object.fromEntries(ale[ale.indexOf('Data') + 1]!.split('\t').map((value, i) => [columns[i], value]));
+    expect(first).toMatchObject({ Name: '14B-03 A', Take: '03', Camera: 'A', 'Card File': 'A001C001.MOV', 'Source File': 'A001C001_261007_R1AB.mov', 'Shoot Day': '1' });
   });
 
   it("catches a recorder whose timecode was not jammed: timecode pairs it, the waveform disagrees, it waits for a look", async () => {
