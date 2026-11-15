@@ -286,3 +286,29 @@ describe("the day's script supervisor log", () => {
     await db.close();
   });
 });
+
+describe('a day from VC Smart Slate, in the production', () => {
+  const manifest = () => readFile(new URL('./fixtures/vc-smart-slate-day.manifest.json', import.meta.url), 'utf8');
+
+  it('survives the saved file with its claps, and importing it again changes nothing', async () => {
+    const file = join(dir, 'p.vcdit');
+    const db = await ProductionDb.open(file, { wasm, create: { frameRate: '29.97 fps DF' } });
+    const parsed = parseScriptLog('Day 1.json', await manifest());
+    db.importLog(1, 'Day 1.json', parsed);
+    const first = db.logView(1);
+    expect(first.log).toMatchObject({ format: 'VC Smart Slate', entries: 5 });
+    const take1 = first.matches.find((match) => match.log.startsWith('Sc 14 / — / T01 · A cam'));
+    expect(take1?.fields).toEqual(expect.arrayContaining([
+      ['Log TC', '14:00:00;10'],
+      ['Slate', expect.stringContaining('14:00:00;10 (manual, was 14:00:00;00: sticks seen 10 frames late on A)')],
+    ]));
+    // Idempotent: the same day imported twice is the same day.
+    db.importLog(1, 'Day 1.json', parseScriptLog('Day 1.json', await manifest()));
+    expect(db.logView(1)).toEqual({ ...first, log: { ...first.log, importedAt: expect.anything() } });
+    await db.close();
+
+    const reopened = await ProductionDb.open(file, { wasm });
+    expect(reopened.logView(1).matches.find((match) => match.log === take1!.log)?.fields).toEqual(take1!.fields);
+    await reopened.close();
+  });
+});
